@@ -22,9 +22,27 @@ final class OcrInferenceModel {
   Pointer<Uint8> _modelBytes = nullptr;
   int _width = 0;
   int _height = 0;
+  int _allocateCount = 0;
   bool _busy = false;
 
-  factory OcrInferenceModel.open(String path) {
+  /// 当前会话累计触发的 `AllocateTensors` 次数（用于观测宽度分桶效果）。
+  int get allocateCount => _allocateCount;
+
+  /// 清零张量分配计数。
+  void resetAllocateCount() => _allocateCount = 0;
+
+  /// 按当前平台 CPU 核心数推导默认推理线程数：桌面 2~6，移动 2~4。
+  static int defaultThreads() {
+    final cores = Platform.numberOfProcessors;
+    final half = cores ~/ 2;
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      return half.clamp(2, 6);
+    }
+    return half.clamp(2, 4);
+  }
+
+  factory OcrInferenceModel.open(String path, {int? threads}) {
+    final numThreads = (threads ?? defaultThreads()).clamp(1, 8);
     final bytes = File(path).readAsBytesSync();
     if (bytes.length < 8 ||
         bytes[4] != 0x54 ||
@@ -45,10 +63,10 @@ final class OcrInferenceModel {
       final options = _optionsCreate();
       if (options == nullptr) throw StateError('LiteRT 无法创建推理配置');
       try {
-        _optionsThreads(options, 2);
+        _optionsThreads(options, numThreads);
         using((arena) {
           final xnnOptions = arena<_XnnOptions>()..ref = _xnnOptionsDefault();
-          xnnOptions.ref.numThreads = 2;
+          xnnOptions.ref.numThreads = numThreads;
           session._delegate = _xnnCreate(xnnOptions);
         });
         if (session._delegate != nullptr) {
@@ -102,6 +120,7 @@ final class OcrInferenceModel {
           _check(_resizeInput(_interpreter, 0, dimensions, 4), '调整图片尺寸');
           _check(_allocateTensors(_interpreter), '分配张量');
         });
+        _allocateCount++;
         _width = width;
         _height = height;
       }

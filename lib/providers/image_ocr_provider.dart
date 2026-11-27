@@ -9,6 +9,8 @@ final ocrModelStoreProvider = Provider<OcrModelStore>((ref) {
   return store;
 });
 
-final localOcrServiceProvider = Provider<LocalOcrService>(
-  (ref) => LocalOcrService(),
-);
+final localOcrServiceProvider = Provider<LocalOcrService>((ref) {
+  final service = LocalOcrService();
+  ref.onDispose(service.dispose);
+  return service;
+});

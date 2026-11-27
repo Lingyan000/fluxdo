@@ -1456,6 +1456,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     return ImageToolBytes.png(bytes);
   }
 
+  Future<Uint8List> _loadOcrImage(String? url, CancelToken token) async {
+    final bytes =
+        widget.imageBytes ??
+        await BlobImageCache.fetch(
+          BlobImageCache.originalBucket,
+          url!,
+          cancellation: token,
+        );
+    if (token.isCancelled) throw token.cancelError!;
+    return ImageToolBytes.ocrBytes(bytes);
+  }
+
   void _schedulePassiveOcrIfNeeded() {
     _passiveOcrTimer?.cancel();
     _passiveOcrTimer = null;
@@ -2983,7 +2995,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       mode: mode,
       passive: passive,
       keepDockVisibleWhenZoomed: isDesktop,
-      loadImage: (token) => _loadToolImage(url, token),
+      loadImage: (token) => _loadOcrImage(url, token),
       gestureController: _gestureControllers[pageIdx],
       chromeVisible: isDesktop ? _alwaysShowChrome : _showUI,
       initialTapGlobalPosition: passive ? null : _liveOverlayTap,

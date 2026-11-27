@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:isolate';
@@ -7,10 +8,12 @@ import 'dart:ui' show Offset, Rect;
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fluxdo_ocr/fluxdo_ocr.dart';
 import 'package:image/image.dart' as img;
 import 'package:yaml/yaml.dart';
 
+import '../app_logger.dart';
 import 'ocr_model_store.dart';
 import 'picture_text_layout.dart';
 
@@ -31,6 +34,19 @@ class OcrProgress {
 
   double? get fraction =>
       total > 0 ? (completed / total).clamp(0.0, 1.0) : null;
+}
+
+/// 已解码的 RGBA 像素帧（直接复用 Flutter 引擎解码结果，跳过 PNG 往返编解码）。
+class OcrRgbaImage {
+  const OcrRgbaImage({
+    required this.width,
+    required this.height,
+    required this.rgba,
+  });
+
+  final int width;
+  final int height;
+  final Uint8List rgba;
 }
 
 /// 单段 OCR 识别文本行（原图坐标系）。
@@ -90,9 +106,46 @@ class OcrResult {
   String get plainText => PictureTextLayout.fromOcr(this).fullText;
 }
 
-/// 在独立 isolate 内执行 PP-OCRv6 small 的检测、识别和 CTC 解码。
+/// 在常驻后台 isolate 内执行 PP-OCRv6 small 的检测、识别和 CTC 解码。
+///
+/// 关键性能优化：
+/// - 常驻 Worker 复用已打开的 LiteRT 解释器与 XNNPACK 打包权重（空闲 45s 自动释放）
+/// - 识别行宽分桶 + 按桶连续推理，将 `AllocateTensors` 次数从十余次压到 1~3 次
+/// - 支持直传已解码 `OcrRgbaImage`（零 PNG 编解码），并用 256 项 LUT 直读字节流
 class LocalOcrService {
   static const _maxCacheEntries = 8;
+  static const _workerIdleTimeout = Duration(seconds: 45);
+  static const _detectMaxWidth = 960;
+  // 常见手机竖屏截图（如 9:16 / 2:3）缩放后高度约 1300~1440，单次检测即可完成，
+  // 避免切成 2 片重叠检测造成双倍推理与两次张量重分配；真正超长截图仍自动切片。
+  static const _detectBandMaxHeight = 1440;
+  static const _recHeight = 48;
+  static const _recMaxWidth = 1600;
+  static const _recOverlap = 96;
+
+  /// 识别模型固定宽度桶：减少不同行宽触发 XNNPACK 重建计算图的次数。
+  static const List<int> recognitionWidthBuckets = [
+    320,
+    480,
+    640,
+    960,
+    1280,
+    1600,
+  ];
+
+  // 预计算归一化查找表（256 项，避免百万像素循环中反复除法）。
+  static final Float32List _detLutR = Float32List.fromList([
+    for (var v = 0; v < 256; v++) (v / 255.0 - 0.406) / 0.225,
+  ]);
+  static final Float32List _detLutG = Float32List.fromList([
+    for (var v = 0; v < 256; v++) (v / 255.0 - 0.456) / 0.224,
+  ]);
+  static final Float32List _detLutB = Float32List.fromList([
+    for (var v = 0; v < 256; v++) (v / 255.0 - 0.485) / 0.229,
+  ]);
+  static final Float32List _recLut = Float32List.fromList([
+    for (var v = 0; v < 256; v++) v / 127.5 - 1.0,
+  ]);
 
   final LinkedHashMap<String, OcrResult> _cache = LinkedHashMap();
   String? _cachedDictPath;
@@ -100,25 +153,109 @@ class LocalOcrService {
   int? _cachedDictModifiedMs;
   List<String>? _cachedDictionary;
 
-  /// 清空识别结果内存缓存。
-  void clearCache() => _cache.clear();
+  Isolate? _workerIsolate;
+  SendPort? _workerCommandPort;
+  ReceivePort? _workerExitPort;
+  Future<SendPort>? _workerStarting;
+  Timer? _idleTimer;
+  Future<void> _serialQueue = Future<void>.value();
+  int _nextTaskId = 1;
+  int _activeTasks = 0;
+  bool _disposed = false;
+
+  /// 将原始缩放宽度收敛到最接近的固定桶，减少 `AllocateTensors` 频率。
+  @visibleForTesting
+  static int bucketRecognitionWidth(int rawWidth) {
+    for (final bucket in recognitionWidthBuckets) {
+      if (rawWidth <= bucket) return bucket;
+    }
+    return recognitionWidthBuckets.last;
+  }
+
+  /// 规划文本行识别顺序：
+  /// - 指定 [priorityIdx] 时，优先识别该行及其同宽度桶的其余行，确保首行秒出且零额外重分配；
+  /// - 其余行按所属宽度桶分组排序，最大限度复用同一个 XNNPACK 计算图。
+  @visibleForTesting
+  static List<int> planRecognitionOrder(List<Rect> boxes, {int? priorityIdx}) {
+    if (boxes.length <= 1) {
+      return List<int>.generate(boxes.length, (i) => i);
+    }
+    int bucketFor(Rect box) {
+      final h = math.max(1.0, box.height);
+      final lineWidth = math.max(1, (box.width * _recHeight / h).ceil());
+      final firstSlice = math.min(lineWidth, _recMaxWidth);
+      return bucketRecognitionWidth(firstSlice);
+    }
+
+    final buckets = [for (final b in boxes) bucketFor(b)];
+    final indices = List<int>.generate(boxes.length, (i) => i);
+    final priorityBucket = priorityIdx != null ? buckets[priorityIdx] : null;
+    indices.sort((a, b) {
+      if (priorityIdx != null) {
+        if (a == priorityIdx) return -1;
+        if (b == priorityIdx) return 1;
+        final aSame = buckets[a] == priorityBucket;
+        final bSame = buckets[b] == priorityBucket;
+        if (aSame != bSame) return aSame ? -1 : 1;
+      }
+      final cmp = buckets[a].compareTo(buckets[b]);
+      return cmp != 0 ? cmp : a.compareTo(b);
+    });
+    return indices;
+  }
+
+  /// 仅供单元测试验证 LUT 像素预处理与白底 Alpha 混合。
+  @visibleForTesting
+  static Float32List debugNormalizePixels(
+    img.Image image,
+    int width, {
+    required bool detection,
+  }) => _pixels(image, width, detection: detection);
+
+  /// 仅供单元测试验证 CTC argmax 解码。
+  @visibleForTesting
+  static List<({String text, double leftPx, double rightPx})> debugDecodeTokens(
+    Float32List scores,
+    int steps,
+    List<String> dictionary,
+    int width,
+    int from,
+    int until,
+  ) => _decodeTokens(scores, steps, dictionary, width, from, until);
+
+  /// 清空识别结果内存缓存并释放常驻工作 isolate（模型清理后必须释放旧句柄）。
+  void clearCache() {
+    _cache.clear();
+    _cachedDictionary = null;
+    _shutdownWorker();
+  }
+
+  /// 释放常驻工作 isolate 与定时器。
+  void dispose() {
+    _disposed = true;
+    _cache.clear();
+    _shutdownWorker();
+  }
 
   /// 兼容接口：仅返回拼合后的纯文本。
   Future<String> recognize(
     Uint8List pngBytes,
     OcrModelPaths paths, {
     CancelToken? cancelToken,
+    Future<OcrRgbaImage?> Function()? loadRgba,
   }) async {
     final result = await recognizeDetailed(
       pngBytes,
       paths,
       cancelToken: cancelToken,
+      loadRgba: loadRgba,
     );
     return result.plainText;
   }
 
   /// 完整识别接口：返回原图尺寸、逻辑行分组及每个字符的原图坐标，供识字、实况选字与隐私打码共用。
   ///
+  /// - [loadRgba]：可选的惰性 RGBA 帧提供者（仅在未命中缓存且实际执行 LiteRT 推理时调用，避免缓存命中或原生引擎下无谓的 GPU 回读）。
   /// - [priorityPoint]：可选的原图像素坐标；传入时优先识别离该点最近的那一行并立刻回调 [onPartial]。
   /// - [onDetected]：检测阶段完成后立刻触发（几百毫秒内），供 UI 播放文字行波纹点亮动画。
   /// - [onPartial]：识别过程中分批回传当前已识别出的 [OcrResult]，实现边识别边选字。
@@ -126,6 +263,7 @@ class LocalOcrService {
     Uint8List pngBytes,
     OcrModelPaths paths, {
     CancelToken? cancelToken,
+    Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,
     void Function(int imageWidth, int imageHeight, List<Rect> boxes)?
     onDetected,
@@ -134,7 +272,7 @@ class LocalOcrService {
   }) async {
     if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
 
-    final cacheKey = pngBytes.isEmpty ? null : _fingerprint(pngBytes);
+    final cacheKey = pngBytes.isNotEmpty ? _fingerprint(pngBytes) : null;
     if (cacheKey != null) {
       final cached = _cache.remove(cacheKey);
       if (cached != null) {
@@ -149,17 +287,80 @@ class LocalOcrService {
       }
     }
 
+    OcrRgbaImage? predecodedRgba;
+    if (loadRgba != null) {
+      try {
+        predecodedRgba = await loadRgba();
+      } catch (_) {
+        predecodedRgba = null;
+      }
+      if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+    }
+
     final cachedDictionary = await _tryGetCachedDictionary(paths.config);
     if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
 
-    final channel = ReceivePort();
+    // 串行占用常驻 Worker 内的单会话解释器，避免重入；排队期间若已取消直接退出。
+    final gate = Completer<void>();
+    final prev = _serialQueue;
+    _serialQueue = gate.future;
+    try {
+      await prev.catchError((_) {});
+      if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+      return await _runInWorker(
+        pngBytes: pngBytes,
+        predecodedRgba: predecodedRgba,
+        cacheKey: cacheKey,
+        paths: paths,
+        cachedDictionary: cachedDictionary,
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+        onDetected: onDetected,
+        onPartial: onPartial,
+        priorityPoint: priorityPoint,
+      );
+    } finally {
+      gate.complete();
+    }
+  }
+
+  Future<OcrResult> _runInWorker({
+    required Uint8List pngBytes,
+    required OcrRgbaImage? predecodedRgba,
+    required String? cacheKey,
+    required OcrModelPaths paths,
+    required List<String>? cachedDictionary,
+    required CancelToken? cancelToken,
+    required void Function(OcrProgress)? onProgress,
+    required void Function(int imageWidth, int imageHeight, List<Rect> boxes)?
+    onDetected,
+    required void Function(OcrResult partial)? onPartial,
+    required Offset? priorityPoint,
+  }) async {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _activeTasks++;
+
+    final commandPort = await _ensureWorker();
+    if (cancelToken?.isCancelled ?? false) {
+      _finishTaskSlot();
+      throw cancelToken!.cancelError!;
+    }
+
+    final taskId = _nextTaskId++;
+    final replyPort = ReceivePort();
+    final completer = Completer<_WorkerResult>();
     var detectedWidth = 0;
     var detectedHeight = 0;
     final partialLines = <OcrTextLine>[];
-    final subscription = channel.listen((message) {
-      if (message is SendPort) {
-        cancelToken?.whenCancel.then((_) => message.send(null));
-      } else if (message is _ProgressMessage) {
+
+    final cancelSub = cancelToken?.whenCancel.then((_) {
+      _workerCommandPort?.send(_CancelTaskMessage(taskId));
+    });
+    if (cancelSub != null) unawaited(cancelSub);
+
+    final subscription = replyPort.listen((message) {
+      if (message is _ProgressMessage) {
         onProgress?.call(
           OcrProgress(
             stage: OcrStage.values[message.stage],
@@ -193,19 +394,43 @@ class LocalOcrService {
             ),
           );
         }
+      } else if (message is _WorkerResult) {
+        if (!completer.isCompleted) completer.complete(message);
+      } else if (message is _WorkerError) {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            message.isFormat
+                ? FormatException(message.message)
+                : StateError(message.message),
+          );
+        }
       }
     });
+
+    final useRgba = predecodedRgba != null && predecodedRgba.rgba.isNotEmpty;
+    commandPort.send(
+      _RunTaskMessage(
+        taskId: taskId,
+        encodedBytes: useRgba ? null : TransferableTypedData.fromList([pngBytes]),
+        rgbaBytes: useRgba
+            ? TransferableTypedData.fromList([predecodedRgba.rgba])
+            : null,
+        rgbaWidth: useRgba ? predecodedRgba.width : 0,
+        rgbaHeight: useRgba ? predecodedRgba.height : 0,
+        detectorPath: paths.detector,
+        recognizerPath: paths.recognizer,
+        configPath: paths.config,
+        cachedDictionary: cachedDictionary,
+        priorityX: priorityPoint?.dx,
+        priorityY: priorityPoint?.dy,
+        emitDetected: onDetected != null,
+        emitPartial: onPartial != null,
+        replyPort: replyPort.sendPort,
+      ),
+    );
+
     try {
-      final raw = await _startWorker(
-        pngBytes,
-        paths,
-        cachedDictionary,
-        priorityPoint?.dx,
-        priorityPoint?.dy,
-        onDetected != null,
-        onPartial != null,
-        channel.sendPort,
-      );
+      final raw = await completer.future;
       if (raw.dictionary != null) {
         await _storeCachedDictionary(paths.config, raw.dictionary!);
       }
@@ -220,11 +445,88 @@ class LocalOcrService {
           _cache.remove(_cache.keys.first);
         }
       }
+      AppLogger.info(
+        'OCR 识别完成: engine=litert total=${raw.totalMs}ms '
+        'decode=${raw.decodeMs}ms open=${raw.openMs}ms '
+        'det=${raw.detMs}ms rec=${raw.recMs}ms '
+        'size=${raw.imageWidth}x${raw.imageHeight} '
+        'lines=${result.lines.length} '
+        'allocs=det:${raw.detAllocs}/rec:${raw.recAllocs} '
+        'rgba=$useRgba',
+        tag: 'OCR',
+      );
       return result;
     } finally {
       await subscription.cancel();
-      channel.close();
+      replyPort.close();
+      _finishTaskSlot();
     }
+  }
+
+  Future<SendPort> _ensureWorker() async {
+    final existing = _workerCommandPort;
+    if (existing != null) return existing;
+    final pending = _workerStarting;
+    if (pending != null) return pending;
+
+    final startFuture = () async {
+      final handshake = ReceivePort();
+      final exitPort = ReceivePort();
+      final isolate = await Isolate.spawn(
+        _workerMain,
+        handshake.sendPort,
+        debugName: 'fluxdo-ocr-worker',
+        onExit: exitPort.sendPort,
+      );
+      final commandPort = await handshake.first as SendPort;
+      handshake.close();
+      if (_disposed) {
+        commandPort.send(const _ShutdownWorkerMessage());
+        exitPort.close();
+        throw StateError('LocalOcrService 已释放');
+      }
+      _workerIsolate = isolate;
+      _workerCommandPort = commandPort;
+      _workerExitPort = exitPort;
+      exitPort.listen((_) {
+        if (identical(_workerIsolate, isolate)) {
+          _workerIsolate = null;
+          _workerCommandPort = null;
+          _workerExitPort?.close();
+          _workerExitPort = null;
+        }
+      });
+      return commandPort;
+    }();
+    _workerStarting = startFuture;
+    try {
+      return await startFuture;
+    } finally {
+      if (identical(_workerStarting, startFuture)) {
+        _workerStarting = null;
+      }
+    }
+  }
+
+  void _finishTaskSlot() {
+    _activeTasks = math.max(0, _activeTasks - 1);
+    if (_activeTasks == 0 && !_disposed && _workerCommandPort != null) {
+      _idleTimer?.cancel();
+      _idleTimer = Timer(_workerIdleTimeout, _shutdownWorker);
+    }
+  }
+
+  void _shutdownWorker() {
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    final port = _workerCommandPort;
+    _workerCommandPort = null;
+    if (port != null) {
+      port.send(const _ShutdownWorkerMessage());
+    }
+    _workerIsolate = null;
+    _workerExitPort?.close();
+    _workerExitPort = null;
   }
 
   static OcrTextLine _hydrateLine(_WorkerLine item) => OcrTextLine(
@@ -273,166 +575,266 @@ class LocalOcrService {
     _cachedDictionary = dictionary;
   }
 
-  // 不把主 isolate 中持有的 CancelToken 或回调闭包捕获进工作 isolate。
-  static Future<_WorkerResult> _startWorker(
-    Uint8List bytes,
-    OcrModelPaths paths,
-    List<String>? cachedDictionary,
-    double? priorityX,
-    double? priorityY,
-    bool emitDetected,
-    bool emitPartial,
-    SendPort channel,
-  ) => Isolate.run(
-    () => _recognize(
-      bytes,
-      paths,
-      cachedDictionary,
-      priorityX,
-      priorityY,
-      emitDetected,
-      emitPartial,
-      channel,
-    ),
-  );
+  /// 常驻工作 isolate 入口：保活 detector / recognizer 会话，按任务执行并支持即时取消。
+  static Future<void> _workerMain(SendPort mainPort) async {
+    final inbox = ReceivePort();
+    mainPort.send(inbox.sendPort);
 
-  static Future<_WorkerResult> _recognize(
-    Uint8List bytes,
-    OcrModelPaths paths,
-    List<String>? cachedDictionary,
-    double? priorityX,
-    double? priorityY,
-    bool emitDetected,
-    bool emitPartial,
-    SendPort channel,
-  ) async {
-    final cancellation = ReceivePort();
-    var cancelled = false;
-    cancellation.listen((_) => cancelled = true);
-    channel.send(cancellation.sendPort);
+    final cancelledTasks = <int>{};
+    final queue = Queue<_RunTaskMessage>();
+    var processing = false;
+    var shuttingDown = false;
+
+    OcrInferenceModel? detector;
+    String? detectorPath;
+    OcrInferenceModel? recognizer;
+    String? recognizerPath;
+
+    void closeModels() {
+      recognizer?.close();
+      recognizer = null;
+      recognizerPath = null;
+      detector?.close();
+      detector = null;
+      detectorPath = null;
+    }
+
+    Future<void> drainQueue() async {
+      if (processing) return;
+      processing = true;
+      try {
+        while (queue.isNotEmpty && !shuttingDown) {
+          final task = queue.removeFirst();
+          try {
+            final res = await _executeTask(
+              task: task,
+              isCancelled: () =>
+                  shuttingDown || cancelledTasks.contains(task.taskId),
+              obtainDetector: (path) {
+                if (detector == null || detectorPath != path) {
+                  detector?.close();
+                  detector = OcrInferenceModel.open(path);
+                  detectorPath = path;
+                }
+                return detector!;
+              },
+              obtainRecognizer: (path) {
+                if (recognizer == null || recognizerPath != path) {
+                  recognizer?.close();
+                  recognizer = OcrInferenceModel.open(path);
+                  recognizerPath = path;
+                }
+                return recognizer!;
+              },
+            );
+            task.replyPort.send(res);
+          } catch (error) {
+            task.replyPort.send(
+              _WorkerError(
+                error.toString(),
+                isFormat: error is FormatException,
+              ),
+            );
+          } finally {
+            cancelledTasks.remove(task.taskId);
+          }
+        }
+      } finally {
+        processing = false;
+        if (shuttingDown) {
+          closeModels();
+          inbox.close();
+        }
+      }
+    }
+
+    inbox.listen((message) {
+      if (message is _CancelTaskMessage) {
+        cancelledTasks.add(message.taskId);
+      } else if (message is _ShutdownWorkerMessage) {
+        shuttingDown = true;
+        if (!processing) {
+          closeModels();
+          inbox.close();
+        }
+      } else if (message is _RunTaskMessage) {
+        if (shuttingDown) {
+          message.replyPort.send(const _WorkerError('OCR 工作线程已关闭'));
+          return;
+        }
+        queue.addLast(message);
+        unawaited(drainQueue());
+      }
+    });
+  }
+
+  static Future<_WorkerResult> _executeTask({
+    required _RunTaskMessage task,
+    required bool Function() isCancelled,
+    required OcrInferenceModel Function(String path) obtainDetector,
+    required OcrInferenceModel Function(String path) obtainRecognizer,
+  }) async {
+    final totalSw = Stopwatch()..start();
+    var decodeMs = 0;
+    var openMs = 0;
+    var detMs = 0;
+    var recMs = 0;
+    var detAllocs = 0;
+    var recAllocs = 0;
 
     Future<void> checkCancellation() async {
       await Future<void>.delayed(Duration.zero);
-      if (cancelled) throw StateError('OCR 已取消');
+      if (isCancelled()) throw StateError('OCR 已取消');
     }
 
     void report(OcrStage stage, [int completed = 0, int total = 0]) {
-      channel.send(_ProgressMessage(stage.index, completed, total));
+      task.replyPort.send(_ProgressMessage(stage.index, completed, total));
     }
 
-    OcrInferenceModel? detector;
-    OcrInferenceModel? recognizer;
-    try {
-      report(OcrStage.decoding);
-      var image = img.decodeImage(bytes);
-      if (image == null) throw const FormatException('无法解码 OCR 图片');
-      if (image.hasAlpha) {
-        final background = img.Image(width: image.width, height: image.height);
-        img.fill(background, color: img.ColorRgb8(255, 255, 255));
-        image = img.compositeImage(background, image);
-      } else if (image.format != img.Format.uint8) {
+    report(OcrStage.decoding);
+    final decodeSw = Stopwatch()..start();
+    img.Image? image;
+    if (task.rgbaBytes != null && task.rgbaWidth > 0 && task.rgbaHeight > 0) {
+      final raw = task.rgbaBytes!.materialize().asUint8List();
+      image = img.Image.fromBytes(
+        width: task.rgbaWidth,
+        height: task.rgbaHeight,
+        bytes: raw.buffer,
+        bytesOffset: raw.offsetInBytes,
+        numChannels: 4,
+        order: img.ChannelOrder.rgba,
+      );
+    } else if (task.encodedBytes != null) {
+      final bytes = task.encodedBytes!.materialize().asUint8List();
+      image = img.decodeImage(bytes);
+      if (image != null && image.format != img.Format.uint8) {
         image = image.convert(format: img.Format.uint8);
       }
-      await checkCancellation();
+    }
+    if (image == null) throw const FormatException('无法解码 OCR 图片');
+    decodeMs = decodeSw.elapsedMilliseconds;
+    await checkCancellation();
 
-      report(OcrStage.detecting);
-      detector = OcrInferenceModel.open(paths.detector);
-      final boxes = await _detect(image, detector, checkCancellation, report);
-      detector.close();
-      detector = null;
+    report(OcrStage.detecting);
+    final openDetSw = Stopwatch()..start();
+    final detector = obtainDetector(task.detectorPath);
+    openMs += openDetSw.elapsedMilliseconds;
+    detector.resetAllocateCount();
 
-      if (emitDetected) {
-        final flat = Float64List(boxes.length * 4);
-        for (var i = 0; i < boxes.length; i++) {
-          final b = boxes[i].box;
-          flat[i * 4] = b.left;
-          flat[i * 4 + 1] = b.top;
-          flat[i * 4 + 2] = b.right;
-          flat[i * 4 + 3] = b.bottom;
-        }
-        channel.send(_DetectedMessage(image.width, image.height, flat));
+    final detSw = Stopwatch()..start();
+    final boxes = await _detect(image, detector, checkCancellation, report);
+    detMs = detSw.elapsedMilliseconds;
+    detAllocs = detector.allocateCount;
+
+    if (task.emitDetected) {
+      final flat = Float64List(boxes.length * 4);
+      for (var i = 0; i < boxes.length; i++) {
+        final b = boxes[i].box;
+        flat[i * 4] = b.left;
+        flat[i * 4 + 1] = b.top;
+        flat[i * 4 + 2] = b.right;
+        flat[i * 4 + 3] = b.bottom;
       }
+      task.replyPort.send(_DetectedMessage(image.width, image.height, flat));
+    }
 
-      if (boxes.isEmpty) {
-        return _WorkerResult(
-          imageWidth: image.width,
-          imageHeight: image.height,
-          lines: const [],
-        );
-      }
-      await checkCancellation();
-
-      List<String>? newlyLoadedDictionary;
-      final dictionary =
-          cachedDictionary ??
-          (newlyLoadedDictionary = await _loadDictionary(paths.config));
-
-      // 如果指定了优先点，将距离最近的行排到最前面先识别，做到点哪行秒出哪行。
-      final order = List<int>.generate(boxes.length, (i) => i);
-      int? priorityIdx;
-      if (priorityX != null && priorityY != null) {
-        var bestGap = double.infinity;
-        for (var i = 0; i < boxes.length; i++) {
-          final r = boxes[i].box;
-          final gap =
-              math.max(math.max(r.left - priorityX, 0.0), priorityX - r.right) +
-              math.max(math.max(r.top - priorityY, 0.0), priorityY - r.bottom);
-          if (gap < bestGap) {
-            bestGap = gap;
-            priorityIdx = i;
-          }
-        }
-        if (priorityIdx != null && priorityIdx != 0) {
-          order.remove(priorityIdx);
-          order.insert(0, priorityIdx);
-        }
-      }
-
-      report(OcrStage.recognizing, 0, boxes.length);
-      recognizer = OcrInferenceModel.open(paths.recognizer);
-      final recognized = List<_WorkerLine?>.filled(boxes.length, null);
-      final pendingBatch = <_WorkerLine>[];
-      for (var step = 0; step < order.length; step++) {
-        final idx = order[step];
-        final entry = boxes[idx];
-        final line = await _read(
-          image,
-          entry.box,
-          entry.rowIndex,
-          recognizer,
-          dictionary,
-          checkCancellation,
-        );
-        if (line != null) {
-          recognized[idx] = line;
-          if (emitPartial) pendingBatch.add(line);
-        }
-        final isPriorityDone = step == 0 && priorityIdx != null;
-        final isBatchDue = (step + 1) % 4 == 0 || step + 1 == order.length;
-        if (emitPartial &&
-            pendingBatch.isNotEmpty &&
-            (isPriorityDone || isBatchDue)) {
-          channel.send(_PartialBatchMessage(List<_WorkerLine>.of(pendingBatch)));
-          pendingBatch.clear();
-        }
-        if ((step + 1) % 2 == 0 || step + 1 == order.length) {
-          report(OcrStage.recognizing, step + 1, boxes.length);
-        }
-      }
-      final orderedLines = <_WorkerLine>[
-        for (final line in recognized) ?line,
-      ];
+    if (boxes.isEmpty) {
       return _WorkerResult(
         imageWidth: image.width,
         imageHeight: image.height,
-        lines: orderedLines,
-        dictionary: newlyLoadedDictionary,
+        lines: const [],
+        totalMs: totalSw.elapsedMilliseconds,
+        decodeMs: decodeMs,
+        openMs: openMs,
+        detMs: detMs,
+        recMs: 0,
+        detAllocs: detAllocs,
+        recAllocs: 0,
       );
-    } finally {
-      recognizer?.close();
-      detector?.close();
-      cancellation.close();
     }
+    await checkCancellation();
+
+    List<String>? newlyLoadedDictionary;
+    final dictionary =
+        task.cachedDictionary ??
+        (newlyLoadedDictionary = await _loadDictionary(task.configPath));
+
+    int? priorityIdx;
+    if (task.priorityX != null && task.priorityY != null) {
+      final px = task.priorityX!;
+      final py = task.priorityY!;
+      var bestGap = double.infinity;
+      for (var i = 0; i < boxes.length; i++) {
+        final r = boxes[i].box;
+        final gap =
+            math.max(math.max(r.left - px, 0.0), px - r.right) +
+            math.max(math.max(r.top - py, 0.0), py - r.bottom);
+        if (gap < bestGap) {
+          bestGap = gap;
+          priorityIdx = i;
+        }
+      }
+    }
+    final order = planRecognitionOrder(
+      [for (final entry in boxes) entry.box],
+      priorityIdx: priorityIdx,
+    );
+
+    report(OcrStage.recognizing, 0, boxes.length);
+    final openRecSw = Stopwatch()..start();
+    final recognizer = obtainRecognizer(task.recognizerPath);
+    openMs += openRecSw.elapsedMilliseconds;
+    recognizer.resetAllocateCount();
+
+    final recSw = Stopwatch()..start();
+    final recognized = List<_WorkerLine?>.filled(boxes.length, null);
+    final pendingBatch = <_WorkerLine>[];
+    for (var step = 0; step < order.length; step++) {
+      final idx = order[step];
+      final entry = boxes[idx];
+      final line = await _read(
+        image,
+        entry.box,
+        entry.rowIndex,
+        recognizer,
+        dictionary,
+        checkCancellation,
+      );
+      if (line != null) {
+        recognized[idx] = line;
+        if (task.emitPartial) pendingBatch.add(line);
+      }
+      final isPriorityDone = step == 0 && priorityIdx != null;
+      final isBatchDue = (step + 1) % 4 == 0 || step + 1 == order.length;
+      if (task.emitPartial &&
+          pendingBatch.isNotEmpty &&
+          (isPriorityDone || isBatchDue)) {
+        task.replyPort.send(
+          _PartialBatchMessage(List<_WorkerLine>.of(pendingBatch)),
+        );
+        pendingBatch.clear();
+      }
+      if ((step + 1) % 2 == 0 || step + 1 == order.length) {
+        report(OcrStage.recognizing, step + 1, boxes.length);
+      }
+    }
+    recMs = recSw.elapsedMilliseconds;
+    recAllocs = recognizer.allocateCount;
+
+    final orderedLines = <_WorkerLine>[for (final line in recognized) ?line];
+    return _WorkerResult(
+      imageWidth: image.width,
+      imageHeight: image.height,
+      lines: orderedLines,
+      dictionary: newlyLoadedDictionary,
+      totalMs: totalSw.elapsedMilliseconds,
+      decodeMs: decodeMs,
+      openMs: openMs,
+      detMs: detMs,
+      recMs: recMs,
+      detAllocs: detAllocs,
+      recAllocs: recAllocs,
+    );
   }
 
   static Future<List<String>> _loadDictionary(String configPath) async {
@@ -458,10 +860,10 @@ class LocalOcrService {
     void Function(OcrStage, [int, int]) report,
   ) async {
     // 长截图以原图坐标切片，重叠区域让跨边界的文字能在相邻片中完整出现。
-    final scale = math.min(1.0, 1280 / image.width);
+    final scale = math.min(1.0, _detectMaxWidth / image.width);
     int aligned(double dimension) => math.max(1, (dimension / 32).round()) * 32;
     final width = aligned(image.width * scale);
-    final bandHeight = (1024 / scale).round();
+    final bandHeight = (_detectBandMaxHeight / scale).round();
     final overlap = (160 / scale).round();
     final stride = bandHeight - overlap;
     final totalBands = image.height <= bandHeight
@@ -482,12 +884,15 @@ class LocalOcrService {
               height: height,
             );
       final inputHeight = aligned(height * scale);
-      final resized = img.copyResize(
-        band,
-        width: width,
-        height: inputHeight,
-        interpolation: img.Interpolation.linear,
-      );
+      final resized =
+          band.width == width && band.height == inputHeight
+          ? band
+          : img.copyResize(
+              band,
+              width: width,
+              height: inputHeight,
+              interpolation: img.Interpolation.linear,
+            );
       final input = _pixels(resized, width, detection: true);
       final detected = model.infer(width, inputHeight, input, (shape, scores) {
         if (shape.length != 4 ||
@@ -524,23 +929,109 @@ class LocalOcrService {
   }
 
   // 两个模型都接收平面的 BGR 张量。未填充的识别列保持归一化后的零值。
+  // 直接读取底层 Uint8List + 256 项 LUT，并内联处理透明像素的白底合成，
+  // 省掉 `package:image` 像素迭代器与整图 `compositeImage` 拷贝。
   static Float32List _pixels(
     img.Image image,
     int width, {
     required bool detection,
   }) {
-    final plane = width * image.height;
+    final imgH = image.height;
+    final imgW = image.width;
+    final plane = width * imgH;
+    final plane2 = plane * 2;
     final values = Float32List(3 * plane);
+    final channels = image.numChannels;
+
+    if (image.format == img.Format.uint8 && (channels == 3 || channels == 4)) {
+      final raw = image.toUint8List();
+      final detR = _detLutR;
+      final detG = _detLutG;
+      final detB = _detLutB;
+      final recLut = _recLut;
+
+      var src = 0;
+      if (detection) {
+        for (var y = 0; y < imgH; y++) {
+          var dst = y * width;
+          if (channels == 4) {
+            for (var x = 0; x < imgW; x++, dst++, src += 4) {
+              var r = raw[src];
+              var g = raw[src + 1];
+              var b = raw[src + 2];
+              final a = raw[src + 3];
+              if (a != 255) {
+                final inv = 255 - a;
+                r = (r * a + 255 * inv + 127) ~/ 255;
+                g = (g * a + 255 * inv + 127) ~/ 255;
+                b = (b * a + 255 * inv + 127) ~/ 255;
+              }
+              values[dst] = detB[b];
+              values[plane + dst] = detG[g];
+              values[plane2 + dst] = detR[r];
+            }
+          } else {
+            for (var x = 0; x < imgW; x++, dst++, src += 3) {
+              values[dst] = detB[raw[src + 2]];
+              values[plane + dst] = detG[raw[src + 1]];
+              values[plane2 + dst] = detR[raw[src]];
+            }
+          }
+        }
+      } else {
+        for (var y = 0; y < imgH; y++) {
+          var dst = y * width;
+          if (channels == 4) {
+            for (var x = 0; x < imgW; x++, dst++, src += 4) {
+              var r = raw[src];
+              var g = raw[src + 1];
+              var b = raw[src + 2];
+              final a = raw[src + 3];
+              if (a != 255) {
+                final inv = 255 - a;
+                r = (r * a + 255 * inv + 127) ~/ 255;
+                g = (g * a + 255 * inv + 127) ~/ 255;
+                b = (b * a + 255 * inv + 127) ~/ 255;
+              }
+              values[dst] = recLut[b];
+              values[plane + dst] = recLut[g];
+              values[plane2 + dst] = recLut[r];
+            }
+          } else {
+            for (var x = 0; x < imgW; x++, dst++, src += 3) {
+              values[dst] = recLut[raw[src + 2]];
+              values[plane + dst] = recLut[raw[src + 1]];
+              values[plane2 + dst] = recLut[raw[src]];
+            }
+          }
+        }
+      }
+      return values;
+    }
+
+    // 兜底：灰度或非 3/4 通道图片。
     for (final pixel in image) {
       final pos = pixel.y * width + pixel.x;
+      var r = pixel.r.toInt().clamp(0, 255);
+      var g = pixel.g.toInt().clamp(0, 255);
+      var b = pixel.b.toInt().clamp(0, 255);
+      if (image.hasAlpha) {
+        final a = pixel.a.toInt().clamp(0, 255);
+        if (a != 255) {
+          final inv = 255 - a;
+          r = (r * a + 255 * inv + 127) ~/ 255;
+          g = (g * a + 255 * inv + 127) ~/ 255;
+          b = (b * a + 255 * inv + 127) ~/ 255;
+        }
+      }
       if (detection) {
-        values[pos] = (pixel.b / 255 - 0.485) / 0.229;
-        values[plane + pos] = (pixel.g / 255 - 0.456) / 0.224;
-        values[2 * plane + pos] = (pixel.r / 255 - 0.406) / 0.225;
+        values[pos] = _detLutB[b];
+        values[plane + pos] = _detLutG[g];
+        values[plane2 + pos] = _detLutR[r];
       } else {
-        values[pos] = pixel.b / 127.5 - 1;
-        values[plane + pos] = pixel.g / 127.5 - 1;
-        values[2 * plane + pos] = pixel.r / 127.5 - 1;
+        values[pos] = _recLut[b];
+        values[plane + pos] = _recLut[g];
+        values[plane2 + pos] = _recLut[r];
       }
     }
     return values;
@@ -653,7 +1144,7 @@ class LocalOcrService {
     final top = bounds.top.floor(), bottom = bounds.bottom.ceil();
     final left = bounds.left.floor(), right = bounds.right.ceil();
     if (right <= left || bottom <= top) return null;
-    const height = 48, maxWidth = 1600, overlap = 96;
+    const height = _recHeight, maxWidth = _recMaxWidth, overlap = _recOverlap;
     final lineWidth = math.max(
       1,
       ((right - left) * height / (bottom - top)).ceil(),
@@ -681,7 +1172,7 @@ class LocalOcrService {
         width: math.max(1, end - start),
         interpolation: img.Interpolation.linear,
       );
-      final width = math.max(320, ((resized.width + 7) ~/ 8) * 8);
+      final width = bucketRecognitionWidth(resized.width);
       final last = end == lineWidth;
       final tokens = model.infer(
         width,
@@ -773,8 +1264,13 @@ class LocalOcrService {
       var label = 0;
       if (step < steps) {
         final offset = step * classes;
+        var bestScore = scores[offset];
         for (var c = 1; c < classes; c++) {
-          if (scores[offset + c] > scores[offset + label]) label = c;
+          final s = scores[offset + c];
+          if (s > bestScore) {
+            bestScore = s;
+            label = c;
+          }
         }
       }
       if (label == previous) continue;
@@ -793,6 +1289,55 @@ class LocalOcrService {
     }
     return result;
   }
+}
+
+class _RunTaskMessage {
+  const _RunTaskMessage({
+    required this.taskId,
+    required this.encodedBytes,
+    required this.rgbaBytes,
+    required this.rgbaWidth,
+    required this.rgbaHeight,
+    required this.detectorPath,
+    required this.recognizerPath,
+    required this.configPath,
+    required this.cachedDictionary,
+    required this.priorityX,
+    required this.priorityY,
+    required this.emitDetected,
+    required this.emitPartial,
+    required this.replyPort,
+  });
+
+  final int taskId;
+  final TransferableTypedData? encodedBytes;
+  final TransferableTypedData? rgbaBytes;
+  final int rgbaWidth;
+  final int rgbaHeight;
+  final String detectorPath;
+  final String recognizerPath;
+  final String configPath;
+  final List<String>? cachedDictionary;
+  final double? priorityX;
+  final double? priorityY;
+  final bool emitDetected;
+  final bool emitPartial;
+  final SendPort replyPort;
+}
+
+class _CancelTaskMessage {
+  const _CancelTaskMessage(this.taskId);
+  final int taskId;
+}
+
+class _ShutdownWorkerMessage {
+  const _ShutdownWorkerMessage();
+}
+
+class _WorkerError {
+  const _WorkerError(this.message, {this.isFormat = false});
+  final String message;
+  final bool isFormat;
 }
 
 class _ProgressMessage {
@@ -834,10 +1379,24 @@ class _WorkerResult {
     required this.imageHeight,
     required this.lines,
     this.dictionary,
+    this.totalMs = 0,
+    this.decodeMs = 0,
+    this.openMs = 0,
+    this.detMs = 0,
+    this.recMs = 0,
+    this.detAllocs = 0,
+    this.recAllocs = 0,
   });
 
   final int imageWidth;
   final int imageHeight;
   final List<_WorkerLine> lines;
   final List<String>? dictionary;
+  final int totalMs;
+  final int decodeMs;
+  final int openMs;
+  final int detMs;
+  final int recMs;
+  final int detAllocs;
+  final int recAllocs;
 }

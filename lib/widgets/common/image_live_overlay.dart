@@ -522,10 +522,27 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
             widget.onInitialTapMissed != null;
         var missedLongPress = false;
         final service = ref.read(localOcrServiceProvider);
+        final decodedImg = _decodedImage;
         ocr = await service.recognizeDetailed(
           bytes,
           await store.paths(),
           cancelToken: token,
+          loadRgba: decodedImg == null
+              ? null
+              : () async {
+                  final bd = await decodedImg.toByteData(
+                    format: ui.ImageByteFormat.rawRgba,
+                  );
+                  if (bd == null) return null;
+                  return OcrRgbaImage(
+                    width: decodedImg.width,
+                    height: decodedImg.height,
+                    rgba: bd.buffer.asUint8List(
+                      bd.offsetInBytes,
+                      bd.lengthInBytes,
+                    ),
+                  );
+                },
           priorityPoint: priority,
           onProgress: (progress) {
             if (mounted && !token.isCancelled && !widget.passive) {

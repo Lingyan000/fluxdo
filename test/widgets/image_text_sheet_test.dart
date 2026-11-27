@@ -61,6 +61,7 @@ class _OcrService extends Fake implements LocalOcrService {
     Uint8List pngBytes,
     OcrModelPaths paths, {
     CancelToken? cancelToken,
+    Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,
     void Function(int imageWidth, int imageHeight, List<Rect> boxes)?
     onDetected,
