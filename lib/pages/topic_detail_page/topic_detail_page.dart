@@ -397,6 +397,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 初始即 completed)时保持 true,零影响。
   bool _routeTransitionDone = true;
   bool _isParentActive = true;
+  bool _isAppForeground = true;
+  bool _isRoutePopped = false;
   bool _isScreenTrackRunning = false;
 
   /// 初始定位期间被抑制的 eyeline 上报楼层（定位完成后回放）
@@ -1056,7 +1058,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final hasFocus = state == AppLifecycleState.resumed;
-    _screenTrack.setHasFocus(hasFocus);
+    if (_isAppForeground != hasFocus) {
+      _isAppForeground = hasFocus;
+      _syncScreenTrackState(
+        reason: hasFocus ? 'app_resumed' : 'app_backgrounded',
+      );
+    }
     if (!hasFocus) {
       unawaited(_nestedReadingStore.flush());
     }
@@ -1064,6 +1071,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   @override
   void didPush() {
+    _isRoutePopped = false;
     _setRouteVisible(true, 'did_push');
     _schedulePostShortcutRegistration();
   }
@@ -1087,7 +1095,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   @override
   void didPop() {
-    _setRouteVisible(false, 'did_pop');
+    _isRoutePopped = true;
+    if (_isRouteVisible) {
+      _setRouteVisible(false, 'did_pop');
+    } else {
+      _syncScreenTrackState(reason: 'did_pop');
+    }
   }
 
   void _setRouteVisible(bool visible, String reason) {
@@ -1098,33 +1111,55 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _syncScreenTrackState({required String reason}) {
-    final shouldRun =
-        _controller.trackEnabled && _isRouteVisible && _isParentActive;
-    if (shouldRun == _isScreenTrackRunning) return;
+    // 仅在真正离开话题（didPop / dispose）或退出登录时 stop()+flush()+reset()；
+    // 被图片查看器/弹窗/子路由临时覆盖（didPushNext）、父级切换或切后台时只暂停计时，
+    // 保留 _totalTimings 与 _readPosts，避免反复开关图片高频发送 POST /topics/timings。
+    final shouldTrack = _controller.trackEnabled && !_isRoutePopped;
+    final shouldFocus =
+        shouldTrack && _isRouteVisible && _isParentActive && _isAppForeground;
 
-    if (shouldRun) {
-      _screenTrack.start(widget.topicId);
-      // start() 会 reset _onscreen，用 controller 当前已知的可见帖子恢复
-      // 避免因 CF 验证等场景 stop→start 后 _onscreen 为空导致无法记录阅读时长
-      if (_controller.visiblePostNumbers.isNotEmpty) {
-        _screenTrack.setOnscreen(_controller.visiblePostNumbers);
-        _screenTrack.scrolled();
+    final runningChanged = shouldTrack != _isScreenTrackRunning;
+    final focusChanged = _screenTrack.hasFocus != shouldFocus;
+    if (!runningChanged && !focusChanged) return;
+
+    if (shouldTrack) {
+      if (!_isScreenTrackRunning) {
+        _screenTrack.start(widget.topicId);
+        // start() 会 reset _onscreen，用 controller 当前已知的可见与已读帖子恢复，
+        // 避免把已读楼层误判为未读并触发 rush 立即上报。
+        if (_controller.visiblePostNumbers.isNotEmpty) {
+          final readOnscreen = _controller.visiblePostNumbers.intersection(
+            _controller.readPostNumbers,
+          );
+          _screenTrack.setOnscreen(
+            _controller.visiblePostNumbers,
+            readOnscreen: readOnscreen,
+          );
+          _screenTrack.scrolled();
+        }
       }
+      _screenTrack.setHasFocus(shouldFocus);
     } else {
       _screenTrack.stop();
     }
-    _isScreenTrackRunning = shouldRun;
+    _isScreenTrackRunning = shouldTrack;
+
+    final message = runningChanged
+        ? (shouldTrack ? 'ScreenTrack 启动' : 'ScreenTrack 停止')
+        : (shouldFocus ? 'ScreenTrack 恢复' : 'ScreenTrack 暂停');
 
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': 'info',
       'type': 'lifecycle',
       'event': 'screen_track_state',
-      'message': shouldRun ? 'ScreenTrack 启动' : 'ScreenTrack 停止',
+      'message': message,
       'topicId': widget.topicId,
       'screenTrackSourceId': _instanceId,
       'routeVisible': _isRouteVisible,
       'parentActive': _isParentActive,
+      'appForeground': _isAppForeground,
+      'hasFocus': shouldFocus,
       'reason': reason,
     });
   }

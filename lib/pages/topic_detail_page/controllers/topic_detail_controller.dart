@@ -247,6 +247,7 @@ class TopicDetailController extends ChangeNotifier {
   // ============ 可见性状态 Getters ============
 
   Set<int> get visiblePostNumbers => Set.unmodifiable(_visiblePostNumbers);
+  Set<int> get readPostNumbers => Set.unmodifiable(_readPostNumbers);
   int get currentVisibleStreamIndex => _currentVisibleStreamIndex;
   int get displayedPostCount => _postNumberToScrollIndex.length;
 

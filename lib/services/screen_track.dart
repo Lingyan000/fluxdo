@@ -30,6 +30,7 @@ class ScreenTrack {
   final OnTimingsSent? onTimingsSent;
   final String? debugSourceId;
   final CfChallengeService _cfService;
+  final DateTime Function() _now;
 
   int? _topicId;
   Timer? _tickTimer;
@@ -66,7 +67,9 @@ class ScreenTrack {
     this.onTimingsSent,
     this.debugSourceId,
     CfChallengeService? cfService,
-  }) : _cfService = cfService ?? CfChallengeService();
+    DateTime Function()? now,
+  }) : _cfService = cfService ?? CfChallengeService(),
+       _now = now ?? DateTime.now;
 
   void start(int topicId) {
     if (_topicId != null && _topicId != topicId) {
@@ -124,8 +127,9 @@ class ScreenTrack {
     } else {
       // CF 完成：重置 _lastTick，下次 tick 用新的时间戳算 diff，
       // 避免把 CF 期间的真实流逝时间也算进 _topicTime。
-      _lastTick = DateTime.now();
-      _lastScrolled = DateTime.now();
+      final now = _now();
+      _lastTick = now;
+      _lastScrolled = now;
       _lastFlush = Duration.zero;
       _cfFrozen = false;
       debugPrint('[ScreenTrack] CF 验证完成，恢复采集 sourceId=$debugSourceId');
@@ -138,18 +142,25 @@ class ScreenTrack {
   }
 
   void scrolled() {
-    _lastScrolled = DateTime.now();
+    _lastScrolled = _now();
   }
+
+  bool get isTracking => _topicId != null;
+  bool get hasFocus => _hasFocus;
 
   void setHasFocus(bool hasFocus) {
     if (_hasFocus == hasFocus) return;
     _hasFocus = hasFocus;
-    _lastTick = DateTime.now();
-    _lastFlush = Duration.zero;
+    final now = _now();
+    _lastTick = now;
+    if (hasFocus) {
+      // 从图片查看器/弹窗/后台返回后刷新滚动锚点，避免看图超过无滚动阈值后直接停计。
+      _lastScrolled = now;
+    }
   }
 
   void _reset() {
-    final now = DateTime.now();
+    final now = _now();
     _lastTick = now;
     _lastScrolled = now;
     _lastFlush = Duration.zero;
@@ -167,7 +178,17 @@ class ScreenTrack {
 
   void _tick() {
     if (_cfFrozen) return;
-    final now = DateTime.now();
+    final now = _now();
+
+    // 未聚焦（切后台、被图片查看器或上层路由临时覆盖）时不推进计时与 flush 窗口，
+    // 也不清空 _totalTimings / _readPosts；仅在已有退避待发队列时继续补发。
+    if (!_hasFocus) {
+      _lastTick = now;
+      if (!_inProgress) {
+        _sendNextConsolidatedTiming();
+      }
+      return;
+    }
 
     // 长时间未滚动则暂停追踪
     final sinceScrolled = now.difference(_lastScrolled ?? now);
@@ -194,8 +215,6 @@ class ScreenTrack {
     if (!_inProgress) {
       _sendNextConsolidatedTiming();
     }
-
-    if (!_hasFocus) return;
 
     _topicTime += diff;
     for (final postNumber in _onscreen) {
@@ -269,8 +288,7 @@ class ScreenTrack {
     if (_consolidatedTimings.isEmpty) return;
     if (_inProgress) return;
     if (!_service.isAuthenticated) return;
-    if (_blockSendingUntil != null &&
-        _blockSendingUntil!.isAfter(DateTime.now())) {
+    if (_blockSendingUntil != null && _blockSendingUntil!.isAfter(_now())) {
       return;
     }
 
@@ -304,7 +322,7 @@ class ScreenTrack {
             _ajaxFailureDelays.length - 1,
           );
           _ajaxFailures += 1;
-          _blockSendingUntil = DateTime.now().add(
+          _blockSendingUntil = _now().add(
             _ajaxFailureDelays[delayIndex],
           );
           _consolidateTimings(next.timings, next.topicTime, next.topicId);
