@@ -4,6 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_policy.dart';
 
 void main() {
+  test('OAuth 校验参数脱敏，平台证书校验诊断保留', () {
+    const diagnostic = 'platform verifier: certificate issuer is not trusted';
+    expect(LogPolicy.cleanText(diagnostic), diagnostic);
+    for (final message in ['code_verifier=oauth-private', 'code_verifier: oauth-private', 'verifier=oauth-private']) {
+      expect(LogPolicy.cleanText(message), isNot(contains('oauth-private')));
+    }
+    final fields = LogPolicy.sanitize({
+      'pay_key': 'payment-private',
+      'code_verifier': 'oauth-private',
+      'verifier': 'verifier-private',
+      'error': diagnostic,
+    }) as Map;
+    expect(fields['pay_key'], '[redacted]');
+    expect(fields['code_verifier'], '[redacted]');
+    expect(fields['verifier'], '[redacted]');
+    expect(fields['error'], diagnostic);
+  });
   test('用户接口、头像路径与历史消息脱敏，保留接口形状', () {
     final source = {
       'sessionId': 'old',

@@ -48,7 +48,7 @@ on:
       - 'pubspec.lock'
       - 'mise.toml'
   push:
-    branches: [dev, main, codex/ld-store-native-checkout]
+    branches: [dev, main]
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
@@ -215,7 +215,7 @@ jobs:
           exit $LASTEXITCODE
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
-        run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_script_engine_test.dart test/pages/following_feed_page_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
+        run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_script_engine_test.dart test/pages/following_feed_page_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/log_policy_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
       - name: Upload native test events
         if: always()
         uses: actions/upload-artifact@v4

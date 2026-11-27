@@ -19,6 +19,22 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test('插件日志导出保留 TLS 原因并清除授权校验参数', () async {
+    LogWriter.instance.write({
+      'pluginId': 'example.store',
+      'message': 'platform verifier: certificate issuer is not trusted',
+      'fields': {'verifier': 'private-check-value'},
+    });
+    LogWriter.instance.write({
+      'pluginId': 'example.store',
+      'message': 'code_verifier=private-check-value',
+    });
+    await LogWriter.instance.flushNow();
+    final exported = LogPolicy.export(await LogWriter.readPluginContent('example.store'));
+    expect(exported, contains('platform verifier: certificate issuer is not trusted'));
+    expect(exported, isNot(contains('private-check-value')));
+  });
+
   test('插件独立轮转，密集输出保留其他插件和应用日志', () async {
     LogWriter.instance.write({'message': 'app-retained'});
     LogWriter.instance.write({

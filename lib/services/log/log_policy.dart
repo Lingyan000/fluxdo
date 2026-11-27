@@ -59,9 +59,14 @@ class LogPolicy {
     );
     value = value.replaceAllMapped(
       RegExp(
-        r'(authorization|cookie|set-cookie|password|pay_key|verifier|code_verifier|token|api_key|x-csrf-token)\s*[:=]\s*[^\r\n]+',
+        r'(authorization|cookie|set-cookie|password|pay_key|code_verifier|token|api_key|x-csrf-token)\s*[:=]\s*[^\r\n]+',
         caseSensitive: false,
       ),
+      (m) => '${m[1]}=[redacted]',
+    );
+    // 裸 verifier 只按参数赋值脱敏，保留平台证书校验器的诊断正文。
+    value = value.replaceAllMapped(
+      RegExp(r'\b(verifier)\s*=\s*[^\r\n]+', caseSensitive: false),
       (m) => '${m[1]}=[redacted]',
     );
     return value.length > 4096
