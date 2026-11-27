@@ -764,147 +764,180 @@ class LocalOcrService {
     report(OcrStage.decoding);
     final decodeSw = Stopwatch()..start();
     img.Image? image;
+    OcrNativeImage? nativeImage;
     if (task.rgbaBytes != null && task.rgbaWidth > 0 && task.rgbaHeight > 0) {
       final raw = task.rgbaBytes!.materialize().asUint8List();
-      image = img.Image.fromBytes(
+      nativeImage = OcrNativeImage.fromBytes(
+        bytes: raw,
         width: task.rgbaWidth,
         height: task.rgbaHeight,
-        bytes: raw.buffer,
-        bytesOffset: raw.offsetInBytes,
-        numChannels: 4,
-        order: img.ChannelOrder.rgba,
+        channels: 4,
       );
     } else if (task.encodedBytes != null) {
       final bytes = task.encodedBytes!.materialize().asUint8List();
       image = img.decodeImage(bytes);
-      if (image != null && image.format != img.Format.uint8) {
-        image = image.convert(format: img.Format.uint8);
+      if (image != null &&
+          (image.format != img.Format.uint8 || image.hasPalette)) {
+        image = image.convert(
+          format: img.Format.uint8,
+          numChannels: image.hasAlpha ? 4 : 3,
+        );
+      }
+      if (image != null &&
+          image.format == img.Format.uint8 &&
+          (image.numChannels == 3 || image.numChannels == 4)) {
+        nativeImage = OcrNativeImage.fromBytes(
+          bytes: image.toUint8List(),
+          width: image.width,
+          height: image.height,
+          channels: image.numChannels,
+        );
       }
     }
-    if (image == null) throw const FormatException('无法解码 OCR 图片');
+    if (nativeImage == null && image == null) {
+      throw const FormatException('无法解码 OCR 图片');
+    }
+    final imageWidth = nativeImage?.width ?? image!.width;
+    final imageHeight = nativeImage?.height ?? image!.height;
     decodeMs = decodeSw.elapsedMilliseconds;
-    await checkCancellation();
 
-    report(OcrStage.detecting);
-    final openDetSw = Stopwatch()..start();
-    final detector = obtainDetector(task.detectorPath);
-    openMs += openDetSw.elapsedMilliseconds;
-    detector.resetAllocateCount();
+    try {
+      await checkCancellation();
 
-    final detSw = Stopwatch()..start();
-    final boxes = await _detect(image, detector, checkCancellation, report);
-    detMs = detSw.elapsedMilliseconds;
-    detAllocs = detector.allocateCount;
+      report(OcrStage.detecting);
+      final openDetSw = Stopwatch()..start();
+      final detector = obtainDetector(task.detectorPath);
+      openMs += openDetSw.elapsedMilliseconds;
+      detector.resetAllocateCount();
 
-    if (task.emitDetected) {
-      final flat = Float64List(boxes.length * 4);
-      for (var i = 0; i < boxes.length; i++) {
-        final b = boxes[i].box;
-        flat[i * 4] = b.left;
-        flat[i * 4 + 1] = b.top;
-        flat[i * 4 + 2] = b.right;
-        flat[i * 4 + 3] = b.bottom;
+      final detSw = Stopwatch()..start();
+      final boxes = await _detect(
+        image: image,
+        nativeImage: nativeImage,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+        model: detector,
+        checkCancellation: checkCancellation,
+        report: report,
+      );
+      detMs = detSw.elapsedMilliseconds;
+      detAllocs = detector.allocateCount;
+
+      if (task.emitDetected) {
+        final flat = Float64List(boxes.length * 4);
+        for (var i = 0; i < boxes.length; i++) {
+          final b = boxes[i].box;
+          flat[i * 4] = b.left;
+          flat[i * 4 + 1] = b.top;
+          flat[i * 4 + 2] = b.right;
+          flat[i * 4 + 3] = b.bottom;
+        }
+        task.replyPort.send(_DetectedMessage(imageWidth, imageHeight, flat));
       }
-      task.replyPort.send(_DetectedMessage(image.width, image.height, flat));
-    }
 
-    if (boxes.isEmpty) {
+      if (boxes.isEmpty) {
+        return _WorkerResult(
+          imageWidth: imageWidth,
+          imageHeight: imageHeight,
+          lines: const [],
+          totalMs: totalSw.elapsedMilliseconds,
+          decodeMs: decodeMs,
+          openMs: openMs,
+          detMs: detMs,
+          recMs: 0,
+          detAllocs: detAllocs,
+          recAllocs: 0,
+        );
+      }
+      await checkCancellation();
+
+      List<String>? newlyLoadedDictionary;
+      final dictionary =
+          task.cachedDictionary ??
+          (newlyLoadedDictionary = await _loadDictionary(task.configPath));
+
+      int? priorityIdx;
+      if (task.priorityX != null && task.priorityY != null) {
+        final px = task.priorityX!;
+        final py = task.priorityY!;
+        var bestGap = double.infinity;
+        for (var i = 0; i < boxes.length; i++) {
+          final r = boxes[i].box;
+          final gap =
+              math.max(math.max(r.left - px, 0.0), px - r.right) +
+              math.max(math.max(r.top - py, 0.0), py - r.bottom);
+          if (gap < bestGap) {
+            bestGap = gap;
+            priorityIdx = i;
+          }
+        }
+      }
+      final order = planRecognitionOrder(
+        [for (final entry in boxes) entry.box],
+        priorityIdx: priorityIdx,
+      );
+
+      report(OcrStage.recognizing, 0, boxes.length);
+      final openRecSw = Stopwatch()..start();
+      final recognizer = obtainRecognizer(task.recognizerPath);
+      openMs += openRecSw.elapsedMilliseconds;
+      recognizer.resetAllocateCount();
+
+      final recSw = Stopwatch()..start();
+      final recognized = List<_WorkerLine?>.filled(boxes.length, null);
+      final pendingBatch = <_WorkerLine>[];
+      for (var step = 0; step < order.length; step++) {
+        final idx = order[step];
+        final entry = boxes[idx];
+        final line = await _read(
+          image: image,
+          nativeImage: nativeImage,
+          imageWidth: imageWidth,
+          imageHeight: imageHeight,
+          box: entry.box,
+          rowIndex: entry.rowIndex,
+          model: recognizer,
+          dictionary: dictionary,
+          checkCancellation: checkCancellation,
+        );
+        if (line != null) {
+          recognized[idx] = line;
+          if (task.emitPartial) pendingBatch.add(line);
+        }
+        final isPriorityDone = step == 0 && priorityIdx != null;
+        final isBatchDue = (step + 1) % 4 == 0 || step + 1 == order.length;
+        if (task.emitPartial &&
+            pendingBatch.isNotEmpty &&
+            (isPriorityDone || isBatchDue)) {
+          task.replyPort.send(
+            _PartialBatchMessage(List<_WorkerLine>.of(pendingBatch)),
+          );
+          pendingBatch.clear();
+        }
+        if ((step + 1) % 2 == 0 || step + 1 == order.length) {
+          report(OcrStage.recognizing, step + 1, boxes.length);
+        }
+      }
+      recMs = recSw.elapsedMilliseconds;
+      recAllocs = recognizer.allocateCount;
+
+      final orderedLines = <_WorkerLine>[for (final line in recognized) ?line];
       return _WorkerResult(
-        imageWidth: image.width,
-        imageHeight: image.height,
-        lines: const [],
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+        lines: orderedLines,
+        dictionary: newlyLoadedDictionary,
         totalMs: totalSw.elapsedMilliseconds,
         decodeMs: decodeMs,
         openMs: openMs,
         detMs: detMs,
-        recMs: 0,
+        recMs: recMs,
         detAllocs: detAllocs,
-        recAllocs: 0,
+        recAllocs: recAllocs,
       );
+    } finally {
+      nativeImage?.dispose();
     }
-    await checkCancellation();
-
-    List<String>? newlyLoadedDictionary;
-    final dictionary =
-        task.cachedDictionary ??
-        (newlyLoadedDictionary = await _loadDictionary(task.configPath));
-
-    int? priorityIdx;
-    if (task.priorityX != null && task.priorityY != null) {
-      final px = task.priorityX!;
-      final py = task.priorityY!;
-      var bestGap = double.infinity;
-      for (var i = 0; i < boxes.length; i++) {
-        final r = boxes[i].box;
-        final gap =
-            math.max(math.max(r.left - px, 0.0), px - r.right) +
-            math.max(math.max(r.top - py, 0.0), py - r.bottom);
-        if (gap < bestGap) {
-          bestGap = gap;
-          priorityIdx = i;
-        }
-      }
-    }
-    final order = planRecognitionOrder(
-      [for (final entry in boxes) entry.box],
-      priorityIdx: priorityIdx,
-    );
-
-    report(OcrStage.recognizing, 0, boxes.length);
-    final openRecSw = Stopwatch()..start();
-    final recognizer = obtainRecognizer(task.recognizerPath);
-    openMs += openRecSw.elapsedMilliseconds;
-    recognizer.resetAllocateCount();
-
-    final recSw = Stopwatch()..start();
-    final recognized = List<_WorkerLine?>.filled(boxes.length, null);
-    final pendingBatch = <_WorkerLine>[];
-    for (var step = 0; step < order.length; step++) {
-      final idx = order[step];
-      final entry = boxes[idx];
-      final line = await _read(
-        image,
-        entry.box,
-        entry.rowIndex,
-        recognizer,
-        dictionary,
-        checkCancellation,
-      );
-      if (line != null) {
-        recognized[idx] = line;
-        if (task.emitPartial) pendingBatch.add(line);
-      }
-      final isPriorityDone = step == 0 && priorityIdx != null;
-      final isBatchDue = (step + 1) % 4 == 0 || step + 1 == order.length;
-      if (task.emitPartial &&
-          pendingBatch.isNotEmpty &&
-          (isPriorityDone || isBatchDue)) {
-        task.replyPort.send(
-          _PartialBatchMessage(List<_WorkerLine>.of(pendingBatch)),
-        );
-        pendingBatch.clear();
-      }
-      if ((step + 1) % 2 == 0 || step + 1 == order.length) {
-        report(OcrStage.recognizing, step + 1, boxes.length);
-      }
-    }
-    recMs = recSw.elapsedMilliseconds;
-    recAllocs = recognizer.allocateCount;
-
-    final orderedLines = <_WorkerLine>[for (final line in recognized) ?line];
-    return _WorkerResult(
-      imageWidth: image.width,
-      imageHeight: image.height,
-      lines: orderedLines,
-      dictionary: newlyLoadedDictionary,
-      totalMs: totalSw.elapsedMilliseconds,
-      decodeMs: decodeMs,
-      openMs: openMs,
-      detMs: detMs,
-      recMs: recMs,
-      detAllocs: detAllocs,
-      recAllocs: recAllocs,
-    );
   }
 
   static Future<List<String>> _loadDictionary(String configPath) async {
@@ -923,58 +956,78 @@ class LocalOcrService {
     return <String>['', ...characters.cast<String>(), ' '];
   }
 
-  static Future<List<({Rect box, int rowIndex})>> _detect(
-    img.Image image,
-    OcrInferenceModel model,
-    Future<void> Function() checkCancellation,
-    void Function(OcrStage, [int, int]) report,
-  ) async {
+  static Future<List<({Rect box, int rowIndex})>> _detect({
+    required img.Image? image,
+    required OcrNativeImage? nativeImage,
+    required int imageWidth,
+    required int imageHeight,
+    required OcrInferenceModel model,
+    required Future<void> Function() checkCancellation,
+    required void Function(OcrStage, [int, int]) report,
+  }) async {
     // 长截图以原图坐标切片，重叠区域让跨边界的文字能在相邻片中完整出现。
-    final scale = math.min(1.0, _detectMaxWidth / image.width);
+    final scale = math.min(1.0, _detectMaxWidth / imageWidth);
     int aligned(double dimension) => math.max(1, (dimension / 32).round()) * 32;
-    final width = aligned(image.width * scale);
+    final width = aligned(imageWidth * scale);
     final bandHeight = (_detectBandMaxHeight / scale).round();
     final overlap = (160 / scale).round();
     final stride = bandHeight - overlap;
-    final totalBands = image.height <= bandHeight
+    final totalBands = imageHeight <= bandHeight
         ? 1
-        : ((image.height - overlap - 1) ~/ stride) + 1;
+        : ((imageHeight - overlap - 1) ~/ stride) + 1;
     final boxes = <Rect>[];
     var bandIndex = 0;
-    for (var top = 0; top < image.height; top += stride) {
+    for (var top = 0; top < imageHeight; top += stride) {
       await checkCancellation();
-      final height = math.min(bandHeight, image.height - top);
-      final band = top == 0 && height == image.height
-          ? image
-          : img.copyCrop(
-              image,
-              x: 0,
-              y: top,
-              width: image.width,
-              height: height,
-            );
+      final height = math.min(bandHeight, imageHeight - top);
       final inputHeight = aligned(height * scale);
-      final resized =
-          band.width == width && band.height == inputHeight
-          ? band
-          : img.copyResize(
-              band,
-              width: width,
-              height: inputHeight,
-              interpolation: img.Interpolation.linear,
-            );
-      final input = _pixels(resized, width, detection: true);
-      final detected = model.infer(width, inputHeight, input, (shape, scores) {
-        if (shape.length != 4 ||
-            shape[0] != 1 ||
-            shape[1] != 1 ||
-            shape[2] != inputHeight ||
-            shape[3] != width) {
-          throw const FormatException('OCR 检测输出尺寸不匹配');
-        }
-        return _regions(scores, width, inputHeight);
-      });
-      final last = top + height == image.height;
+      final List<Rect> detected;
+      if (nativeImage != null) {
+        final flat = OcrNativeOps.runDetectionBand(
+          detector: model,
+          image: nativeImage,
+          cropY: top,
+          cropHeight: height,
+          dstWidth: width,
+          dstHeight: inputHeight,
+        );
+        detected = [
+          for (var i = 0; i + 3 < flat.length; i += 4)
+            Rect.fromLTRB(flat[i], flat[i + 1], flat[i + 2], flat[i + 3]),
+        ];
+      } else {
+        final fallback = image!;
+        final band = top == 0 && height == fallback.height
+            ? fallback
+            : img.copyCrop(
+                fallback,
+                x: 0,
+                y: top,
+                width: fallback.width,
+                height: height,
+              );
+        final resized =
+            band.width == width && band.height == inputHeight
+            ? band
+            : img.copyResize(
+                band,
+                width: width,
+                height: inputHeight,
+                interpolation: img.Interpolation.linear,
+              );
+        final input = _pixels(resized, width, detection: true);
+        detected = model.infer(width, inputHeight, input, (shape, scores) {
+          if (shape.length != 4 ||
+              shape[0] != 1 ||
+              shape[1] != 1 ||
+              shape[2] != inputHeight ||
+              shape[3] != width) {
+            throw const FormatException('OCR 检测输出尺寸不匹配');
+          }
+          return _regions(scores, width, inputHeight);
+        });
+      }
+      final last = top + height == imageHeight;
       for (final box in detected) {
         if ((top > 0 && box.top <= 1) ||
             (!last && box.bottom >= inputHeight - 1)) {
@@ -982,9 +1035,9 @@ class LocalOcrService {
         }
         boxes.add(
           Rect.fromLTRB(
-            box.left * image.width / width,
+            box.left * imageWidth / width,
             top + box.top * height / inputHeight,
-            box.right * image.width / width,
+            box.right * imageWidth / width,
             top + box.bottom * height / inputHeight,
           ),
         );
@@ -1199,16 +1252,19 @@ class LocalOcrService {
     return ordered;
   }
 
-  static Future<_WorkerLine?> _read(
-    img.Image image,
-    Rect box,
-    int rowIndex,
-    OcrInferenceModel model,
-    List<String> dictionary,
-    Future<void> Function() checkCancellation,
-  ) async {
+  static Future<_WorkerLine?> _read({
+    required img.Image? image,
+    required OcrNativeImage? nativeImage,
+    required int imageWidth,
+    required int imageHeight,
+    required Rect box,
+    required int rowIndex,
+    required OcrInferenceModel model,
+    required List<String> dictionary,
+    required Future<void> Function() checkCancellation,
+  }) async {
     final bounds = box.intersect(
-      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      Rect.fromLTWH(0, 0, imageWidth.toDouble(), imageHeight.toDouble()),
     );
     if (bounds.isEmpty) return null;
     final top = bounds.top.floor(), bottom = bounds.bottom.ceil();
@@ -1229,42 +1285,78 @@ class LocalOcrService {
         x + 1,
         left + (end * (right - left) / lineWidth).ceil(),
       );
-      final part = img.copyCrop(
-        image,
-        x: x,
-        y: top,
-        width: math.min(image.width - x, xEnd - x),
-        height: math.min(image.height - top, bottom - top),
-      );
-      final resized = img.copyResize(
-        part,
-        height: height,
-        width: math.max(1, end - start),
-        interpolation: img.Interpolation.linear,
-      );
-      final width = bucketRecognitionWidth(resized.width);
+      final cropW = math.min(imageWidth - x, xEnd - x);
+      final cropH = math.min(imageHeight - top, bottom - top);
+      if (cropW <= 0 || cropH <= 0) break;
+      final resizedW = math.max(1, end - start);
+      final width = bucketRecognitionWidth(resizedW);
       final last = end == lineWidth;
-      final tokens = model.infer(
-        width,
-        height,
-        _pixels(resized, width, detection: false),
-        (shape, scores) {
-          if (shape.length != 3 ||
-              shape[0] != 1 ||
-              shape[2] != dictionary.length) {
-            throw const FormatException('OCR 模型与字典不匹配');
-          }
-          return _decodeTokens(
-            scores,
-            shape[1],
-            dictionary,
-            width,
-            start == 0 ? 0 : overlap ~/ 2,
-            last ? resized.width : resized.width - overlap ~/ 2,
-          );
-        },
-      );
-      final scaleX = part.width / resized.width;
+      final fromPx = start == 0 ? 0.0 : (overlap ~/ 2).toDouble();
+      final untilPx = last
+          ? resizedW.toDouble()
+          : (resizedW - overlap ~/ 2).toDouble();
+
+      final List<({String text, double leftPx, double rightPx})> tokens;
+      if (nativeImage != null) {
+        final decoded = OcrNativeOps.runRecognitionSlice(
+          recognizer: model,
+          image: nativeImage,
+          cropX: x,
+          cropY: top,
+          cropWidth: cropW,
+          cropHeight: cropH,
+          resizedWidth: resizedW,
+          bucketWidth: width,
+          dstHeight: height,
+          fromPx: fromPx,
+          untilPx: untilPx,
+          expectedClasses: dictionary.length,
+        );
+        tokens = [
+          for (var i = 0; i < decoded.labels.length; i++)
+            (
+              text: dictionary[decoded.labels[i]],
+              leftPx: decoded.leftPx[i],
+              rightPx: decoded.rightPx[i],
+            ),
+        ];
+      } else {
+        final fallback = image!;
+        final part = img.copyCrop(
+          fallback,
+          x: x,
+          y: top,
+          width: cropW,
+          height: cropH,
+        );
+        final resized = img.copyResize(
+          part,
+          height: height,
+          width: resizedW,
+          interpolation: img.Interpolation.linear,
+        );
+        tokens = model.infer(
+          width,
+          height,
+          _pixels(resized, width, detection: false),
+          (shape, scores) {
+            if (shape.length != 3 ||
+                shape[0] != 1 ||
+                shape[2] != dictionary.length) {
+              throw const FormatException('OCR 模型与字典不匹配');
+            }
+            return _decodeTokens(
+              scores,
+              shape[1],
+              dictionary,
+              width,
+              fromPx.toInt(),
+              untilPx.toInt(),
+            );
+          },
+        );
+      }
+      final scaleX = cropW / resizedW;
       for (final token in tokens) {
         final rawLeft = (x + token.leftPx * scaleX)
             .clamp(bounds.left, bounds.right)

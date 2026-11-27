@@ -5,8 +5,22 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 part 'src/litert_bindings.dart';
+part 'src/ocr_ops_bindings.dart';
 
 const _runtime = 'package:fluxdo_ocr/litert';
+// 来自 LiteRT 2.4.0 xnnpack_delegate.h：
+// FORCE_FP16 (0x04) 仅在具备原生 ARM64 NEON FP16 硬件的平台上启用（x86 模拟反而更慢）；
+// Subgraph reshaping 在 LiteRT 2.4.0 中已默认开启，无需再显式传废弃标志位。
+const _xnnFlagForceFp16 = 0x00000004;
+
+bool _supportsNativeFp16() => switch (Abi.current()) {
+  Abi.macosArm64 ||
+  Abi.iosArm64 ||
+  Abi.androidArm64 ||
+  Abi.linuxArm64 ||
+  Abi.windowsArm64 => true,
+  _ => false,
+};
 
 void _check(int status, String operation) {
   if (status != 0) throw StateError('LiteRT $operation 失败（$status）');
@@ -67,7 +81,16 @@ final class OcrInferenceModel {
         using((arena) {
           final xnnOptions = arena<_XnnOptions>()..ref = _xnnOptionsDefault();
           xnnOptions.ref.numThreads = numThreads;
+          final baseFlags = xnnOptions.ref.flags;
+          final tunedFlags = _supportsNativeFp16()
+              ? (baseFlags | _xnnFlagForceFp16)
+              : baseFlags;
+          xnnOptions.ref.flags = tunedFlags;
           session._delegate = _xnnCreate(xnnOptions);
+          if (session._delegate == nullptr && tunedFlags != baseFlags) {
+            xnnOptions.ref.flags = baseFlags;
+            session._delegate = _xnnCreate(xnnOptions);
+          }
         });
         if (session._delegate != nullptr) {
           _optionsAddDelegate(options, session._delegate);
@@ -105,10 +128,32 @@ final class OcrInferenceModel {
     Float32List pixels,
     T Function(List<int> shape, Float32List scores) read,
   ) {
-    if (_interpreter == nullptr) throw StateError('识字模型已释放');
-    if (_busy) throw StateError('同一识字会话不能重入');
     if (width < 1 || height < 1 || pixels.length != width * height * 3) {
       throw ArgumentError('OCR 图片尺寸不匹配');
+    }
+    return inferDirect(
+      width,
+      height,
+      (inputBuffer) => inputBuffer.asTypedList(pixels.length).setAll(0, pixels),
+      (shape, outputBuffer) {
+        final length = shape.reduce((a, b) => a * b);
+        return read(shape, outputBuffer.asTypedList(length));
+      },
+    );
+  }
+
+  /// 零拷贝原生张量推理：直接暴露 LiteRT 输入/输出 `Pointer<Float>` 给 C 预处理与后处理算子，
+  /// 省去中间 Dart `Float32List` 分配与跨边界内存拷贝。
+  T inferDirect<T>(
+    int width,
+    int height,
+    void Function(Pointer<Float> inputBuffer) fillInput,
+    T Function(List<int> shape, Pointer<Float> outputBuffer) readOutput,
+  ) {
+    if (_interpreter == nullptr) throw StateError('识字模型已释放');
+    if (_busy) throw StateError('同一识字会话不能重入');
+    if (width < 1 || height < 1) {
+      throw ArgumentError('OCR 图片尺寸无效');
     }
     _busy = true;
     try {
@@ -125,11 +170,12 @@ final class OcrInferenceModel {
         _height = height;
       }
       final input = _inputTensor(_interpreter, 0);
-      if (_tensorBytes(input) != pixels.lengthInBytes ||
-          _tensorData(input) == nullptr) {
+      final expectedBytes = width * height * 3 * sizeOf<Float>();
+      final inputPtr = _tensorData(input);
+      if (_tensorBytes(input) != expectedBytes || inputPtr == nullptr) {
         throw const FormatException('OCR 输入缓冲区尺寸不匹配');
       }
-      _tensorData(input).asTypedList(pixels.length).setAll(0, pixels);
+      fillInput(inputPtr);
       _check(_invoke(_interpreter), '执行模型');
       // 动态输出只有 Invoke 后才具有最终尺寸；每次都重新读取 tensor 指针和 shape。
       final output = _outputTensor(_interpreter, 0);
@@ -138,11 +184,12 @@ final class OcrInferenceModel {
       final shape = List<int>.generate(rank, (i) => _tensorDim(output, i));
       if (shape.any((d) => d <= 0)) throw const FormatException('OCR 输出尺寸无效');
       final length = shape.reduce((a, b) => a * b);
+      final outputPtr = _tensorData(output);
       if (_tensorBytes(output) != length * sizeOf<Float>() ||
-          _tensorData(output) == nullptr) {
+          outputPtr == nullptr) {
         throw const FormatException('OCR 输出缓冲区尺寸不匹配');
       }
-      return read(shape, _tensorData(output).asTypedList(length));
+      return readOutput(shape, outputPtr);
     } finally {
       _busy = false;
     }
