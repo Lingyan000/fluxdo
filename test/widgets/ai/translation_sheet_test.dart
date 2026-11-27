@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,8 +58,9 @@ void main() {
           child: MaterialApp(
             navigatorKey: navigatorKey,
             home: const Scaffold(
-              body: Padding(
-                padding: EdgeInsets.all(16),
+              body: AppSheetScaffold(
+                title: '翻译',
+                maxHeightFactor: 0.85,
                 child: TranslationSheetBody(text: '<原文>\nHello'),
               ),
             ),
@@ -69,11 +71,23 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     expect(service.inputs, ['<原文>\nHello']);
-    service.streams[0].add('旧译文');
+    final longResult = List.filled(80, '旧译文').join('\n');
+    service.streams[0].add(longResult);
     await tester.pump();
-    expect(find.text('旧译文'), findsOneWidget);
+    expect(find.text(longResult), findsOneWidget);
 
-    await tester.tap(find.byType(DropdownButton<TranslationEngine>));
+    final engine = find.byType(AppDropdown<TranslationEngine>);
+    final engineRect = tester.getRect(engine);
+    final result = find.byType(SingleChildScrollView);
+    final resultTop = tester.getTopLeft(find.byType(SelectableText));
+    await tester.drag(result, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.byType(SelectableText)).dy,
+      lessThan(resultTop.dy),
+    );
+    expect(tester.getRect(engine), engineRect);
+    await tester.tap(engine);
     await tester.pumpAndSettle();
     await tester.tap(find.text('哔哩哔哩（免费）').last);
     await tester.pump();
