@@ -18,6 +18,7 @@ import 'network/cookie/cookie_logger.dart';
 import 'log/log_writer.dart';
 import 'local_notification_service.dart'; // 用于获取全局 navigatorKey
 import 'cf_challenge_logger.dart';
+import 'cf_clearance_authority.dart';
 import 'cf_verification_page_palette.dart';
 import 'cf_verification_state.dart';
 import 'cf_clearance_refresh_service.dart';
@@ -1380,6 +1381,9 @@ class _CfChallengePageState extends State<CfChallengePage> {
           ? {'cf_clearance': freshClearance}
           : null,
     );
+    if (freshClearance != null && freshClearance.isNotEmpty) {
+      CfClearanceAuthority.instance.noteChallengeVerified(freshClearance);
+    }
   }
 
   // ---------------------------------------------------------------------------

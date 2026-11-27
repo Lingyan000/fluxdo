@@ -9,6 +9,7 @@ import '../constants.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/scroll_busy_signal.dart';
 import 'cf_challenge_logger.dart';
+import 'cf_clearance_authority.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
 import 'network/cookie/webview_cookie_priming.dart';
@@ -72,6 +73,9 @@ class CfClearanceRefreshService {
   /// 只有 Turnstile 运行后新出现的差集值才视为本轮现场铸造的新票，允许立即替换在位值，
   /// 已存在于 WebView 的历史残留仍交由 CfClearanceAuthority 拦截。
   Set<String> _knownWebViewValues = const {};
+
+  /// 启动/重载前的 WebView 基线是否成功采集；读取失败时本代禁止晋升，防止误放旧残留。
+  bool _baselineCaptured = false;
   DateTime? _lastCookieExpiresAt;
   DateTime? _runningStartedAt;
   DateTime? _lastSignalAt;
@@ -537,6 +541,7 @@ document.close();
     _isDisposing = true;
     _isRunning = false;
     _isSyncingCookies = false;
+    _baselineCaptured = false;
     _cancelRuntimeTimers();
 
     final wv = _headlessWebView;
@@ -687,6 +692,7 @@ document.close();
   Future<void> _captureKnownWebViewValues(
     InAppWebViewController controller,
   ) async {
+    _baselineCaptured = false;
     final known = <String>{
       if (_lastCookieValue != null && _lastCookieValue!.isNotEmpty)
         CookieValueCodec.decode(_lastCookieValue!),
@@ -703,10 +709,14 @@ document.close();
           known.add(CookieValueCodec.decode(value));
         }
       }
+      _knownWebViewValues = known;
+      _baselineCaptured = true;
     } catch (e) {
-      CfChallengeLogger.log('[CfRefresh] 记录基线 WebView cf_clearance 失败: $e');
+      _knownWebViewValues = known;
+      CfChallengeLogger.log(
+        '[CfRefresh] 记录基线 WebView cf_clearance 失败，本代禁用新票晋升: $e',
+      );
     }
-    _knownWebViewValues = known;
   }
 
   /// 从当前 WebView 快照中识别本轮 Turnstile 现场新铸造的唯一 cf_clearance。
@@ -738,9 +748,13 @@ document.close();
     try {
       String? freshlyMinted;
       final canPromoteFreshMint =
-          reason == 'turnstile_token' ||
-          (reason == 'poll' && _lastTurnstileActivityAt != null);
-      if (canPromoteFreshMint) {
+          _baselineCaptured &&
+          (reason == 'turnstile_token' ||
+              (reason == 'poll' && _lastTurnstileActivityAt != null));
+      if (canPromoteFreshMint &&
+          !await CfClearanceAuthority.instance
+              .isIncumbentChallengeProtected()) {
+        if (!_canHandleGeneration(gen)) return false;
         try {
           final currentWebViewValues = await BoundarySyncService.instance
               .readCookieValuesFromWebView(
@@ -935,6 +949,7 @@ document.close();
     _lastCookieValue = null;
     _lastWebViewCookieValue = null;
     _knownWebViewValues = const {};
+    _baselineCaptured = false;
     _lastCookieExpiresAt = null;
     _runningStartedAt = null;
     _lastSignalAt = null;

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/cf_clearance_authority.dart';
 import 'package:fluxdo/services/cf_clearance_refresh_service.dart';
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
 
@@ -237,6 +238,75 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('启动基线读取失败时禁用本代新票晋升，防止误放旧残留', () async {
+      if (Platform.isWindows) return;
+
+      await CookieJarService().setCookie(
+        'cf_clearance',
+        'healthy-incumbent',
+        expires: DateTime.now().toUtc().add(const Duration(days: 7)),
+      );
+      var readCount = 0;
+      platform.cookies.readSnapshot = () async {
+        readCount++;
+        if (readCount == 1) {
+          throw StateError('cookie store timeout');
+        }
+        return [cfTestCookie('untracked-old-residue')];
+      };
+
+      final service = CfClearanceRefreshService();
+      service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final controller = platform.headlessViews.single._controller;
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(await CookieJarService().getCfClearance(), 'healthy-incumbent');
+    });
+
+    test('/challenge 短保护窗内保留高权重票，解除后 Turnstile 新票立刻生效', () async {
+      if (Platform.isWindows) return;
+
+      await CookieJarService().setCookie(
+        'cf_clearance',
+        'challenge-high-trust',
+        expires: DateTime.now().toUtc().add(const Duration(days: 7)),
+      );
+      CfClearanceAuthority.instance.noteChallengeVerified(
+        'challenge-high-trust',
+      );
+      platform.cookies.values = [cfTestCookie('challenge-high-trust')];
+
+      final service = CfClearanceRefreshService();
+      service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // 保护窗内 Turnstile 首铸新票不顶替刚过完 /challenge 的高权重票
+      platform.cookies.values = [cfTestCookie('turnstile-first-mint')];
+      final controller = platform.headlessViews.single._controller;
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await CookieJarService().getCfClearance(), 'challenge-high-trust');
+
+      // 保护窗解除（如在位值被撞或超窗）后，下一次回调立刻晋升 Turnstile 新票
+      CfClearanceAuthority.instance.noteIncumbentChallenged(
+        'challenge-high-trust',
+      );
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await CookieJarService().getCfClearance(), 'turnstile-first-mint');
     });
   });
 }
