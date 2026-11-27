@@ -17,6 +17,7 @@ import '../../../models/topic.dart';
 import '../../../models/pending_post.dart';
 import '../../../providers/message_bus_providers.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/fluxdo_render_callbacks.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/responsive.dart';
 import '../../../utils/scroll_busy_signal.dart';
@@ -722,12 +723,7 @@ class _TopicPostListState extends State<TopicPostList> {
         nodes: nodes,
         ctx: currentSnapshot,
         context: context,
-        // 预热产物按 (inlines 身份, style, theme) 进全局缓存,handler 用
-        // 共享 static(emoji/mention/localDate/math/download)+ 无 post
-        // 语境的兜底即可 —— 挂载时若 handler 语义不同也不影响:内容同
-        // 身份 → 命中的是 span/排版,recognizer 行为经 mount 桥现取活
-        // context,linkHandler 闭包冻结的 post.id 仅用于点击追踪,预热
-        // 段落全部来自「该 post 自己的 AST」,forPost 语义一致。
+        mentionTapHandler: FluxdoRenderCallbacks.handlePrewarmedMentionTap,
         totalImagesInPost: 0,
         glyphBaker: _glyphBaker,
         devicePixelRatio: MediaQuery.devicePixelRatioOf(context),

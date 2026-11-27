@@ -411,6 +411,7 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
             nodes: nodes,
             ctx: currentSnapshot,
             context: context,
+            mentionTapHandler: FluxdoRenderCallbacks.handlePrewarmedMentionTap,
             totalImagesInPost: 0,
             glyphBaker: _glyphBaker,
             devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
