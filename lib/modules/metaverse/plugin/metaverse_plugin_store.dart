@@ -211,18 +211,34 @@ class MetaversePluginStore {
   }
 
   /// 展示偏好与安装身份分离，排序或隐藏不会重启插件、改权限。
-  List<({String id, bool visible})> cardLayout([List<InstalledMetaversePlugin>? plugins]) {
+  List<({String id, bool visible})> cardLayout([List<InstalledMetaversePlugin>? plugins]) => [
+    for (final item in _cardPositions(plugins)) (id: item.id, visible: item.visible),
+  ];
+
+  List<({String id, bool visible, int order})> _cardPositions([List<InstalledMetaversePlugin>? plugins]) {
     final ids = (plugins ?? loadIndex()).map((p) => p.id).toSet();
-    final result = <({String id, bool visible})>[];
+    final result = <({String id, bool visible, int order})>[];
     try {
       final raw = jsonDecode(_preferences.getString(cardsKey) ?? '[]');
       if (raw is List && raw.length <= 32) {
         for (final item in raw) {
-          if (item is Map && ids.remove(item['id'])) result.add((id: item['id'] as String, visible: item['visible'] != false));
+          if (item is Map && ids.remove(item['id'])) {
+            final order = item['order'];
+            result.add((id: item['id'] as String, visible: item['visible'] != false,
+              order: order is int && order >= 0 && order <= 1024 ? order : result.length));
+          }
         }
       }
     } catch (_) {}
-    return [...result, for (final id in ids) (id: id, visible: true)];
+    // 未安装的备份条目不进入卡片列表；保留绝对顺序，分批恢复时仍能比较。
+    var nextOrder = result.fold(0, (next, item) => item.order >= next ? item.order + 1 : next);
+    result.addAll([for (final id in ids) (id: id, visible: true, order: nextOrder++)]);
+    final original = {for (final (index, item) in result.indexed) item.id: index};
+    result.sort((a, b) {
+      final order = a.order.compareTo(b.order);
+      return order != 0 ? order : original[a.id]!.compareTo(original[b.id]!);
+    });
+    return result;
   }
 
   Future<void> saveCardLayout(List<({String id, bool visible})> layout) async {
@@ -235,10 +251,18 @@ class MetaversePluginStore {
   }
 
   Future<void> restoreCardLayout(String id, Map? presentation) async {
-    if (presentation == null) return;
-    final layout = cardLayout()..removeWhere((item) => item.id == id);
-    layout.insert((presentation['order'] as int).clamp(0, layout.length), (id: id, visible: presentation['visible'] as bool));
-    await saveCardLayout(layout);
+    if (presentation == null || isolated) return;
+    final positions = _cardPositions();
+    if (!positions.any((item) => item.id == id)) return;
+    positions.removeWhere((item) => item.id == id);
+    positions.add((id: id, visible: presentation['visible'] as bool, order: presentation['order'] as int));
+    if (!await _preferences.setString(cardsKey, jsonEncode([
+      for (final item in positions) {
+        'id': item.id,
+        'visible': item.visible,
+        'order': item.order,
+      },
+    ]))) { throw StateError('插件卡片设置保存失败'); }
   }
 
   Future<Directory> _directory(String id) async {

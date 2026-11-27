@@ -84,6 +84,44 @@ void main() {
     expect(store.cardLayout().last, (id:'example.updates',visible:false));
   });
 
+  for (final installed in [false, true]) {
+  for (final restoreOrder in [[0, 1, 2, 3], [2, 3, 1, 0], [3, 1, 0, 2]]) {
+  test('逐个恢复保持备份卡片排序，已安装=$installed 顺序=$restoreOrder', () async {
+    final packages = [
+      for (final id in ['example.a', 'example.b', 'example.c', 'example.d'])
+        MetaversePluginPackage(
+          manifest: MetaversePluginManifest.parse({...updateManifest('1.0.0'), 'id': id}),
+          source: 'https://example.org/index.json',
+          code: updatePackage('1.0.0').code,
+        ),
+    ];
+    await controller.remove('example.updates');
+    for (final package in packages) { await controller.install(package); }
+    await store.saveCardLayout([
+      for (final package in packages.reversed) (id: package.manifest.id, visible: package.manifest.id != 'example.c'),
+    ]);
+    final backup = MetaversePluginBackup(directory);
+    backup.stage(await backup.export(store));
+    if (installed) {
+      await store.saveCardLayout([for (final package in packages) (id: package.manifest.id, visible: true)]);
+    } else {
+      for (final package in packages) { await controller.remove(package.manifest.id); }
+    }
+    for (final index in restoreOrder) {
+      final package = packages[index];
+      final record = backup.pending().firstWhere((item) => item['manifest']['id'] == package.manifest.id);
+      await controller.restoreBackup(package, record, {});
+    }
+    expect(store.cardLayout(), [
+      (id: 'example.d', visible: true), (id: 'example.c', visible: false),
+      (id: 'example.b', visible: true), (id: 'example.a', visible: true),
+    ]);
+    expect(backup.pending(), isEmpty);
+    expect(container.read(metaversePluginsProvider).every((p) => !p.enabled), isTrue);
+  });
+  }
+  }
+
   test('索引提交前中断丢弃候选，提交后中断恢复同版本数据', () async {
     final previous = controller.byId('example.updates')!;
     final package = updatePackage('1.1.0');
