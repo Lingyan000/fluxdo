@@ -4,7 +4,7 @@
   "@metaverse_permissionPreviewCount": {"placeholders": {"permissions":{"type":"int"},"domains":{"type":"int"}}},
   "metaverse_chooseLink": "选择打开方式",
   "metaverse_linkBrowser": "在浏览器中打开",
-  "metaverse_rememberLink": "记住此域名的选择",
+  "metaverse_rememberLink": "记住此域名",
   "metaverse_linksOverlap": "此域名也由其他服务接管，点击链接时可选择打开方式。",
   "metaverse_arrangeCards": "整理服务卡片",
   "metaverse_showCard": "在首页显示卡片",

@@ -3,7 +3,7 @@
   "metaverse_permissionPreviewCount": "{permissions} 項可管理權限 · {domains} 個連線網域",
   "metaverse_chooseLink": "選擇開啟方式",
   "metaverse_linkBrowser": "在瀏覽器中開啟",
-  "metaverse_rememberLink": "記住此網域的選擇",
+  "metaverse_rememberLink": "記住此網域",
   "metaverse_linksOverlap": "此網域也由其他服務接管，點擊連結時可選擇開啟方式。",
   "metaverse_arrangeCards": "整理服務卡片",
   "metaverse_showCard": "在首頁顯示卡片",
