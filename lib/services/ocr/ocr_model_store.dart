@@ -65,13 +65,20 @@ class OcrModelStore {
   OcrModelStore({
     Dio? dio,
     Future<Directory> Function()? directory,
+    Future<Directory> Function()? paragraphDirectory,
     this.bundles = defaultBundles,
+    this.paragraphModelUrl = defaultParagraphModelUrl,
+    this.paragraphModelFile = defaultParagraphModelFile,
   }) : _dio = dio ?? TranslationService.createClient(),
-       _directory = directory ?? _defaultDirectory;
+       _directory = directory ?? _defaultDirectory,
+       _paragraphDirectory =
+           paragraphDirectory ??
+           (directory == null ? _defaultParagraphDirectory : null);
 
   // 从飞桨官方 PP-OCRv6 small 转换；转换与发布契约见 packages/fluxdo_ocr/README.md。
   // 只发布固定摘要的 FP16 权重，输入输出仍是 float32。运行库随包，模型按需下载。
   static const modelVersion = 'ppocr-v6-small-litert-1';
+  static const paragraphModelVersion = 'line2para-1';
   static const _baseUrl = String.fromEnvironment(
     'FLUXDO_OCR_MODEL_BASE_URL',
     defaultValue:
@@ -81,6 +88,23 @@ class OcrModelStore {
   static const _archiveBaseUrl = String.fromEnvironment(
     'FLUXDO_OCR_MODEL_ARCHIVE_BASE_URL',
   );
+
+  // 智能段落归并模型来源于 mgchao/SnowShotOCR（Apache-2.0），固定提交并校验 SHA-256。
+  // 参见 packages/fluxdo_ocr/README.md。
+  static const defaultParagraphModelUrl = String.fromEnvironment(
+    'FLUXDO_OCR_LINE2PARA_URL',
+    defaultValue:
+        'https://modelscope.cn/models/mgchao/SnowShotOCR/resolve/'
+        'a74b1a19f017058b3481906cbdb345622f2f2911/'
+        'line2para/line2para_1_2-epoch12-signed-1.625.onnx',
+  );
+  static const defaultParagraphModelFile = OcrModelFile(
+    'line2para_1_2-epoch12-signed-1.625.onnx',
+    'line2para_1_2-epoch12-signed-1.625.onnx',
+    3061303,
+    '956253efb9eefe81692b5ba88b2923f1a012427933768acd5657c509b7363ac5',
+  );
+  static const _paragraphRetryCooldown = Duration(minutes: 5);
   static const _det = OcrModelFile(
     'det.tflite',
     'det.tflite',
@@ -112,13 +136,26 @@ class OcrModelStore {
   ];
   static int get downloadBytes => _det.size + _rec.size + _config.size;
   final List<OcrModelBundle> bundles;
+  final String paragraphModelUrl;
+  final OcrModelFile paragraphModelFile;
   final Dio _dio;
   final Future<Directory> Function() _directory;
+  final Future<Directory> Function()? _paragraphDirectory;
   Future<void>? _pending;
+  Future<String?>? _paragraphPending;
+  DateTime? _paragraphCooldownUntil;
   final Map<String, ({int size, int modifiedMs})> _verifiedFiles = {};
 
   static Future<Directory> _defaultDirectory() async => Directory(
     p.join((await getApplicationSupportDirectory()).path, 'ocr', modelVersion),
+  );
+
+  static Future<Directory> _defaultParagraphDirectory() async => Directory(
+    p.join(
+      (await getApplicationSupportDirectory()).path,
+      'ocr',
+      paragraphModelVersion,
+    ),
   );
 
   Future<OcrModelPaths> paths() async {
@@ -128,6 +165,117 @@ class OcrModelStore {
       recognizer: p.join(dir, _rec.name),
       config: p.join(dir, _config.name),
     );
+  }
+
+  /// 若 line2para 智能段落归并模型已就绪且通过校验，返回其本地文件路径；否则返回 null。
+  Future<String?> paragraphModelPathIfReady() async {
+    final getDir = _paragraphDirectory;
+    if (getDir == null) return null;
+    if (getDir == _defaultParagraphDirectory &&
+        Platform.environment['FLUTTER_TEST'] == 'true') {
+      return null;
+    }
+    try {
+      final dir = await getDir();
+      final file = File(p.join(dir.path, paragraphModelFile.name));
+      if (await _isFileReady(
+        file,
+        paragraphModelFile.size,
+        paragraphModelFile.sha256Hex,
+      )) {
+        return file.path;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 按需获取 line2para 智能段落归并模型（约 2.92 MiB）。
+  ///
+  /// - 已落盘时立即返回路径；
+  /// - 未下载时以断点续传 + SHA-256 校验下载，不抛致命异常，失败时记录冷却并返回 null，
+  ///   由上层自动回退到本地几何排版；
+  /// - 传入 [waitTimeout] 时，若下载在超时内未完成则先返回 null 让本次识字不阻塞，
+  ///   底层下载任务仍会在后台继续完成供下次复用。
+  Future<String?> ensureParagraphModel({Duration? waitTimeout}) async {
+    final getDir = _paragraphDirectory;
+    if (getDir == null) return null;
+    if (getDir == _defaultParagraphDirectory &&
+        Platform.environment['FLUTTER_TEST'] == 'true') {
+      return null;
+    }
+    final ready = await paragraphModelPathIfReady();
+    if (ready != null) return ready;
+    final uri = Uri.tryParse(paragraphModelUrl);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return null;
+    final cooldown = _paragraphCooldownUntil;
+    if (cooldown != null && DateTime.now().isBefore(cooldown)) return null;
+
+    var task = _paragraphPending;
+    if (task == null) {
+      task = _downloadParagraphModel(getDir);
+      _paragraphPending = task;
+      unawaited(
+        task.whenComplete(() {
+          if (identical(_paragraphPending, task)) {
+            _paragraphPending = null;
+          }
+        }),
+      );
+    }
+    if (waitTimeout == null) return task;
+    try {
+      return await task.timeout(waitTimeout);
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  Future<String?> _downloadParagraphModel(
+    Future<Directory> Function() getDir,
+  ) async {
+    try {
+      final dir = await getDir();
+      await dir.create(recursive: true);
+      final target = File(p.join(dir.path, paragraphModelFile.name));
+      if (await _isFileReady(
+        target,
+        paragraphModelFile.size,
+        paragraphModelFile.sha256Hex,
+      )) {
+        return target.path;
+      }
+      final part = File('${target.path}.part');
+      final token = CancelToken();
+      await _fetch(
+        paragraphModelUrl,
+        part,
+        paragraphModelFile.size,
+        paragraphModelFile.sha256Hex,
+        token,
+        (_) {},
+      );
+      await part.rename(target.path);
+      final stat = await target.stat();
+      _verifiedFiles[target.path] = (
+        size: stat.size,
+        modifiedMs: stat.modified.millisecondsSinceEpoch,
+      );
+      _paragraphCooldownUntil = null;
+      AppLogger.info(
+        'line2para 智能排版模型就绪 (${paragraphModelFile.size} bytes)',
+        tag: 'OCR',
+      );
+      return target.path;
+    } catch (error) {
+      _paragraphCooldownUntil = DateTime.now().add(_paragraphRetryCooldown);
+      AppLogger.warning(
+        'line2para 模型下载失败，本次回退本地几何排版: $error',
+        tag: 'OCR',
+      );
+      return null;
+    }
   }
 
   Future<bool> isReady() async {
@@ -147,9 +295,17 @@ class OcrModelStore {
   /// 清理内存中的校验缓存（例如推理打开模型异常时强制重新校验磁盘文件）。
   void invalidateVerificationCache() => _verifiedFiles.clear();
 
-  /// 返回模型目录当前占用的总字节数（包含断点临时文件）。
+  /// 返回模型目录当前占用的总字节数（包含断点临时文件与 line2para 排版模型）。
   Future<int> installedBytes() async {
-    final dir = await _directory();
+    var total = await _directoryBytes(await _directory());
+    final getParaDir = _paragraphDirectory;
+    if (getParaDir != null) {
+      total += await _directoryBytes(await getParaDir());
+    }
+    return total;
+  }
+
+  static Future<int> _directoryBytes(Directory dir) async {
     if (!await dir.exists()) return 0;
     var total = 0;
     await for (final entity in dir.list(recursive: true, followLinks: false)) {
@@ -164,17 +320,30 @@ class OcrModelStore {
     return total;
   }
 
-  /// 删除已下载的离线识字模型以释放存储空间。
+  /// 删除已下载的离线识字模型与智能排版模型以释放存储空间。
   Future<void> clear() async {
     while (_pending != null) {
       try {
         await _pending;
       } catch (_) {}
     }
+    while (_paragraphPending != null) {
+      try {
+        await _paragraphPending;
+      } catch (_) {}
+    }
     _verifiedFiles.clear();
+    _paragraphCooldownUntil = null;
     final dir = await _directory();
     if (await dir.exists()) {
       await dir.delete(recursive: true);
+    }
+    final getParaDir = _paragraphDirectory;
+    if (getParaDir != null) {
+      final paraDir = await getParaDir();
+      if (await paraDir.exists()) {
+        await paraDir.delete(recursive: true);
+      }
     }
   }
 

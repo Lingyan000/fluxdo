@@ -49,6 +49,12 @@ class _ModelStore extends Fake implements OcrModelStore {
   @override
   Future<OcrModelPaths> paths() async =>
       (detector: 'detector', recognizer: 'reader', config: 'config');
+
+  @override
+  Future<String?> paragraphModelPathIfReady() async => null;
+
+  @override
+  Future<String?> ensureParagraphModel({Duration? waitTimeout}) async => null;
 }
 
 class _OcrService extends Fake implements LocalOcrService {
@@ -64,6 +70,7 @@ class _OcrService extends Fake implements LocalOcrService {
     Uint8List pngBytes,
     OcrModelPaths? paths, {
     bool useSystemEngine = false,
+    String? paragraphModelPath,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,

@@ -121,11 +121,11 @@ Future<void> main(List<String> args) => build(args, (input, output) async {
     );
   }
 
-  // 全 5 端编译原生 C 图像预处理、DB 连通域提取与 CTC 解码算子库（默认 O3 优化）。
+  // 全 5 端编译原生 C 图像预处理、DB 连通域提取、CTC 解码与 line2para 段落归并算子库（默认 O3 优化）。
   await CBuilder.library(
     name: 'fluxdo_ocr_ops',
     assetName: 'ocr_ops',
-    sources: ['src/ocr_ops.c'],
+    sources: ['src/ocr_ops.c', 'src/line2para.c'],
     libraries: os == OS.linux || os == OS.android ? ['m'] : const [],
   ).run(input: input, output: output);
 });

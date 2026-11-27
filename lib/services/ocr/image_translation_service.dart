@@ -85,9 +85,34 @@ abstract final class ImageTranslationService {
     r'^(?:[•·▪▸►◆◇●○\-–—\*]\s+|\d{1,3}[.)、．]\s*|[(（][0-9a-zA-Z一二三四五六七八九十]+[)）]\s*|[一二三四五六七八九十]+、\s*)',
   );
 
-  /// 将 OCR 行聚合成适合原位翻译的区块（含分栏保护、首行缩进、对齐方式与参考字号）。
+  /// 将 OCR 行聚合成适合原位翻译的区块（优先复用 line2para 视觉段落分组，未就绪时回退本地几何排版）。
   static List<ImageTextBlock> groupBlocks(OcrResult ocr) {
     if (ocr.isEmpty) return const [];
+    if (ocr.paragraphGroups != null && ocr.paragraphGroups!.isNotEmpty) {
+      final layout = PictureTextLayout.fromOcr(ocr);
+      if (layout.paragraphs.isNotEmpty) {
+        final blocks = <ImageTextBlock>[];
+        for (final para in layout.paragraphs) {
+          final text = para.text.trim();
+          if (text.isEmpty || _skipPattern.hasMatch(text)) continue;
+          final sourceRows = [for (final l in para.lines) l.bounds];
+          final rowHeights = [for (final l in para.lines) l.bounds.height]
+            ..sort();
+          final medianRowH = rowHeights[rowHeights.length ~/ 2];
+          blocks.add(
+            ImageTextBlock(
+              bounds: para.bounds,
+              originalText: text,
+              lineCount: para.lines.length,
+              sourceRows: sourceRows,
+              textAlign: para.alignment,
+              sourceFontSize: medianRowH * 0.85,
+            ),
+          );
+        }
+        return blocks;
+      }
+    }
     final regions = PictureTextLayout.orderRegions(ocr.lines);
     final blocks = <ImageTextBlock>[];
 

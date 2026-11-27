@@ -258,11 +258,13 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
       final paths = useSystemEngine
           ? (await store.isReady() ? await store.paths() : null)
           : await store.paths();
+      final paragraphModelPath = await store.paragraphModelPathIfReady();
       if (!mounted || _token.isCancelled) return;
       final ocr = await service.recognizeDetailed(
         png,
         paths,
         useSystemEngine: useSystemEngine,
+        paragraphModelPath: paragraphModelPath,
         cancelToken: _token,
         onProgress: (progress) {
           if (mounted) setState(() => _ocrProgress = progress);

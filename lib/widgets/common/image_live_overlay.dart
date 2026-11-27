@@ -7,7 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, visibleForTesting;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,6 +140,10 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
 
   /// 供宿主快捷键调用：是否有正在选中的文字。
   bool get hasSelection => _selection != null;
+
+  /// 仅供单元测试校验覆盖层在缩放、平移与下滑关闭期间的同步矩形。
+  @visibleForTesting
+  Rect debugDisplayRect(Size viewport) => _displayRect(viewport);
 
   /// 长按可重复选择同一图片中的文字；尚未读到的行在后续识别结果中选中。
   bool selectTextAt(Offset globalPosition) {
@@ -369,6 +373,24 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
     if (mounted) setState(() {});
   }
 
+  /// 将未滑动时的视口局部图片矩形同步到 [GestureImageView] 的下滑关闭变换
+  /// （与 `Transform.translate(slideOffset)` + 居中的 `Transform.scale(slideScale)` 逐像素一致）。
+  Rect _applySlideTransform(Rect rect, Size viewport) {
+    if (rect.isEmpty || !rect.isFinite || viewport.isEmpty) return rect;
+    final controller = widget.gestureController;
+    if (controller == null) return rect;
+    final slideOffset = controller.slideOffset;
+    final slideScale = controller.slideScale;
+    if (slideOffset == Offset.zero && slideScale == 1.0) return rect;
+    final center = viewport.center(Offset.zero);
+    return Rect.fromLTRB(
+      center.dx + (rect.left - center.dx) * slideScale + slideOffset.dx,
+      center.dy + (rect.top - center.dy) * slideScale + slideOffset.dy,
+      center.dx + (rect.right - center.dx) * slideScale + slideOffset.dx,
+      center.dy + (rect.bottom - center.dy) * slideScale + slideOffset.dy,
+    );
+  }
+
   Rect _displayRect(Size viewport) {
     final details = widget.gestureController?.details;
     final img = _decodedImage;
@@ -396,8 +418,11 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
           rawDest != null &&
           !layoutRect.isEmpty &&
           !rawDest.isEmpty) {
-        // 用无副作用副本按 RawGestureImage 同一算式即时算出当前帧真实位置，
+        // 用无副作用副本按 RawGestureImage 同一算式即时算出当前帧基础位置，
         // 彻底避免 details.destinationRect 滞后一帧导致的缩放偏移。
+        // 注意：RenderRawGestureImage.paint 在绘制前已将 rect 与 rawDest 同时平移了
+        // -slidePageOffset，因此减去 layoutRect.topLeft 会同时消去 RepaintBoundary 原点偏移
+        // 与旧帧的 slidePageOffset，得到精确的未滑动局部基线，再统一叠加最新 slideOffset/slideScale。
         final probe = GestureDetails(
           offset: details.offset,
           totalScale: details.totalScale,
@@ -406,25 +431,24 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
           userOffset: details.userOffset,
         );
         var rect = probe.calculateFinalDestinationRect(layoutRect, rawDest);
-        final slideOffset = details.slidePageOffset;
-        if (slideOffset != null) {
-          rect = rect.shift(slideOffset);
-        }
-        // RawGestureImage 的 layoutRect 位于其所在 RepaintBoundary 坐标系，
-        // 桌面端顶栏位于画布上方时 layoutRect.topLeft 可能非零，平移回局部坐标对齐。
         rect = rect.shift(-layoutRect.topLeft);
-        if (!rect.isEmpty && rect.isFinite) return rect;
+        if (!rect.isEmpty && rect.isFinite) {
+          return _applySlideTransform(rect, viewport);
+        }
       }
       final dest = details.destinationRect;
       if (dest != null && !dest.isEmpty && dest.isFinite) {
         final layout = details.layoutRect;
-        return (layout != null && !layout.isEmpty)
+        final base = (layout != null && !layout.isEmpty)
             ? dest.shift(-layout.topLeft)
             : dest;
+        return _applySlideTransform(base, viewport);
       }
     }
 
-    return fallbackRaw ?? Rect.zero;
+    return fallbackRaw != null
+        ? _applySlideTransform(fallbackRaw, viewport)
+        : Rect.zero;
   }
 
   Size get _imageSize {
@@ -529,13 +553,21 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
         final paths = useSystemEngine
             ? (await store.isReady() ? await store.paths() : null)
             : await store.paths();
+        final paragraphModelPath = widget.passive
+            ? await store.paragraphModelPathIfReady()
+            : await store.ensureParagraphModel(
+                waitTimeout: const Duration(seconds: 4),
+              );
         if (!mounted || token.isCancelled) return;
         ocr = await service.recognizeDetailed(
           bytes,
           paths,
           useSystemEngine: useSystemEngine,
+          paragraphModelPath: paragraphModelPath,
           cancelToken: token,
-          loadRgba: useSystemEngine || decodedImg == null
+          loadRgba:
+              (useSystemEngine && paragraphModelPath == null) ||
+                  decodedImg == null
               ? null
               : () async {
                   final bd = await decodedImg.toByteData(
@@ -791,7 +823,11 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
   void _openFullTextSheet() {
     final bytes = _imageBytes;
     if (bytes == null) return;
-    showImageTextSheet(context, loadImage: (_) async => bytes);
+    showImageTextSheet(
+      context,
+      loadImage: (_) async => bytes,
+      initialResult: _ocrResult,
+    );
   }
 
   Future<void> _saveTranslatedImage() async {
@@ -1109,7 +1145,16 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
         final viewport = constraints.biggest;
         final display = _displayRect(viewport);
         final imageSize = _imageSize;
-        final isZoomed = (widget.gestureController?.details?.totalScale ?? 1.0) > 1.02;
+        final controller = widget.gestureController;
+        final isZoomed = (controller?.details?.totalScale ?? 1.0) > 1.02;
+        final slideOffset = controller?.slideOffset ?? Offset.zero;
+        final slideScale = controller?.slideScale ?? 1.0;
+        final isSliding =
+            slideOffset != Offset.zero || (slideScale - 1.0).abs() > 1e-3;
+        final dismissOpacity = viewport.height > 0
+            ? (1.0 - slideOffset.distance * 2.0 / viewport.height)
+                  .clamp(0.0, 1.0)
+            : 1.0;
 
         return Stack(
           fit: StackFit.expand,
@@ -1211,47 +1256,51 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                 ),
               ),
 
-            // 3. 选区旁浮动操作胶囊（复制 / 翻译 / 全选 / 全文）
+            // 3. 选区旁浮动操作胶囊（复制 / 翻译 / 全选 / 全文）；下滑关闭期间自动隐去
             if (widget.mode == ImageLiveOverlayMode.liveText &&
                 _selection != null &&
                 _activeDrag == null &&
+                !isSliding &&
                 _layout != null &&
                 !imageSize.isEmpty)
               _buildSelectionToolbar(context, viewport, display, imageSize),
 
-            // 4. 底部统一紧凑毛玻璃控制坞（静默直选模式下不显示，保留宿主正常底栏）。
+            // 4. 底部统一紧凑毛玻璃控制坞（静默直选模式下不显示，下滑关闭时随顶栏同步渐隐）。
             if (!widget.passive)
               ValueListenableBuilder<bool>(
-              valueListenable: widget.chromeVisible,
-              builder: (context, chromeShown, _) {
-                final visible =
-                    _hasBlockingStatus ||
-                    (chromeShown &&
-                        _activeDrag == null &&
-                        (widget.keepDockVisibleWhenZoomed || !isZoomed));
-                return Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: MediaQuery.paddingOf(context).bottom + 16,
-                  child: IgnorePointer(
-                    ignoring: !visible,
-                    child: AnimatedOpacity(
-                      opacity: visible ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: Center(
-                        child: MouseRegion(
-                          onEnter: (_) =>
-                              widget.onChromeHoverChanged?.call(true),
-                          onExit: (_) =>
-                              widget.onChromeHoverChanged?.call(false),
-                          child: _buildBottomGlassDock(context),
+                valueListenable: widget.chromeVisible,
+                builder: (context, chromeShown, _) {
+                  final visible =
+                      _hasBlockingStatus ||
+                      (chromeShown &&
+                          _activeDrag == null &&
+                          (widget.keepDockVisibleWhenZoomed || !isZoomed));
+                  return Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: MediaQuery.paddingOf(context).bottom + 16,
+                    child: IgnorePointer(
+                      ignoring: !visible || dismissOpacity == 0,
+                      child: Opacity(
+                        opacity: dismissOpacity,
+                        child: AnimatedOpacity(
+                          opacity: visible ? 1 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: Center(
+                            child: MouseRegion(
+                              onEnter: (_) =>
+                                  widget.onChromeHoverChanged?.call(true),
+                              onExit: (_) =>
+                                  widget.onChromeHoverChanged?.call(false),
+                              child: _buildBottomGlassDock(context),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
           ],
         );
       },

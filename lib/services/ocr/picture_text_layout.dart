@@ -6,6 +6,18 @@ import 'local_ocr_service.dart';
 /// OCR 文本行排版方向。
 enum OcrTextDirection { horizontal, vertical }
 
+/// OCR 文本输出排版模式（0ms 本地即时切换，无需重新识字）。
+enum OcrTextLayoutMode {
+  /// 智能分段（line2para 视觉归并 + XY-Cut 阅读顺序）。
+  smartParagraph,
+
+  /// 保留换行（按视觉行逐行换行，不合并段落，适合代码、日志、清单与诗歌）。
+  preserveLines,
+
+  /// 合并为单段（全部文字拼成一整段，自动补英文与中英间距并修复软连字符）。
+  singleParagraph,
+}
+
 /// 智能排版归并后的逻辑段落（由一个或多个视觉连续行组成）。
 class OcrParagraph {
   const OcrParagraph({
@@ -72,6 +84,12 @@ class PictureTextLayout {
         joins: const [],
         stripHyphenAfterLine: const [],
       );
+    }
+
+    final externalGroups = ocr.paragraphGroups;
+    if (externalGroups != null && externalGroups.isNotEmpty) {
+      final fromModel = _buildFromParagraphGroups(ocr, externalGroups);
+      if (fromModel != null) return fromModel;
     }
 
     final items = <_LayoutItem>[
@@ -197,6 +215,86 @@ class PictureTextLayout {
   bool get isEmpty => glyphs.isEmpty;
 
   String get fullText => isEmpty ? '' : extractText(0, glyphs.length - 1);
+
+  /// 按指定 [OcrTextLayoutMode] 输出完整文本（0ms 即时重排，无需重新识字）。
+  String formatText(OcrTextLayoutMode mode) {
+    if (isEmpty) return '';
+    switch (mode) {
+      case OcrTextLayoutMode.smartParagraph:
+        return fullText;
+      case OcrTextLayoutMode.preserveLines:
+        return _formatPreserveLines();
+      case OcrTextLayoutMode.singleParagraph:
+        return _formatSingleParagraph();
+    }
+  }
+
+  String _formatPreserveLines() {
+    final out = StringBuffer();
+    for (var i = 0; i < lines.length; i++) {
+      final text = lines[i].text.trim();
+      if (text.isEmpty) continue;
+      if (out.isNotEmpty) {
+        final prev = lines[i - 1];
+        final sameVisualRow =
+            lineDirections[i - 1] == OcrTextDirection.horizontal &&
+            lineDirections[i] == OcrTextDirection.horizontal &&
+            _sharesRow(prev, lines[i]);
+        out.write(sameVisualRow ? ' ' : '\n');
+      }
+      out.write(text);
+    }
+    return out.toString();
+  }
+
+  String _formatSingleParagraph() {
+    final out = StringBuffer();
+    int? prevCodeUnit;
+    for (var i = 0; i < lines.length; i++) {
+      var text = lines[i].text.trim();
+      if (text.isEmpty) continue;
+      if (out.isNotEmpty && i > 0) {
+        final prevLine = lines[i - 1];
+        final prevTrim = prevLine.text.trimRight();
+        final isSoftHyphen =
+            prevTrim.length >= 2 &&
+            prevTrim.endsWith('-') &&
+            !prevTrim.endsWith('--') &&
+            _isAsciiAlpha(prevTrim.codeUnitAt(prevTrim.length - 2)) &&
+            _isAsciiLower(text.codeUnitAt(0));
+        if (!isSoftHyphen && prevTrim.isNotEmpty) {
+          final endUnit = prevTrim.codeUnitAt(prevTrim.length - 1);
+          final startUnit = text.codeUnitAt(0);
+          if (_isLatin(endUnit) && _isLatin(startUnit)) {
+            out.write(' ');
+            prevCodeUnit = 0x20;
+          }
+        }
+      }
+      if (i + 1 < lines.length) {
+        final nextTrim = lines[i + 1].text.trimLeft();
+        if (text.length >= 2 &&
+            text.endsWith('-') &&
+            !text.endsWith('--') &&
+            _isAsciiAlpha(text.codeUnitAt(text.length - 2)) &&
+            nextTrim.isNotEmpty &&
+            _isAsciiLower(nextTrim.codeUnitAt(0))) {
+          text = text.substring(0, text.length - 1);
+        }
+      }
+      for (var c = 0; c < text.length; c++) {
+        final unit = text.codeUnitAt(c);
+        if (prevCodeUnit != null &&
+            ((_isHanOrKana(prevCodeUnit) && _isAsciiWord(unit)) ||
+                (_isAsciiWord(prevCodeUnit) && _isHanOrKana(unit)))) {
+          out.write(' ');
+        }
+        out.writeCharCode(unit);
+        prevCodeUnit = unit;
+      }
+    }
+    return out.toString();
+  }
 
   /// 判断单条 OCR 文本行是横排还是竖排。
   static OcrTextDirection detectLineDirection(OcrTextLine line) {
@@ -806,6 +904,359 @@ class PictureTextLayout {
     return (sameParagraph: true, joiner: joiner, stripTrailingHyphen: false);
   }
 
+  /// 基于 line2para 段落分组构建排版：
+  /// - 保留模型判定的段落归属与段内行序；
+  /// - 对段落块叠加递归 XY-Cut 分栏阅读顺序，避免双栏场景下按块中心 Y 误把短右栏排到长左栏前面；
+  /// - 复用英文软连字符修复、中英自动间距与对齐推断。
+  static PictureTextLayout? _buildFromParagraphGroups(
+    OcrResult ocr,
+    List<List<int>> rawGroups,
+  ) {
+    final total = ocr.lines.length;
+    final seen = <int>{};
+    final groups = <_ParagraphGroup>[];
+
+    void addGroup(List<int> rawIndices) {
+      final lines = <OcrTextLine>[];
+      final dirs = <OcrTextDirection>[];
+      for (final idx in rawIndices) {
+        if (idx < 0 || idx >= total || !seen.add(idx)) continue;
+        final line = ocr.lines[idx];
+        if (line.text.trim().isEmpty) continue;
+        lines.add(line);
+        dirs.add(detectLineDirection(line));
+      }
+      if (lines.isEmpty) return;
+      var bounds = lines.first.bounds;
+      var verticalCount = 0;
+      for (var i = 0; i < lines.length; i++) {
+        bounds = bounds.expandToInclude(lines[i].bounds);
+        if (dirs[i] == OcrTextDirection.vertical) verticalCount++;
+      }
+      final dir = verticalCount > lines.length / 2
+          ? OcrTextDirection.vertical
+          : OcrTextDirection.horizontal;
+      groups.add(
+        _ParagraphGroup(
+          lines: lines,
+          directions: dirs,
+          direction: dir,
+          bounds: bounds,
+        ),
+      );
+    }
+
+    for (final g in rawGroups) {
+      addGroup(g);
+    }
+    if (groups.isEmpty) return null;
+    // 兜底补齐未被分组引用的有效非空行。
+    for (var i = 0; i < total; i++) {
+      if (!seen.contains(i) && ocr.lines[i].text.trim().isNotEmpty) {
+        addGroup([i]);
+      }
+    }
+
+    final orderedRegions = _orderGroupsByXyCut(groups);
+    final ordered = <OcrTextLine>[];
+    final directions = <OcrTextDirection>[];
+    final groupSpans = <({int start, int end, OcrTextDirection dir, Rect regionRect})>[];
+
+    for (final region in orderedRegions) {
+      if (region.isEmpty) continue;
+      var regionRect = region.first.bounds;
+      for (var i = 1; i < region.length; i++) {
+        regionRect = regionRect.expandToInclude(region[i].bounds);
+      }
+      for (final group in region) {
+        final start = ordered.length;
+        ordered.addAll(group.lines);
+        directions.addAll(group.directions);
+        groupSpans.add((
+          start: start,
+          end: ordered.length - 1,
+          dir: group.direction,
+          regionRect: regionRect,
+        ));
+      }
+    }
+
+    final glyphs = <PictureGlyph>[];
+    for (var lineIdx = 0; lineIdx < ordered.length; lineIdx++) {
+      glyphs.addAll(_buildGlyphs(ordered[lineIdx], lineIdx, directions[lineIdx]));
+    }
+
+    final joins = List<String>.filled(
+      math.max(0, ordered.length - 1),
+      '\n',
+    );
+    final stripHyphen = List<bool>.filled(ordered.length, false);
+    final paragraphs = <OcrParagraph>[];
+
+    for (final span in groupSpans) {
+      for (var i = span.start; i < span.end; i++) {
+        final j = _decideIntraParagraphJoin(
+          ordered[i],
+          ordered[i + 1],
+          span.dir,
+        );
+        joins[i] = j.joiner;
+        stripHyphen[i] = j.stripTrailingHyphen;
+      }
+      if (span.end < joins.length) {
+        joins[span.end] = '\n';
+      }
+
+      final paraLines = ordered.sublist(span.start, span.end + 1);
+      final paraIndices = [for (var i = span.start; i <= span.end; i++) i];
+      var paraBounds = paraLines.first.bounds;
+      for (var i = 1; i < paraLines.length; i++) {
+        paraBounds = paraBounds.expandToInclude(paraLines[i].bounds);
+      }
+      final alignment = detectParagraphAlignment(
+        paraLines,
+        regionLeft: span.regionRect.left,
+        regionRight: span.regionRect.right,
+      );
+      final text = _composeLinesText(
+        paraLines,
+        joins,
+        stripHyphen,
+        span.start,
+      );
+      paragraphs.add(
+        OcrParagraph(
+          lines: paraLines,
+          lineIndices: paraIndices,
+          bounds: paraBounds,
+          direction: span.dir,
+          alignment: alignment,
+          text: text,
+        ),
+      );
+    }
+
+    return PictureTextLayout._(
+      imageWidth: ocr.imageWidth,
+      imageHeight: ocr.imageHeight,
+      lines: ordered,
+      lineDirections: directions,
+      paragraphs: paragraphs,
+      glyphs: glyphs,
+      joins: joins,
+      stripHyphenAfterLine: stripHyphen,
+    );
+  }
+
+  static ({String joiner, bool stripTrailingHyphen}) _decideIntraParagraphJoin(
+    OcrTextLine prev,
+    OcrTextLine next,
+    OcrTextDirection direction,
+  ) {
+    if (direction == OcrTextDirection.vertical) {
+      return (joiner: '', stripTrailingHyphen: false);
+    }
+    if (_sharesRow(prev, next)) {
+      return (joiner: ' ', stripTrailingHyphen: false);
+    }
+    final prevTrim = prev.text.trimRight();
+    final nextTrim = next.text.trimLeft();
+    if (prevTrim.isEmpty || nextTrim.isEmpty) {
+      return (joiner: '', stripTrailingHyphen: false);
+    }
+    if (prevTrim.length >= 2 &&
+        prevTrim.endsWith('-') &&
+        !prevTrim.endsWith('--') &&
+        _isAsciiAlpha(prevTrim.codeUnitAt(prevTrim.length - 2)) &&
+        _isAsciiLower(nextTrim.codeUnitAt(0))) {
+      return (joiner: '', stripTrailingHyphen: true);
+    }
+    final endUnit = prevTrim.codeUnitAt(prevTrim.length - 1);
+    final startUnit = nextTrim.codeUnitAt(0);
+    final joiner = _isLatin(endUnit) && _isLatin(startUnit) ? ' ' : '';
+    return (joiner: joiner, stripTrailingHyphen: false);
+  }
+
+  static List<List<_ParagraphGroup>> _orderGroupsByXyCut(
+    List<_ParagraphGroup> groups,
+  ) {
+    if (groups.length <= 1) return [groups];
+
+    final sizes = <double>[
+      for (final g in groups)
+        for (var i = 0; i < g.lines.length; i++)
+          g.directions[i] == OcrTextDirection.vertical
+              ? g.lines[i].bounds.width
+              : g.lines[i].bounds.height,
+    ]..sort();
+    final medianSize = sizes.isEmpty
+        ? 16.0
+        : math.max(8.0, sizes[sizes.length ~/ 2]);
+
+    List<List<_ParagraphGroup>> recurse(
+      List<_ParagraphGroup> subset,
+      int depth,
+    ) {
+      if (subset.length <= 1 || depth >= 8) {
+        return [_orderLeafGroups(subset)];
+      }
+
+      // 优先检查贯穿全高的垂直分栏切分：全宽标题/页脚会自然阻断垂直切分而先走水平切分，
+      // 一旦进入多栏正文区则先分栏再排栏内各段，避免栏内段落空隙先触发水平切分。
+      final xSplit = _findGroupVerticalCut(subset, medianSize);
+      if (xSplit != null) {
+        final isPredominantlyVertical =
+            subset.where((e) => e.direction == OcrTextDirection.vertical).length >
+            subset.length / 2;
+        if (isPredominantlyVertical) {
+          return [
+            ...recurse(xSplit.second, depth + 1),
+            ...recurse(xSplit.first, depth + 1),
+          ];
+        }
+        return [
+          ...recurse(xSplit.first, depth + 1),
+          ...recurse(xSplit.second, depth + 1),
+        ];
+      }
+
+      final ySplit = _findGroupHorizontalCut(subset, medianSize);
+      if (ySplit != null) {
+        return [
+          ...recurse(ySplit.first, depth + 1),
+          ...recurse(ySplit.second, depth + 1),
+        ];
+      }
+
+      return [_orderLeafGroups(subset)];
+    }
+
+    return recurse(groups, 0);
+  }
+
+  static ({List<_ParagraphGroup> first, List<_ParagraphGroup> second})?
+  _findGroupHorizontalCut(List<_ParagraphGroup> groups, double medianSize) {
+    if (groups.length < 2) return null;
+    final sorted = List<_ParagraphGroup>.of(groups)
+      ..sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
+    var maxBottom = sorted.first.bounds.bottom;
+    var bestGap = 0.0;
+    var bestCutY = 0.0;
+    for (var i = 1; i < sorted.length; i++) {
+      final gap = sorted[i].bounds.top - maxBottom;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestCutY = (maxBottom + sorted[i].bounds.top) / 2;
+      }
+      if (sorted[i].bounds.bottom > maxBottom) {
+        maxBottom = sorted[i].bounds.bottom;
+      }
+    }
+    final threshold = math.max(medianSize * 1.35, 14.0);
+    if (bestGap < threshold) return null;
+    final top = <_ParagraphGroup>[];
+    final bottom = <_ParagraphGroup>[];
+    for (final g in groups) {
+      if (g.bounds.center.dy < bestCutY) {
+        top.add(g);
+      } else {
+        bottom.add(g);
+      }
+    }
+    if (top.isEmpty || bottom.isEmpty) return null;
+    return (first: top, second: bottom);
+  }
+
+  static ({List<_ParagraphGroup> first, List<_ParagraphGroup> second})?
+  _findGroupVerticalCut(List<_ParagraphGroup> groups, double medianSize) {
+    if (groups.length < 2) return null;
+    final sorted = List<_ParagraphGroup>.of(groups)
+      ..sort((a, b) => a.bounds.left.compareTo(b.bounds.left));
+    var maxRight = sorted.first.bounds.right;
+    var bestGap = 0.0;
+    var bestCutX = 0.0;
+    for (var i = 1; i < sorted.length; i++) {
+      final gap = sorted[i].bounds.left - maxRight;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestCutX = (maxRight + sorted[i].bounds.left) / 2;
+      }
+      if (sorted[i].bounds.right > maxRight) {
+        maxRight = sorted[i].bounds.right;
+      }
+    }
+    final minGap = math.max(medianSize * 1.4, 24.0);
+    if (bestGap < minGap) return null;
+    final left = <_ParagraphGroup>[];
+    final right = <_ParagraphGroup>[];
+    for (final g in groups) {
+      if (g.bounds.center.dx < bestCutX) {
+        left.add(g);
+      } else {
+        right.add(g);
+      }
+    }
+    if (left.isEmpty || right.isEmpty) return null;
+
+    final leftItems = <_LayoutItem>[
+      for (final g in left)
+        for (var i = 0; i < g.lines.length; i++)
+          _LayoutItem(line: g.lines[i], direction: g.directions[i]),
+    ];
+    final rightItems = <_LayoutItem>[
+      for (final g in right)
+        for (var i = 0; i < g.lines.length; i++)
+          _LayoutItem(line: g.lines[i], direction: g.directions[i]),
+    ];
+    if (math.min(_countVisualRows(leftItems), _countVisualRows(rightItems)) <
+        2) {
+      return null;
+    }
+    if (bestGap < medianSize * 2.5 &&
+        _looksLikePairedTable(leftItems, rightItems)) {
+      return null;
+    }
+    return (first: left, second: right);
+  }
+
+  static List<_ParagraphGroup> _orderLeafGroups(List<_ParagraphGroup> input) {
+    if (input.length <= 1) return List<_ParagraphGroup>.of(input);
+    final verticalCount = input
+        .where((g) => g.direction == OcrTextDirection.vertical)
+        .length;
+    if (verticalCount > input.length / 2) {
+      final sorted = List<_ParagraphGroup>.of(input)
+        ..sort((a, b) {
+          final dx = b.bounds.right.compareTo(a.bounds.right);
+          return dx != 0 ? dx : a.bounds.top.compareTo(b.bounds.top);
+        });
+      return sorted;
+    }
+    final sorted = List<_ParagraphGroup>.of(input)
+      ..sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
+    final rows = <List<_ParagraphGroup>>[];
+    for (final g in sorted) {
+      if (rows.isNotEmpty &&
+          rows.last.any((other) {
+            final ov =
+                math.min(other.bounds.bottom, g.bounds.bottom) -
+                math.max(other.bounds.top, g.bounds.top);
+            final minH = math.min(other.bounds.height, g.bounds.height);
+            return minH > 0 && ov >= 0.5 * minH;
+          })) {
+        rows.last.add(g);
+      } else {
+        rows.add([g]);
+      }
+    }
+    final ordered = <_ParagraphGroup>[];
+    for (final row in rows) {
+      row.sort((a, b) => a.bounds.left.compareTo(b.bounds.left));
+      ordered.addAll(row);
+    }
+    return ordered;
+  }
+
   static String _composeLinesText(
     List<OcrTextLine> paraLines,
     List<String> joins,
@@ -943,4 +1394,18 @@ class _LayoutItem {
   final OcrTextDirection direction;
 
   Rect get bounds => line.bounds;
+}
+
+class _ParagraphGroup {
+  const _ParagraphGroup({
+    required this.lines,
+    required this.directions,
+    required this.direction,
+    required this.bounds,
+  });
+
+  final List<OcrTextLine> lines;
+  final List<OcrTextDirection> directions;
+  final OcrTextDirection direction;
+  final Rect bounds;
 }

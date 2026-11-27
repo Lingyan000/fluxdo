@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 
 part 'src/litert_bindings.dart';
 part 'src/ocr_ops_bindings.dart';
+part 'src/line2para_bindings.dart';
 
 const _runtime = 'package:fluxdo_ocr/litert';
 // 来自 LiteRT 2.4.0 xnnpack_delegate.h：

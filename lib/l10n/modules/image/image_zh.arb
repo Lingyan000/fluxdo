@@ -188,6 +188,9 @@
     }
   },
   "imageViewer_copySelected": "复制所选",
+  "imageViewer_ocrLayoutSmart": "智能分段",
+  "imageViewer_ocrLayoutLines": "保留换行",
+  "imageViewer_ocrLayoutSingle": "合并单段",
   "imageViewer_translateSelected": "翻译所选",
   "imageViewer_translateImage": "翻译图片",
   "imageViewer_translatingImage": "正在翻译图片",

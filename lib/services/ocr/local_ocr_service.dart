@@ -89,22 +89,38 @@ class OcrTextLine {
   }
 }
 
-/// 完整 OCR 识别结果（含原图尺寸与结构化文本行）。
+/// 完整 OCR 识别结果（含原图尺寸、结构化文本行与可选的 line2para 段落分组）。
 class OcrResult {
   const OcrResult({
     required this.imageWidth,
     required this.imageHeight,
     required this.lines,
+    this.paragraphGroups,
   });
 
   final int imageWidth;
   final int imageHeight;
   final List<OcrTextLine> lines;
 
+  /// 由 line2para 模型生成的段落分组（每组为 [lines] 中的行索引，已按段内阅读顺序排列）。
+  /// 为 null 时由 [PictureTextLayout] 自动回退到本地几何排版。
+  final List<List<int>>? paragraphGroups;
+
   bool get isEmpty => lines.isEmpty;
 
   /// 按段落规则与中英自动间距拼合后的可读纯文本。
   String get plainText => PictureTextLayout.fromOcr(this).fullText;
+
+  /// 按指定排版模式拼合后的纯文本。
+  String formatText(OcrTextLayoutMode mode) =>
+      PictureTextLayout.fromOcr(this).formatText(mode);
+
+  OcrResult copyWith({List<List<int>>? paragraphGroups}) => OcrResult(
+    imageWidth: imageWidth,
+    imageHeight: imageHeight,
+    lines: lines,
+    paragraphGroups: paragraphGroups ?? this.paragraphGroups,
+  );
 }
 
 /// 在常驻后台 isolate 内执行 PP-OCRv6 small 的检测、识别和 CTC 解码。
@@ -263,6 +279,7 @@ class LocalOcrService {
     Uint8List pngBytes,
     OcrModelPaths? paths, {
     bool useSystemEngine = false,
+    String? paragraphModelPath,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
   }) async {
@@ -270,17 +287,21 @@ class LocalOcrService {
       pngBytes,
       paths,
       useSystemEngine: useSystemEngine,
+      paragraphModelPath: paragraphModelPath,
       cancelToken: cancelToken,
       loadRgba: loadRgba,
     );
     return result.plainText;
   }
 
-  /// 完整识别接口：返回原图尺寸、逻辑行分组及每个字符的原图坐标，供识字、实况选字与隐私打码共用。
+  /// 完整识别接口：返回原图尺寸、逻辑行分组、每个字符的原图坐标与可选的 line2para 段落分组，
+  /// 供识字、实况选字、覆盖译图与隐私打码共用。
   ///
   /// - [useSystemEngine]：为 `true` 时优先调用系统原生 Vision 引擎（macOS/iOS 硬件加速，免模型下载）；
   ///   若原生识别异常且 [paths] 非空，自动回退到本地 LiteRT 模型。
-  /// - [loadRgba]：可选的惰性 RGBA 帧提供者（仅在未命中缓存且实际执行 LiteRT 推理时调用，避免缓存命中或原生引擎下无谓的 GPU 回读）。
+  /// - [paragraphModelPath]：可选的 line2para ONNX 模型路径；传入后在后台常驻 Worker 内完成视觉 + 几何段落归并，
+  ///   失败或未传入时自动回退到本地几何排版。
+  /// - [loadRgba]：可选的惰性 RGBA 帧提供者（仅在未命中缓存且需要原图像素帧时调用，避免无谓的 GPU 回读）。
   /// - [priorityPoint]：可选的原图像素坐标；传入时优先识别离该点最近的那一行并立刻回调 [onPartial]。
   /// - [onDetected]：检测阶段完成后立刻触发（几百毫秒内），供 UI 播放文字行波纹点亮动画。
   /// - [onPartial]：识别过程中分批回传当前已识别出的 [OcrResult]，实现边识别边选字。
@@ -288,6 +309,7 @@ class LocalOcrService {
     Uint8List pngBytes,
     OcrModelPaths? paths, {
     bool useSystemEngine = false,
+    String? paragraphModelPath,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,
@@ -300,7 +322,10 @@ class LocalOcrService {
 
     final fingerprint = pngBytes.isNotEmpty ? _fingerprint(pngBytes) : null;
     final enginePrefix = useSystemEngine ? 'vision' : 'litert';
-    final cacheKey = fingerprint != null ? '$enginePrefix:$fingerprint' : null;
+    final layoutTag = paragraphModelPath != null ? 'l2p' : 'l1';
+    final cacheKey = fingerprint != null
+        ? '$enginePrefix:$layoutTag:$fingerprint'
+        : null;
     if (cacheKey != null) {
       final cached = _cache.remove(cacheKey);
       if (cached != null) {
@@ -318,7 +343,31 @@ class LocalOcrService {
     if (useSystemEngine) {
       onProgress?.call(const OcrProgress(stage: OcrStage.recognizing));
       try {
-        final result = await _systemRecognizer(pngBytes);
+        var result = await _systemRecognizer(pngBytes);
+        if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+        if (paragraphModelPath != null && result.lines.length >= 2) {
+          OcrRgbaImage? predecodedRgba;
+          if (loadRgba != null) {
+            try {
+              predecodedRgba = await loadRgba();
+            } catch (_) {
+              predecodedRgba = null;
+            }
+          }
+          if (cancelToken?.isCancelled ?? false) {
+            throw cancelToken!.cancelError!;
+          }
+          final groups = await _groupParagraphsInWorker(
+            pngBytes: pngBytes,
+            predecodedRgba: predecodedRgba,
+            lines: result.lines,
+            paragraphModelPath: paragraphModelPath,
+            cancelToken: cancelToken,
+          );
+          if (groups != null) {
+            result = result.copyWith(paragraphGroups: groups);
+          }
+        }
         if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
         if (cacheKey != null) {
           _rememberResult(cacheKey, result);
@@ -345,7 +394,9 @@ class LocalOcrService {
       throw StateError('离线 OCR 模型路径缺失');
     }
 
-    final litertCacheKey = fingerprint != null ? 'litert:$fingerprint' : null;
+    final litertCacheKey = fingerprint != null
+        ? 'litert:$layoutTag:$fingerprint'
+        : null;
     if (litertCacheKey != null && litertCacheKey != cacheKey) {
       final cached = _cache.remove(litertCacheKey);
       if (cached != null) {
@@ -385,6 +436,7 @@ class LocalOcrService {
         predecodedRgba: predecodedRgba,
         cacheKey: litertCacheKey,
         paths: paths,
+        paragraphModelPath: paragraphModelPath,
         cachedDictionary: cachedDictionary,
         cancelToken: cancelToken,
         onProgress: onProgress,
@@ -397,11 +449,108 @@ class LocalOcrService {
     }
   }
 
+  Future<List<List<int>>?> _groupParagraphsInWorker({
+    required Uint8List pngBytes,
+    required OcrRgbaImage? predecodedRgba,
+    required List<OcrTextLine> lines,
+    required String paragraphModelPath,
+    required CancelToken? cancelToken,
+  }) async {
+    final gate = Completer<void>();
+    final prev = _serialQueue;
+    _serialQueue = gate.future;
+    try {
+      await prev.catchError((_) {});
+      if (cancelToken?.isCancelled ?? false) return null;
+
+      _idleTimer?.cancel();
+      _idleTimer = null;
+      _activeTasks++;
+
+      final commandPort = await _ensureWorker();
+      if (cancelToken?.isCancelled ?? false) {
+        _finishTaskSlot();
+        return null;
+      }
+
+      final quads = Float32List(lines.length * 8);
+      for (var i = 0; i < lines.length; i++) {
+        final b = lines[i].bounds;
+        final off = i * 8;
+        quads[off] = b.left;
+        quads[off + 1] = b.top;
+        quads[off + 2] = b.right;
+        quads[off + 3] = b.top;
+        quads[off + 4] = b.right;
+        quads[off + 5] = b.bottom;
+        quads[off + 6] = b.left;
+        quads[off + 7] = b.bottom;
+      }
+
+      final replyPort = ReceivePort();
+      final completer = Completer<_GroupParagraphsResult>();
+      final sub = replyPort.listen((msg) {
+        if (msg is _GroupParagraphsResult && !completer.isCompleted) {
+          completer.complete(msg);
+        }
+      });
+
+      final useRgba = predecodedRgba != null && predecodedRgba.rgba.isNotEmpty;
+      commandPort.send(
+        _GroupParagraphsMessage(
+          encodedBytes: useRgba
+              ? null
+              : TransferableTypedData.fromList([pngBytes]),
+          rgbaBytes: useRgba
+              ? TransferableTypedData.fromList([predecodedRgba.rgba])
+              : null,
+          rgbaWidth: useRgba ? predecodedRgba.width : 0,
+          rgbaHeight: useRgba ? predecodedRgba.height : 0,
+          quads: quads,
+          lineCount: lines.length,
+          paragraphModelPath: paragraphModelPath,
+          replyPort: replyPort.sendPort,
+        ),
+      );
+
+      try {
+        final res = await completer.future;
+        if (res.error != null) {
+          AppLogger.warning(
+            'line2para 段落归并失败，回退本地几何排版: ${res.error}',
+            tag: 'OCR',
+          );
+          return null;
+        }
+        AppLogger.info(
+          'line2para 段落归并完成: groups=${res.groups?.length ?? 0} '
+          'lines=${lines.length} total=${res.totalMs}ms '
+          'decode=${res.decodeMs}ms infer=${res.inferMs}ms rgba=$useRgba',
+          tag: 'OCR',
+        );
+        return res.groups;
+      } finally {
+        await sub.cancel();
+        replyPort.close();
+        _finishTaskSlot();
+      }
+    } catch (error) {
+      AppLogger.warning(
+        'line2para 段落归并异常，回退本地几何排版: $error',
+        tag: 'OCR',
+      );
+      return null;
+    } finally {
+      gate.complete();
+    }
+  }
+
   Future<OcrResult> _runInWorker({
     required Uint8List pngBytes,
     required OcrRgbaImage? predecodedRgba,
     required String? cacheKey,
     required OcrModelPaths paths,
+    required String? paragraphModelPath,
     required List<String>? cachedDictionary,
     required CancelToken? cancelToken,
     required void Function(OcrProgress)? onProgress,
@@ -493,6 +642,7 @@ class LocalOcrService {
         detectorPath: paths.detector,
         recognizerPath: paths.recognizer,
         configPath: paths.config,
+        paragraphModelPath: paragraphModelPath,
         cachedDictionary: cachedDictionary,
         priorityX: priorityPoint?.dx,
         priorityY: priorityPoint?.dy,
@@ -511,6 +661,7 @@ class LocalOcrService {
         imageWidth: raw.imageWidth,
         imageHeight: raw.imageHeight,
         lines: [for (final item in raw.lines) _hydrateLine(item)],
+        paragraphGroups: raw.paragraphGroups,
       );
       if (cacheKey != null) {
         _rememberResult(cacheKey, result);
@@ -519,8 +670,10 @@ class LocalOcrService {
         'OCR 识别完成: engine=litert total=${raw.totalMs}ms '
         'decode=${raw.decodeMs}ms open=${raw.openMs}ms '
         'det=${raw.detMs}ms rec=${raw.recMs}ms '
+        'para=${raw.paraMs}ms '
         'size=${raw.imageWidth}x${raw.imageHeight} '
         'lines=${result.lines.length} '
+        'groups=${result.paragraphGroups?.length ?? 0} '
         'allocs=det:${raw.detAllocs}/rec:${raw.recAllocs} '
         'rgba=$useRgba',
         tag: 'OCR',
@@ -645,13 +798,13 @@ class LocalOcrService {
     _cachedDictionary = dictionary;
   }
 
-  /// 常驻工作 isolate 入口：保活 detector / recognizer 会话，按任务执行并支持即时取消。
+  /// 常驻工作 isolate 入口：保活 detector / recognizer / line2para 会话，按任务执行并支持即时取消。
   static Future<void> _workerMain(SendPort mainPort) async {
     final inbox = ReceivePort();
     mainPort.send(inbox.sendPort);
 
     final cancelledTasks = <int>{};
-    final queue = Queue<_RunTaskMessage>();
+    final queue = Queue<Object>();
     var processing = false;
     var shuttingDown = false;
 
@@ -659,8 +812,13 @@ class LocalOcrService {
     String? detectorPath;
     OcrInferenceModel? recognizer;
     String? recognizerPath;
+    OcrParagraphModel? paragraphModel;
+    String? paragraphModelPath;
 
     void closeModels() {
+      paragraphModel?.close();
+      paragraphModel = null;
+      paragraphModelPath = null;
       recognizer?.close();
       recognizer = null;
       recognizerPath = null;
@@ -669,12 +827,31 @@ class LocalOcrService {
       detectorPath = null;
     }
 
+    OcrParagraphModel obtainParagraphModel(String path) {
+      if (paragraphModel == null || paragraphModelPath != path) {
+        paragraphModel?.close();
+        paragraphModel = OcrParagraphModel.open(path);
+        paragraphModelPath = path;
+      }
+      return paragraphModel!;
+    }
+
     Future<void> drainQueue() async {
       if (processing) return;
       processing = true;
       try {
         while (queue.isNotEmpty && !shuttingDown) {
-          final task = queue.removeFirst();
+          final job = queue.removeFirst();
+          if (job is _GroupParagraphsMessage) {
+            job.replyPort.send(
+              _executeGroupParagraphs(
+                msg: job,
+                obtainParagraphModel: obtainParagraphModel,
+              ),
+            );
+            continue;
+          }
+          final task = job as _RunTaskMessage;
           try {
             final res = await _executeTask(
               task: task,
@@ -696,6 +873,7 @@ class LocalOcrService {
                 }
                 return recognizer!;
               },
+              obtainParagraphModel: obtainParagraphModel,
             );
             task.replyPort.send(res);
           } catch (error) {
@@ -734,8 +912,88 @@ class LocalOcrService {
         }
         queue.addLast(message);
         unawaited(drainQueue());
+      } else if (message is _GroupParagraphsMessage) {
+        if (shuttingDown) {
+          message.replyPort.send(
+            const _GroupParagraphsResult(error: 'OCR 工作线程已关闭'),
+          );
+          return;
+        }
+        queue.addLast(message);
+        unawaited(drainQueue());
       }
     });
+  }
+
+  static _GroupParagraphsResult _executeGroupParagraphs({
+    required _GroupParagraphsMessage msg,
+    required OcrParagraphModel Function(String path) obtainParagraphModel,
+  }) {
+    final totalSw = Stopwatch()..start();
+    final decodeSw = Stopwatch()..start();
+    OcrNativeImage? nativeImage;
+    try {
+      if (msg.rgbaBytes != null && msg.rgbaWidth > 0 && msg.rgbaHeight > 0) {
+        final raw = msg.rgbaBytes!.materialize().asUint8List();
+        nativeImage = OcrNativeImage.fromBytes(
+          bytes: raw,
+          width: msg.rgbaWidth,
+          height: msg.rgbaHeight,
+          channels: 4,
+        );
+      } else if (msg.encodedBytes != null) {
+        final bytes = msg.encodedBytes!.materialize().asUint8List();
+        var image = img.decodeImage(bytes);
+        if (image != null &&
+            (image.format != img.Format.uint8 ||
+                image.hasPalette ||
+                (image.numChannels != 3 && image.numChannels != 4))) {
+          image = image.convert(
+            format: img.Format.uint8,
+            numChannels: image.hasAlpha ? 4 : 3,
+          );
+        }
+        if (image != null &&
+            image.format == img.Format.uint8 &&
+            (image.numChannels == 3 || image.numChannels == 4)) {
+          nativeImage = OcrNativeImage.fromBytes(
+            bytes: image.toUint8List(),
+            width: image.width,
+            height: image.height,
+            channels: image.numChannels,
+          );
+        }
+      }
+      final decodeMs = decodeSw.elapsedMilliseconds;
+      if (nativeImage == null) {
+        return _GroupParagraphsResult(
+          error: '无法解码原图',
+          totalMs: totalSw.elapsedMilliseconds,
+          decodeMs: decodeMs,
+        );
+      }
+      final inferSw = Stopwatch()..start();
+      final model = obtainParagraphModel(msg.paragraphModelPath);
+      final groups = model.groupLines(
+        image: nativeImage,
+        quads: msg.quads,
+        lineCount: msg.lineCount,
+      );
+      return _GroupParagraphsResult(
+        groups: groups,
+        totalMs: totalSw.elapsedMilliseconds,
+        decodeMs: decodeMs,
+        inferMs: inferSw.elapsedMilliseconds,
+      );
+    } catch (error) {
+      return _GroupParagraphsResult(
+        error: error.toString(),
+        totalMs: totalSw.elapsedMilliseconds,
+        decodeMs: decodeSw.elapsedMilliseconds,
+      );
+    } finally {
+      nativeImage?.dispose();
+    }
   }
 
   static Future<_WorkerResult> _executeTask({
@@ -743,6 +1001,7 @@ class LocalOcrService {
     required bool Function() isCancelled,
     required OcrInferenceModel Function(String path) obtainDetector,
     required OcrInferenceModel Function(String path) obtainRecognizer,
+    required OcrParagraphModel Function(String path) obtainParagraphModel,
   }) async {
     final totalSw = Stopwatch()..start();
     var decodeMs = 0;
@@ -922,16 +1181,51 @@ class LocalOcrService {
       recAllocs = recognizer.allocateCount;
 
       final orderedLines = <_WorkerLine>[for (final line in recognized) ?line];
+      List<List<int>>? paragraphGroups;
+      var paraMs = 0;
+      final paraPath = task.paragraphModelPath;
+      if (paraPath != null &&
+          orderedLines.length >= 2 &&
+          nativeImage != null) {
+        final paraSw = Stopwatch()..start();
+        try {
+          final quads = Float32List(orderedLines.length * 8);
+          for (var i = 0; i < orderedLines.length; i++) {
+            final b = orderedLines[i].bounds;
+            final off = i * 8;
+            quads[off] = b[0];
+            quads[off + 1] = b[1];
+            quads[off + 2] = b[2];
+            quads[off + 3] = b[1];
+            quads[off + 4] = b[2];
+            quads[off + 5] = b[3];
+            quads[off + 6] = b[0];
+            quads[off + 7] = b[3];
+          }
+          final paraModel = obtainParagraphModel(paraPath);
+          paragraphGroups = paraModel.groupLines(
+            image: nativeImage,
+            quads: quads,
+            lineCount: orderedLines.length,
+          );
+        } catch (_) {
+          // 段落归并失败时静默回退本地几何排版，不影响识字主链路。
+          paragraphGroups = null;
+        }
+        paraMs = paraSw.elapsedMilliseconds;
+      }
       return _WorkerResult(
         imageWidth: imageWidth,
         imageHeight: imageHeight,
         lines: orderedLines,
+        paragraphGroups: paragraphGroups,
         dictionary: newlyLoadedDictionary,
         totalMs: totalSw.elapsedMilliseconds,
         decodeMs: decodeMs,
         openMs: openMs,
         detMs: detMs,
         recMs: recMs,
+        paraMs: paraMs,
         detAllocs: detAllocs,
         recAllocs: recAllocs,
       );
@@ -1463,6 +1757,7 @@ class _RunTaskMessage {
     required this.detectorPath,
     required this.recognizerPath,
     required this.configPath,
+    required this.paragraphModelPath,
     required this.cachedDictionary,
     required this.priorityX,
     required this.priorityY,
@@ -1479,12 +1774,51 @@ class _RunTaskMessage {
   final String detectorPath;
   final String recognizerPath;
   final String configPath;
+  final String? paragraphModelPath;
   final List<String>? cachedDictionary;
   final double? priorityX;
   final double? priorityY;
   final bool emitDetected;
   final bool emitPartial;
   final SendPort replyPort;
+}
+
+class _GroupParagraphsMessage {
+  const _GroupParagraphsMessage({
+    required this.encodedBytes,
+    required this.rgbaBytes,
+    required this.rgbaWidth,
+    required this.rgbaHeight,
+    required this.quads,
+    required this.lineCount,
+    required this.paragraphModelPath,
+    required this.replyPort,
+  });
+
+  final TransferableTypedData? encodedBytes;
+  final TransferableTypedData? rgbaBytes;
+  final int rgbaWidth;
+  final int rgbaHeight;
+  final Float32List quads;
+  final int lineCount;
+  final String paragraphModelPath;
+  final SendPort replyPort;
+}
+
+class _GroupParagraphsResult {
+  const _GroupParagraphsResult({
+    this.groups,
+    this.error,
+    this.totalMs = 0,
+    this.decodeMs = 0,
+    this.inferMs = 0,
+  });
+
+  final List<List<int>>? groups;
+  final String? error;
+  final int totalMs;
+  final int decodeMs;
+  final int inferMs;
 }
 
 class _CancelTaskMessage {
@@ -1540,12 +1874,14 @@ class _WorkerResult {
     required this.imageWidth,
     required this.imageHeight,
     required this.lines,
+    this.paragraphGroups,
     this.dictionary,
     this.totalMs = 0,
     this.decodeMs = 0,
     this.openMs = 0,
     this.detMs = 0,
     this.recMs = 0,
+    this.paraMs = 0,
     this.detAllocs = 0,
     this.recAllocs = 0,
   });
@@ -1553,12 +1889,14 @@ class _WorkerResult {
   final int imageWidth;
   final int imageHeight;
   final List<_WorkerLine> lines;
+  final List<List<int>>? paragraphGroups;
   final List<String>? dictionary;
   final int totalMs;
   final int decodeMs;
   final int openMs;
   final int detMs;
   final int recMs;
+  final int paraMs;
   final int detAllocs;
   final int recAllocs;
 }
