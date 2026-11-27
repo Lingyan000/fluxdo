@@ -1109,7 +1109,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     // 只在「空 ↔ 非空」翻转时重建(hint 显隐依赖它);普通打字不 setState ——
     // FluxdoEditor 内部自己监听 state 重建,整个 composer 跟着每字全量
     // rebuild 是纯浪费(打字卡顿嫌疑之一)。
-    final empty = _computeIsEmpty();
+    final empty = _editor?.isEmptyDocument ?? true;
     if (empty != _lastIsEmpty && mounted) {
       setState(() => _lastIsEmpty = empty);
     }
@@ -1139,17 +1139,6 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       _updateMentionQuery();
       _updateEmojiQuery();
     }
-  }
-
-  bool _computeIsEmpty() {
-    final editor = _editor;
-    if (editor == null) return true;
-    if (editor.blocks.length != 1) return false;
-    final b = editor.blocks.first;
-    if (b is! TextBlock) return false;
-    // 空文档判定含块类型:'- ' 转成空列表项/'# ' 转成空标题/包了容器
-    // 都不算空 —— 否则 hint 与列表圆点/标题光标叠画(实测截图)。
-    return b.content.length == 0 && b.isParagraph && b.containers.isEmpty;
   }
 
   /// 导入期间尚未产生编辑，关闭可沿用原文；已有文档必须先回写最新内容。
@@ -3849,7 +3838,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       );
     }
 
-    final isEmpty = _lastIsEmpty = _computeIsEmpty();
+    final isEmpty = _lastIsEmpty = editor.isEmptyDocument;
 
     return ComposerEditorLayout(
       onResumeKeyboard: resumeEditing,
