@@ -1,0 +1,58 @@
+[
+  {
+    "path": "release/ld-store-1.0.0",
+    "permissionsSummary": {
+      "permissions": [
+        "background",
+        "foregroundTasks",
+        "identity",
+        "links",
+        "network",
+        "notifications",
+        "payments",
+        "publicImages",
+        "sandbox",
+        "serviceAccount"
+      ],
+      "networkHosts": [
+        "api.ldspro.qzz.io",
+        "api1.ldspro.qzz.io",
+        "api2.ldspro.qzz.io",
+        "ldcstore.com"
+      ],
+      "linkHosts": [
+        "ldcstore.com"
+      ]
+    },
+    "publisherKeyFingerprint": "3c7a4d7fc1828696057c350f14b0756675831dc930b0a28bf26a3ecfe9613e16"
+  },
+  {
+    "path": "release/activity-feed-1.0.0",
+    "permissionsSummary": {
+      "permissions": [
+        "background",
+        "foregroundTasks",
+        "forumActivity",
+        "forumFollowing",
+        "forumProfiles",
+        "identity",
+        "notifications",
+        "sandbox"
+      ],
+      "networkHosts": [],
+      "linkHosts": []
+    },
+    "publisherKeyFingerprint": "3c7a4d7fc1828696057c350f14b0756675831dc930b0a28bf26a3ecfe9613e16"
+  },
+  {
+    "path": "release/quick-notes-1.0.0",
+    "permissionsSummary": {
+      "permissions": [
+        "sandbox"
+      ],
+      "networkHosts": [],
+      "linkHosts": []
+    },
+    "publisherKeyFingerprint": "3c7a4d7fc1828696057c350f14b0756675831dc930b0a28bf26a3ecfe9613e16"
+  }
+]

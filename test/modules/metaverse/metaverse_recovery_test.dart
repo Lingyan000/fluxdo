@@ -61,6 +61,29 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test('卡片排序、隐藏持久化与备份，卸载清理且新安装排末尾', () async {
+    final second = MetaversePluginPackage(manifest: MetaversePluginManifest.parse({...updateManifest('1.0.0'),'id':'example.second'}),
+      source:'https://example.org/index.json',code:updatePackage('1.0.0').code);
+    await controller.install(second);
+    final cards=container.read(metaverseCardLayoutProvider.notifier);
+    await cards.reorder(1,0);
+    await cards.setVisible('example.updates',false);
+    container.invalidate(metaverseCardLayoutProvider);
+    expect(container.read(metaverseCardLayoutProvider), [(id:'example.second',visible:true),(id:'example.updates',visible:false)]);
+    expect(controller.byId('example.updates')!.enabled,isTrue);
+    final backup=MetaversePluginBackup(directory);
+    final section=await backup.export(store);
+    final record=backup.validate(jsonDecode(jsonEncode(section))).firstWhere((p)=>p['manifest']['id']=='example.updates');
+    expect(record['presentation'], {'order':1,'visible':false});
+    await controller.remove('example.second');
+    expect(store.cardLayout().map((i)=>i.id), ['example.updates']);
+    await controller.install(second);
+    expect(store.cardLayout().map((i)=>i.id), ['example.updates','example.second']);
+    await controller.restoreBackup(updatePackage('1.0.0'), record, {});
+    expect(controller.byId('example.updates')!.enabled,isFalse);
+    expect(store.cardLayout().last, (id:'example.updates',visible:false));
+  });
+
   test('索引提交前中断丢弃候选，提交后中断恢复同版本数据', () async {
     final previous = controller.byId('example.updates')!;
     final package = updatePackage('1.1.0');

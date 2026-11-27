@@ -11,9 +11,13 @@ import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_plugin_page.dart';
 import '../plugin/ui/metaverse_plugin_surface_view.dart';
 import 'session/development_session.dart';
+import 'session/development_connection.dart';
+import 'development_scan_page.dart';
+import '../../../services/toast_service.dart';
 
 class MetaverseDevelopmentPage extends ConsumerStatefulWidget {
-  const MetaverseDevelopmentPage({super.key});
+  const MetaverseDevelopmentPage({super.key, this.scanPairing});
+  final Future<String?> Function(BuildContext)? scanPairing;
   @override
   ConsumerState<MetaverseDevelopmentPage> createState() =>
       _DevelopmentPageState();
@@ -151,6 +155,9 @@ class _DevelopmentPageState extends ConsumerState<MetaverseDevelopmentPage>
                             icon: const Icon(Symbols.cable_rounded),
                             label: Text(l.metaverse_devConnect),
                           ),
+                          if (DevelopmentScanPage.supported || widget.scanPairing != null)
+                            TextButton.icon(icon: const Icon(Symbols.qr_code_scanner_rounded),
+                              label: Text(l.metaverse_scanPairing), onPressed: _scan),
                         ],
                         if (session.state != 'idle')
                           SegmentedCardGroup(
@@ -282,6 +289,16 @@ class _DevelopmentPageState extends ConsumerState<MetaverseDevelopmentPage>
         session.diagnostic(context.l10n.metaverse_devInvalidPairing);
       }
     }
+  }
+
+  Future<void> _scan() async {
+    final raw = widget.scanPairing != null ? await widget.scanPairing!(context) :
+        await Navigator.of(context).push<String>(InteractionPageRoute(builder: (_) => const DevelopmentScanPage()));
+    if (!mounted || raw == null) return;
+    try {
+      final parsed = DevelopmentConnection.parse(raw);
+      setState(() => _pairing.text = parsed.toString());
+    } catch (_) { ToastService.showError(context.l10n.metaverse_devInvalidPairing); }
   }
 }
 

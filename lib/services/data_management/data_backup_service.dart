@@ -43,6 +43,8 @@ class DataBackupService {
     'blob_image_cache_last_sweep',
     // 插件通过独立备份段恢复，不能把安装索引当作已安装代码。
     'metaverse_plugins_v1',
+    'metaverse_cards_v1',
+    'metaverse_link_defaults_v1',
     'metaverse_market_cache_v1_',
     // ── 会话 / 凭证(跨设备无效或有害)──
     'linux_do_', // csrf_token / username

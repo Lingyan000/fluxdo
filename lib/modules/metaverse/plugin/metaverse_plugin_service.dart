@@ -66,6 +66,11 @@ class MetaversePluginService extends MetaverseService {
           ? const [] : manifest.links;
 
   @override
+  String pageTitle(BuildContext context, String page) => manifest.text(
+    'pages.$page.title', manifest.page(page)?.title ?? title(context),
+    context.l10n.localeName);
+
+  @override
   Future<bool> enable(BuildContext context, ProviderContainer container) async {
     final controller = container.read(metaversePluginsProvider.notifier);
     if (manifest.auth.required && plugin.allows(MetaversePluginPermission.serviceAccount) &&

@@ -15,6 +15,7 @@ import '../plugin/providers/metaverse_plugin_providers.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_plugin_management_page.dart';
 import '../plugin/ui/metaverse_plugin_tile.dart';
+import '../plugin/ui/metaverse_permission_list.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
 import 'metaverse_market_catalog.dart';
 import 'metaverse_market_provider.dart';
@@ -255,7 +256,7 @@ class MetaverseMarketDetailPage extends ConsumerStatefulWidget {
 class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
   bool _installing = false;
 
-  Future<void> _install() async {
+  Future<void> _install({bool replace = false}) async {
     if (_installing) return;
     setState(() => _installing = true);
     try {
@@ -270,6 +271,10 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
       if (!mounted) return;
       final controller = ref.read(metaversePluginsProvider.notifier);
       final previous = controller.byId(package.manifest.id);
+      if (replace) {
+        if (previous == null) throw StateError(S.current.metaverse_replaceIdentityChanged);
+        controller.validateReplacement(package, previous);
+      }
       if (previous != null && previous.source != package.source) {
         final approved = await showAppDialog<bool>(
           context: context,
@@ -300,12 +305,20 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
         package.manifest,
         package: package, previous: previous,
         isUpdate: previous != null,
+        confirmLabel: replace ? context.l10n.metaverse_replaceConfirm : null,
+        reviewNote: replace && previous != null
+            ? context.l10n.metaverse_replaceReview(previous.manifest.version, package.manifest.version)
+            : null,
         initialBlocked: controller.reviewPermissions(package),
       );
       if (choices == null) {
         return;
       }
-      await controller.install(package, choices: choices);
+      if (replace) {
+        await controller.replaceReviewed(package, previous!, choices);
+      } else {
+        await controller.install(package, choices: choices);
+      }
       if (mounted) {
         ToastService.showSuccess(
           context.l10n.metaverse_pluginInstalled(package.manifest.localizedName(context.l10n.localeName)),
@@ -332,7 +345,16 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
     final l = context.l10n;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(entry.localized('name', context.l10n.localeName))),
+      appBar: AppBar(title: Text(entry.localized('name', context.l10n.localeName)), actions: [
+        if (current && entry.compatible && !entry.withdrawn)
+          SwipeDismissiblePopupMenuButton<String>(
+            enabled: !_installing,
+            onSelected: (_) => _install(replace: true),
+            itemBuilder: (_) => [PopupMenuItem(value: 'replace', child: Text(
+              installed.manifest.version == entry.version
+                  ? l.metaverse_reinstallVersion : l.metaverse_switchVersion(entry.version)))],
+          ),
+      ]),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -377,6 +399,30 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             const SizedBox(height: 20),
             SelectableText(entry.localized('description', context.l10n.localeName)),
           ],
+          const SizedBox(height: 20),
+          SegmentedCardGroup(children: [
+            ExpansionTile(leading: Icon(entry.publisherKeyFingerprint == null ? Symbols.info_rounded : Symbols.verified_rounded),
+              trailing: const Icon(Symbols.expand_more_rounded),
+              title: Text(!entry.publisherPreviewAvailable ? l.metaverse_publisherPending :
+                entry.publisherKeyFingerprint == null ? l.metaverse_publisherUnsigned : l.metaverse_publisherSigned),
+              subtitle: entry.publisherKeyFingerprint == null ? null : Text('${entry.publisherKeyFingerprint!.substring(0,8)}…${entry.publisherKeyFingerprint!.substring(58)}', maxLines: 1, overflow: TextOverflow.ellipsis),
+              children: [ListTile(subtitle: SelectableText(entry.publisherKeyFingerprint ?? l.metaverse_previewVerification))],
+            ),
+            ExpansionTile(title: Text(l.metaverse_permissionPreview), trailing: const Icon(Symbols.expand_more_rounded),
+              subtitle: Text(entry.permissionsSummary == null ? l.metaverse_publisherPending :
+                l.metaverse_permissionPreviewCount(entry.permissionsSummary!.permissions.where((p) => p.manageable).length,
+                  entry.permissionsSummary!.networkHosts.length)),
+              children: [
+                if (entry.permissionsSummary case final summary?) ...[
+                  Padding(padding: const EdgeInsets.symmetric(horizontal:16,vertical:8), child: Align(alignment: Alignment.centerLeft,
+                    child: Wrap(spacing:8,runSpacing:8,children:[for(final p in summary.permissions.where((p)=>p.manageable))
+                      Chip(label:Text(metaversePermissionLabel(context,p)))]))),
+                  if (summary.networkHosts.isNotEmpty) ListTile(title: Text(l.metaverse_permissionNetwork), subtitle: SelectableText(summary.networkHosts.join('\n'))),
+                  if (summary.linkHosts.isNotEmpty) ListTile(title: Text(l.metaverse_permissionLinks), subtitle: SelectableText(summary.linkHosts.join('\n'))),
+                ],
+                ListTile(subtitle: Text(l.metaverse_previewVerification)),
+              ]),
+          ]),
           const SizedBox(height: 20),
           SegmentedCardGroup(
             color: PageBackgroundScope.contentColor(

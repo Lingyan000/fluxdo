@@ -45,6 +45,7 @@ class MetaverseTaskDriver with WidgetsBindingObserver {
   final MetaverseTaskStore control;
   final int? account;
   final badges = ValueNotifier<Map<String, int>>({});
+  final runningPlugins = ValueNotifier<Set<String>>({});
   Timer? _timer;
   bool _open = true, _busy = false;
   bool get _foreground {
@@ -145,13 +146,17 @@ class MetaverseTaskDriver with WidgetsBindingObserver {
             (_foreground || (_desktop && background)) &&
             ref.read(currentUserProvider).value?.id == owner,
         installed: () => ref.read(metaversePluginsProvider),
-        newHost: (p) => hosts.newHost(p, worker: true),
+        newHost: (p) {
+          runningPlugins.value = {p.id};
+          return hosts.newHost(p, worker: true);
+        },
       );
       if (_open && id != null) hosts.notifyTaskUpdated(id);
     } catch (error) {
       debugPrint('插件任务调度失败：$error');
     } finally {
       _busy = false;
+      if (_open) runningPlugins.value = {};
       if (_open) await changed();
     }
   }
@@ -186,5 +191,6 @@ class MetaverseTaskDriver with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     LocalNotificationService().pluginTap.removeListener(_queueTap);
     badges.dispose();
+    runningPlugins.dispose();
   }
 }

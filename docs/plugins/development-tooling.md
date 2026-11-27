@@ -39,7 +39,7 @@ Vite 用于开发期的模块依赖图、TypeScript 转换缓存、文件监听�
 
 ## CLI 和宿主接入边界
 
-- `fluxdo dev` 默认监听回环，Android 可使用 `adb reverse`。`fluxdo dev --lan 本机IPv4` 显式绑定局域网网卡，Android、iOS 和桌面可无线配对；使用临时 TLS 证书，App 按配对地址中的 SHA-256 指纹验证后才发送会话令牌。iOS 首次连接须允许本地网络访问。服务重启后配对地址失效，须重新配对；`--stdio` 保留模块测试入口。
+- `fluxdo dev` 默认监听回环，Android 可使用 `adb reverse`。`fluxdo dev --lan 本机IPv4` 显式绑定局域网网卡，Android、iOS 和桌面可无线配对；终端配对 URL 与二维码写入 stderr，设备日志仍为 stdout JSON；使用临时 TLS 证书，App 按配对地址中的 SHA-256 指纹验证后才发送会话令牌。iOS 首次连接须允许本地网络访问。服务重启后配对地址失效，须重新配对；`--stdio` 保留模块测试入口。
 - 应用使用独立开发实例，不能覆盖已安装正式插件的数据和凭证。
 - RFW 变化走组件库替换；JS 变化走模块 HMR；不兼容更新由宿主重启实例。
 - 权限和所需能力变化重新校验，新增权限仍需用户确认。
@@ -60,7 +60,7 @@ Vite 用于开发期的模块依赖图、TypeScript 转换缓存、文件监听�
 ## 使用与边界
 
 1. 独立脚手架创建项目并安装依赖，pnpm test 使用显式 mock 验证业务。
-2. pnpm dev 输出配对地址。App 插件管理的开发中心右上角打开连接入口；Android 先执行 adb reverse tcp:5174 tcp:5174。
+2. pnpm dev 输出配对地址。App 插件管理的开发中心右上角打开连接入口；Android USB 先执行 adb reverse tcp:5174 tcp:5174。使用 `--lan 本机IPv4` 时，Android、iOS 和 macOS 可点“扫码配对”填入地址，再主动连接并审阅权限；Windows、Linux 或相机不可用时粘贴地址。扫码与粘贴使用同一协议、局域网地址及 TLS 指纹校验，不自动运行插件。
 3. 确认清单权限后开始原生预览。JS 模块成功执行后提交处理器并释放旧资源；RFW 更新保留现有数据。
 4. 异步事件、宿主调用、Connect 和支付结束后应用更新。断线自动重连，恢复连接和完整重载需要手动审阅重启；不自动重放业务。
 5. 退出开发会话销毁临时文件与内存凭证，正式插件索引和存储不受影响。日志按 runtimeId/pluginId 筛选且脱敏后回传。

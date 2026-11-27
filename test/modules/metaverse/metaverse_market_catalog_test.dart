@@ -16,6 +16,23 @@ void main() {
     'sha256': 'a' * 64,
   };
 
+  test('目录预览兼容旧条目并区分未知、无签名和已签名', () {
+    expect(MetaverseMarketEntry.parse(entry(),source).publisherPreviewAvailable,isFalse);
+    final unsigned=MetaverseMarketEntry.parse({...entry(),'publisherKeyFingerprint':null,
+      'permissionsSummary':{'permissions':['identity','network','sandbox'],'networkHosts':['api.example.org'],'linkHosts':[]}},source);
+    expect(unsigned.publisherPreviewAvailable,isTrue);
+    expect(unsigned.publisherKeyFingerprint,isNull);
+    expect(unsigned.permissionsSummary!.permissions.map((p)=>p.name),contains('identity'));
+    expect(MetaverseMarketEntry.parse({...entry(),'publisherKeyFingerprint':'b'*64},source).publisherKeyFingerprint,'b'*64);
+    for(final bad in [42, 'key', 'g'*64]) {
+      expect(()=>MetaverseMarketEntry.parse({...entry(),'publisherKeyFingerprint':bad},source),throwsFormatException);
+    }
+    for(final summary in [42, {'permissions':['unknown'],'networkHosts':[],'linkHosts':[]},
+      {'permissions':['network'],'networkHosts':['127.0.0.1'],'linkHosts':[]}]) {
+      expect(()=>MetaverseMarketEntry.parse({...entry(),'permissionsSummary':summary},source),throwsFormatException);
+    }
+  });
+
   test('必需能力影响市场兼容判断且无声明的旧插件仍兼容', () {
     expect(MetaverseMarketEntry.parse(entry(), source).compatible, isTrue);
     expect(MetaverseMarketEntry.parse({...entry(), 'requiredFeatures':['virtualGrid']}, source).compatible, isTrue);

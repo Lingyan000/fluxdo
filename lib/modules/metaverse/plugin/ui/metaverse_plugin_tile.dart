@@ -13,6 +13,7 @@ class MetaversePluginTile extends StatelessWidget {
     required this.onTap,
     this.description,
     this.trailing,
+    this.status,
   });
 
   final String name;
@@ -20,6 +21,7 @@ class MetaversePluginTile extends StatelessWidget {
   final String metadata;
   final String? description;
   final Widget? trailing;
+  final Widget? status;
   final VoidCallback onTap;
 
   @override
@@ -64,6 +66,7 @@ class MetaversePluginTile extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (status != null) Padding(padding: const EdgeInsets.only(top: 8), child: status),
           ],
         ),
       ),

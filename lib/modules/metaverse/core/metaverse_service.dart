@@ -88,6 +88,8 @@ abstract class MetaverseService {
   /// 该服务接管的帖内链接。
   List<MetaverseLinkRule> get linkRules => const [];
 
+  String pageTitle(BuildContext context, String page) => title(context);
+
   /// 打开服务内的页面；[params] 为链接捕获的参数或服务自身传入的参数。
   Future<void> openPage(
     BuildContext context,

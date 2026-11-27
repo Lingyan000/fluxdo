@@ -1,3 +1,8 @@
+import '../../core/metaverse_link_rule.dart';
+import '../../metaverse_registry.dart';
+import 'metaverse_plugin_page.dart';
+import 'metaverse_plugin_status.dart';
+import 'metaverse_card_layout_page.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -42,6 +47,8 @@ class MetaversePluginManagementPage extends ConsumerWidget {
           SwipeDismissiblePopupMenuButton<VoidCallback>(
             onSelected: (action) => action(),
             itemBuilder: (context) => [
+              PopupMenuItem(value: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseCardLayoutPage())),
+                child: Text(context.l10n.metaverse_arrangeCards)),
               PopupMenuItem(value: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseUpdatePage())),
                 child: Text(context.l10n.metaverse_autoUpdates)),
               PopupMenuItem(
@@ -77,13 +84,8 @@ class MetaversePluginManagementPage extends ConsumerWidget {
                   child: MetaversePluginTile(
                     name: plugin.manifest.localizedName(context.l10n.localeName),
                     icon: plugin.manifest.icon,
-                    metadata: '${plugin.manifest.author} · ${plugin.manifest.version}${switch (reports[plugin.id]?['status']) {
-                      'ready' => ' · ${context.l10n.metaverse_updateReady}',
-                      'review' => ' · ${context.l10n.metaverse_updateReview}',
-                      'failed' => ' · ${context.l10n.metaverse_updateFailed}',
-                      'withdrawn' => ' · ${context.l10n.metaverse_updateWithdrawn}',
-                      _ => '',
-                    }}',
+                    metadata: '${plugin.manifest.author} · ${plugin.manifest.version}',
+                    status: MetaversePluginStatus(plugin: plugin, report: reports[plugin.id]),
                     trailing: const Icon(Symbols.chevron_right_rounded),
                     onTap: () => Navigator.of(context).push(
                       InteractionPageRoute(
@@ -269,6 +271,16 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                                   .setEnabled(plugin.id, enabled: value),
                             ),
                     ),
+                    if (plugin.suspendedReason != null)
+                      Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: MetaversePluginStatus(plugin: plugin)),
+                    if (plugin.enabled && plugin.suspendedReason == null && plugin.manifest.pages.isNotEmpty)
+                      ListTile(leading: const Icon(Symbols.open_in_new_rounded), title: Text(l.metaverse_openPlugin),
+                        trailing: const Icon(Symbols.chevron_right_rounded), onTap: () => MetaversePluginPage.open(context, plugin.id,
+                          plugin.manifest.cardPage ?? plugin.manifest.pages.first.id)),
+                    M3eSwitchListTile(title: Text(l.metaverse_showCard),
+                      value: ref.watch(metaverseCardLayoutProvider).where((item) => item.id == plugin.id).firstOrNull?.visible ?? true,
+                      onChanged: _busy ? null : (value) => _run(() => ref.read(metaverseCardLayoutProvider.notifier).setVisible(plugin.id, value))),
                     ListTile(
                       title: Text(
                         l.metaverse_pluginAuthor(
@@ -439,6 +451,14 @@ class _PluginPermissionsState extends ConsumerState<MetaversePluginPermissionsPa
     setState(() => _saving = true);
     try {
       await ref.read(metaversePluginsProvider.notifier).setPermission(widget.pluginId, permission, allowed);
+      if (mounted && allowed && permission == MetaversePluginPermission.links) {
+        final plugin = ref.read(metaversePluginsProvider.notifier).byId(widget.pluginId);
+        final container = ProviderScope.containerOf(context, listen: false);
+        if (plugin != null && ref.read(metaverseServicesProvider).any((s) => s.id != plugin.id && s.isEnabled(container) &&
+            s.linkRules.any((rule) => plugin.manifest.links.any((own) => MetaverseHostPattern.overlaps(own.host, rule.host))))) {
+          ToastService.showInfo(context.l10n.metaverse_linksOverlap);
+        }
+      }
     } catch (_) {
       if (mounted) ToastService.showError(context.l10n.metaverse_permissionSaveFailed);
     } finally {

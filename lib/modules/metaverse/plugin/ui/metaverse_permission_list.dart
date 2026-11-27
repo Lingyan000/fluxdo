@@ -192,6 +192,25 @@ class MetaversePermissionList extends StatelessWidget {
   };
 }
 
+String metaversePermissionLabel(BuildContext context, MetaversePluginPermission permission) {
+  final l = context.l10n;
+  return switch (permission) {
+    MetaversePluginPermission.sandbox => l.metaverse_permissionSandbox,
+    MetaversePluginPermission.network => l.metaverse_permissionNetwork,
+    MetaversePluginPermission.foregroundTasks => l.metaverse_foregroundTasks,
+    MetaversePluginPermission.identity => l.metaverse_permissionIdentity,
+    MetaversePluginPermission.serviceAccount => l.metaverse_permissionAccount,
+    MetaversePluginPermission.payments => l.metaverse_nativePayTitle,
+    MetaversePluginPermission.forumProfiles => l.metaverse_forumProfiles,
+    MetaversePluginPermission.forumActivity => l.metaverse_permissionForumActivity,
+    MetaversePluginPermission.forumFollowing => l.metaverse_forumFollowing,
+    MetaversePluginPermission.background => l.metaverse_backgroundTasks,
+    MetaversePluginPermission.notifications => l.metaverse_pluginNotifications,
+    MetaversePluginPermission.links => l.metaverse_permissionLinks,
+    MetaversePluginPermission.publicImages => l.metaverse_permissionImages,
+  };
+}
+
 Future<bool> showMetaversePermissionRequest(
   BuildContext context,
   MetaversePluginManifest manifest,

@@ -1,6 +1,37 @@
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import '../plugin/metaverse_plugin_manifest.dart';
 import '../plugin/metaverse_manifest_localization.dart';
+import '../plugin/metaverse_plugin_permission.dart';
+import '../core/metaverse_link_rule.dart';
+
+/// 目录提供的预览，下载后必须与包内清单再次核对。
+class MetaverseMarketPermissions {
+  const MetaverseMarketPermissions(this.permissions, this.networkHosts, this.linkHosts);
+  final Set<MetaversePluginPermission> permissions;
+  final List<String> networkHosts, linkHosts;
+  factory MetaverseMarketPermissions.parse(Object? value) {
+    if (value is! Map || value.keys.any((k) => !{'permissions', 'networkHosts', 'linkHosts'}.contains(k))) {
+      throw const FormatException('市场权限摘要无效');
+    }
+    List<String> list(String key, {bool host = false}) {
+      final values = value[key];
+      if (values is! List || values.length > 32 || values.any((v) => v is! String || v.length > 253 ||
+          (host && MetaverseHostPattern.normalize(v) == null)) || values.toSet().length != values.length) {
+        throw const FormatException('市场权限摘要无效');
+      }
+      return List<String>.unmodifiable(values);
+    }
+    final names = list('permissions');
+    final permissions = MetaversePluginPermission.values.where((p) => names.contains(p.name)).toSet();
+    if (permissions.length != names.length) throw const FormatException('市场权限类型无效');
+    return MetaverseMarketPermissions(permissions, list('networkHosts', host: true), list('linkHosts', host: true));
+  }
+  bool matches(MetaversePluginManifest manifest) =>
+      permissions.length == manifest.declaredPermissions.length &&
+      permissions.containsAll(manifest.declaredPermissions) &&
+      networkHosts.toSet().containsAll(manifest.networkHosts) && networkHosts.length == manifest.networkHosts.length &&
+      linkHosts.toSet().containsAll(manifest.linkHosts) && linkHosts.length == manifest.linkHosts.length;
+}
 
 class MetaverseMarketSource {
   const MetaverseMarketSource(this.url, {this.enabled = true});
@@ -90,7 +121,13 @@ class MetaverseMarketEntry {
     this.withdrawnVersions = const [],
     this.reason = '',
     this.locales = const {},
+    this.permissionsSummary,
+    this.publisherKeyFingerprint,
+    this.publisherPreviewAvailable = false,
   });
+  final MetaverseMarketPermissions? permissionsSummary;
+  final String? publisherKeyFingerprint;
+  final bool publisherPreviewAvailable;
   final String id,
       name,
       version,
@@ -164,6 +201,10 @@ class MetaverseMarketEntry {
     final api = value['apiVersion'];
     if (api is! int || api < 1) throw const FormatException('插件 API 版本无效');
     final screenshots = strings('screenshots', max: 8);
+    final fingerprint = value['publisherKeyFingerprint'];
+    if (fingerprint != null && (fingerprint is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(fingerprint))) {
+      throw const FormatException('市场发布者指纹无效');
+    }
     for (final url in screenshots) {
       MetaverseMarketSource.httpsUri(url);
     }
@@ -188,6 +229,9 @@ class MetaverseMarketEntry {
       changelog: text('changelog', max: 32768, optional: true),
       icon: value['icon'] is String ? text('icon', max: 64) : null,
       source: source,
+      permissionsSummary: value['permissionsSummary'] == null ? null : MetaverseMarketPermissions.parse(value['permissionsSummary']),
+      publisherKeyFingerprint: fingerprint as String?,
+      publisherPreviewAvailable: value.containsKey('publisherKeyFingerprint'),
       locales: Map<String,dynamic>.unmodifiable(value['locales'] as Map? ?? const {}),
     );
   }

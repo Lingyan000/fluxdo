@@ -9,6 +9,7 @@ import '../l10n/s.dart';
 import '../navigation/navigation_activity_scope.dart';
 import '../navigation/nav_action_bus.dart';
 import '../modules/metaverse/market/metaverse_market_provider.dart';
+import '../modules/metaverse/market/metaverse_update_provider.dart';
 import '../modules/metaverse/core/metaverse_service.dart';
 import '../modules/metaverse/metaverse_registry.dart';
 import '../modules/metaverse/plugin/metaverse_plugin_installer.dart';
@@ -179,6 +180,8 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     });
     final theme = Theme.of(context);
     final services = ref.watch(metaverseServicesProvider);
+    final cardLayout = ref.watch(metaverseCardLayoutProvider);
+    final attention = ref.watch(metaverseAttentionProvider);
     final container = _container;
 
     return DefaultTabController(
@@ -190,7 +193,8 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
             automaticallyImplyLeading: !widget.workspace,
             actions: [
               IconButton(
-                icon: const Icon(Symbols.extension_rounded),
+                icon: Badge.count(count: attention.length, isLabelVisible: attention.isNotEmpty,
+                  child: const Icon(Symbols.extension_rounded)),
                 tooltip: context.l10n.metaverse_pluginManage,
                 onPressed: () => Navigator.of(context).push(InteractionPageRoute(
                   builder: (_) => const MetaversePluginManagementPage(),
@@ -235,8 +239,9 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                     style: theme.textTheme.titleMedium,
                   ),
                 ),
-                for (final service in services.where((s) => s.isThirdParty))
-                  ..._buildService(context, service, container),
+                for (final item in cardLayout.where((item) => item.visible))
+                  for (final service in services.where((s) => s.isThirdParty && s.id == item.id))
+                    ..._buildService(context, service, container),
                 _buildAddServiceItem(theme),
                 SizedBox(height: 24 + MediaQuery.paddingOf(context).bottom),
               ]),

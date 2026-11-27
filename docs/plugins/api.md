@@ -470,3 +470,7 @@ fluxdo.on('files.invalidated', ctx => { /* 清空已选文件和上传状态。 
 声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐分区进行，事件 `scope` 标识 `shared`、`account` 或未归属的 `legacy`；不能借 scope 参数跨区读写。失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。
 
 从公共数据切换到账号分区时，声明 `accountDataMigration` 并处理 `storage.partition`。该事件接收 `{accountId, legacy, account}`，返回新的 `{legacy, account}`，只在无网络、凭证和界面能力的隔离引擎中执行；迁移与正常页面都无法读取其他账号分区。必须保留无法归属的数据、处理冲突并移除已经消费的旧记录。执行时机、权限和并发规则同上文链接。
+
+## 多服务链接接管
+
+宿主按已启用服务的静态链接规则收集候选，第三方插件不能覆盖论坛内链。单候选直接进入页面；多个候选由用户选择服务和目标页面，或选择浏览器。取消选择会终止本次点击。用户可按域名记住选择，停用、卸载或撤销链接权限后对应默认选择失效；选择结束时再次核对候选，脚本不能指定优先级。

@@ -31,6 +31,7 @@ class MetaversePluginBackup {
 
   Future<Map<String, Object?>> export(MetaversePluginStore store) async {
     final entries = <Map<String, Object?>>[];
+    final layout = store.cardLayout();
     for (final plugin in store.loadIndex()) {
       await store.settleRelease(plugin);
       final data = await store.readStorage(plugin.id);
@@ -52,6 +53,8 @@ class MetaversePluginBackup {
         'publisherKey': ?plugin.publisherKey,
         'autoUpdate': MetaverseUpdateStore(root).snapshot().allows(plugin),
         'preferences': preferences,
+        'presentation': {'order': layout.indexWhere((item) => item.id == plugin.id),
+          'visible': layout.firstWhere((item) => item.id == plugin.id).visible},
       });
     }
     final updates = MetaverseUpdateStore(root).snapshot();
@@ -141,6 +144,11 @@ class MetaversePluginBackup {
         throw const FormatException('备份更新开关无效');
       }
       final preferences = item['preferences'] ?? <String, Object?>{};
+      final presentation = item['presentation'];
+      if (presentation != null && (presentation is! Map || presentation['visible'] is! bool ||
+          presentation['order'] is! int || presentation['order'] < 0 || presentation['order'] >= 32)) {
+        throw const FormatException('备份卡片设置无效');
+      }
       if (preferences is! Map ||
           preferences.length > 24 ||
           manifest.preferences.any(
@@ -155,6 +163,7 @@ class MetaversePluginBackup {
         'source': source,
         'data': item['data'],
         'preferences': preferences,
+        'presentation': ?presentation,
         'publisherKey': item['publisherKey'],
         'autoUpdate': item['autoUpdate'] != false,
       });

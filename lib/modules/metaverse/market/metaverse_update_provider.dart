@@ -24,6 +24,13 @@ final metaverseUpdatesProvider =
       MetaverseUpdatesController.new,
     );
 
+final metaverseAttentionProvider = Provider<Set<String>>((ref) {
+  final reports = ref.watch(metaverseUpdatesProvider).value?.reports ?? const {};
+  return {for (final plugin in ref.watch(metaversePluginsProvider))
+    if (plugin.suspendedReason != null || (reports[plugin.id]?['status'] == 'review' &&
+        reports[plugin.id]?['source'] == plugin.source)) plugin.id};
+});
+
 class MetaverseUpdatesController extends AsyncNotifier<MetaverseUpdateState> {
   @override
   Future<MetaverseUpdateState> build() async =>

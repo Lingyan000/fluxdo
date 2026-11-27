@@ -133,6 +133,23 @@ final metaversePluginsProvider =
       List<InstalledMetaversePlugin>
     >(MetaversePluginsController.new);
 
+final metaverseCardLayoutProvider = NotifierProvider<MetaverseCardLayout, List<({String id, bool visible})>>(MetaverseCardLayout.new);
+class MetaverseCardLayout extends Notifier<List<({String id, bool visible})>> {
+  @override
+  List<({String id, bool visible})> build() => ref.watch(metaversePluginStoreProvider).cardLayout(ref.watch(metaversePluginsProvider));
+  Future<void> setVisible(String id, bool visible) async {
+    final next = [for (final item in state) item.id == id ? (id: id, visible: visible) : item];
+    await ref.read(metaversePluginStoreProvider).saveCardLayout(next);
+    if (ref.mounted) state = ref.read(metaversePluginStoreProvider).cardLayout(ref.read(metaversePluginsProvider));
+  }
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    final next = [...state];
+    next.insert(newIndex, next.removeAt(oldIndex));
+    await ref.read(metaversePluginStoreProvider).saveCardLayout(next);
+    if (ref.mounted) state = ref.read(metaversePluginStoreProvider).cardLayout(ref.read(metaversePluginsProvider));
+  }
+}
+
 /// 插件运行实例：按需启动脚本引擎，界面全部关闭后自动释放。
 final metaverseForumBudgetProvider = Provider((ref) => MetaverseForumBudget());
 final metaverseForumAdapterProvider = Provider((ref) => MetaverseForumAdapter(
@@ -163,6 +180,26 @@ class MetaversePluginsController
   Future<InstalledMetaversePlugin> install(MetaversePluginPackage package, {
     Map<MetaversePluginPermission, bool> choices = const {},
   }) => _mutations.run('index', () => _install(package, choices));
+
+  /// 显式替换只继承同来源、连续签名和兼容数据；审阅期间发生变化则重新审阅。
+  void validateReplacement(MetaversePluginPackage package, InstalledMetaversePlugin expected) {
+    if (!identical(byId(expected.id), expected) || package.manifest.id != expected.id ||
+        package.source != expected.source || expected.publisherKey == null ||
+        (package.signature?.fingerprint != expected.publisherKey &&
+          package.signature?.previousFingerprint != expected.publisherKey)) {
+      throw MetaversePluginInstallException(S.current.metaverse_replaceIdentityChanged);
+    }
+    if (package.manifest.dataVersion < expected.manifest.dataVersion) {
+      throw MetaversePluginInstallException(S.current.metaverse_replaceDataIncompatible);
+    }
+  }
+
+  Future<InstalledMetaversePlugin> replaceReviewed(MetaversePluginPackage package,
+      InstalledMetaversePlugin expected, Map<MetaversePluginPermission, bool> choices) =>
+      _mutations.run('index', () {
+        validateReplacement(package, expected);
+        return _install(package, choices);
+      });
   /// 自动更新只发布仍在原来源、授权未变化且没有使用中界面的候选。
   Future<bool> installAutomatic(MetaversePluginPackage package,
       InstalledMetaversePlugin expected, bool Function() canApply) => _mutations.run('index', () async {
@@ -236,6 +273,8 @@ class MetaversePluginsController
     data = prepareMetaverseStorageScopes(previous: old, next: package.manifest, data: data);
     await _install(package, choices, restoreData: data,
       restorePreferences: (backup['preferences'] as Map? ?? const {}).cast<String, Object?>());
+    await _store.restoreCardLayout(old.id, backup['presentation'] as Map?);
+    ref.notifyListeners();
     MetaverseUpdateStore(await ref.read(metaversePluginDirectoryProvider.future)).setAllowed(byId(old.id)!, backup['autoUpdate'] != false);
     (await ref.read(metaversePluginBackupProvider.future)).remove(old.id);
     ref.invalidate(metaversePendingRestoreProvider);
@@ -486,6 +525,8 @@ class MetaversePluginsController
     await _store.deleteToken(id);
     await LogWriter.instance.clearPlugin(id);
     await _replace(plugin, remove: true);
+    await _store.saveCardLayout(_store.cardLayout());
+    ref.notifyListeners();
   }
 
   Future<void> _resetData(String id) async {

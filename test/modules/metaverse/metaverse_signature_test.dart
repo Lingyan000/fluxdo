@@ -1,3 +1,4 @@
+import 'package:fluxdo/modules/metaverse/market/metaverse_market_catalog.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,15 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart'
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 
 void main() {
+  test('CLI 生成的权限预览与原生清单及签名一致', () async {
+    final network=MetaversePluginNetwork();addTearDown(network.dispose);
+    final rows=jsonDecode(File('test/fixtures/metaverse/sdk/market-preview.json').readAsStringSync()) as List;
+    for(final row in rows) {
+      final p=await MetaversePluginInstaller(network:network).importBundle(File('test/fixtures/metaverse/${row['path']}.fluxplugin').openRead());
+      expect(MetaverseMarketPermissions.parse(row['permissionsSummary']).matches(p.manifest),isTrue);
+      expect(row['publisherKeyFingerprint'],p.signature?.fingerprint);
+    }
+  });
   test('首发候选包通过原生签名和安装结构校验',() async {
     final network=MetaversePluginNetwork();addTearDown(network.dispose);
     for(final name in ['ld-store','activity-feed','quick-notes']) {

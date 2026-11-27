@@ -250,6 +250,8 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
           expectedDigest: entry.sha256,
         );
     if (package.manifest.id != entry.id ||
+        (entry.permissionsSummary != null && !entry.permissionsSummary!.matches(package.manifest)) ||
+        (entry.publisherPreviewAvailable && entry.publisherKeyFingerprint != package.signature?.fingerprint) ||
         package.manifest.version != entry.version ||
         package.manifest.apiVersion != entry.apiVersion ||
         package.manifest.requiredFeatures.toSet().difference(entry.requiredFeatures.toSet()).isNotEmpty ||

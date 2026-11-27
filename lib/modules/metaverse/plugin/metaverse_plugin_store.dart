@@ -127,6 +127,7 @@ class MetaversePluginStore {
   });
 
   static const indexKey = 'metaverse_plugins_v1';
+  static const cardsKey = 'metaverse_cards_v1';
   static const maxStorageBytes = 2 * 1024 * 1024;
   static const _secretNamespace = 'metaverse_plugin';
 
@@ -207,6 +208,37 @@ class MetaversePluginStore {
       jsonEncode([for (final plugin in plugins) plugin.toJson()]),
     );
     if (!saved) throw StateError('插件索引保存失败');
+  }
+
+  /// 展示偏好与安装身份分离，排序或隐藏不会重启插件、改权限。
+  List<({String id, bool visible})> cardLayout([List<InstalledMetaversePlugin>? plugins]) {
+    final ids = (plugins ?? loadIndex()).map((p) => p.id).toSet();
+    final result = <({String id, bool visible})>[];
+    try {
+      final raw = jsonDecode(_preferences.getString(cardsKey) ?? '[]');
+      if (raw is List && raw.length <= 32) {
+        for (final item in raw) {
+          if (item is Map && ids.remove(item['id'])) result.add((id: item['id'] as String, visible: item['visible'] != false));
+        }
+      }
+    } catch (_) {}
+    return [...result, for (final id in ids) (id: id, visible: true)];
+  }
+
+  Future<void> saveCardLayout(List<({String id, bool visible})> layout) async {
+    if (isolated) return;
+    final ids = loadIndex().map((plugin) => plugin.id).toSet();
+    if (!await _preferences.setString(cardsKey, jsonEncode([
+      for (final item in layout) if (ids.remove(item.id)) {'id': item.id, 'visible': item.visible},
+      for (final id in ids) {'id': id, 'visible': true},
+    ]))) { throw StateError('插件卡片设置保存失败'); }
+  }
+
+  Future<void> restoreCardLayout(String id, Map? presentation) async {
+    if (presentation == null) return;
+    final layout = cardLayout()..removeWhere((item) => item.id == id);
+    layout.insert((presentation['order'] as int).clamp(0, layout.length), (id: id, visible: presentation['visible'] as bool));
+    await saveCardLayout(layout);
   }
 
   Future<Directory> _directory(String id) async {

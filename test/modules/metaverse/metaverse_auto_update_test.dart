@@ -379,7 +379,7 @@ void main() {
       expect(await controller.installAutomatic(nextPackage, old, () => true), isFalse);
       expect(controller.byId(id), same(old));
       expect(await plugins.readStorage(id), data);
-      final next = await controller.install(nextPackage);
+      final next = await controller.replaceReviewed(nextPackage, old, {});
       expect(next.manifest.version, '1.0.0');
       expect(next.source, old.source);
       expect(next.enabled, isTrue);
@@ -396,6 +396,36 @@ void main() {
       expect(await plugins.readCode(id), nextPackage.code);
     });
   }
+  test('显式替换拒绝换源、换作者、数据降级和过期审阅；同版可重装', () async {
+    final signed = await installer.importBundle(File('test/fixtures/metaverse/release/quick-notes-1.0.0.fluxplugin').openRead(), source: updateSource.id);
+    final old = await controller.install(signed);
+    await plugins.updateStorage(old.id, 'draft', 'keep');
+    for (final bad in [
+      MetaversePluginPackage(manifest: signed.manifest, source: 'https://other.example.org/index.json', code: signed.code, signature: signed.signature),
+      MetaversePluginPackage(manifest: signed.manifest, source: signed.source, code: signed.code),
+    ]) {
+      await expectLater(controller.replaceReviewed(bad, old, {}), throwsA(anything));
+      expect(controller.byId(old.id), same(old));
+      expect((await plugins.readStorage(old.id))['draft'], 'keep');
+    }
+    final higher = MetaversePluginPackage(manifest: MetaversePluginManifest.parse({...signed.manifest.raw,
+      'schema':12, 'dataVersion': signed.manifest.dataVersion + 1,
+      'requiredFeatures': {...signed.manifest.requiredFeatures, 'dataMigrations'}.toList()}),
+      source: signed.source, code: signed.code, signature: signed.signature);
+    await plugins.saveIndex([InstalledMetaversePlugin(manifest: higher.manifest, source: old.source,
+      publisherKey: old.publisherKey, codeRevision: old.codeRevision, installationId: old.installationId)]);
+    container.invalidate(metaversePluginsProvider);
+    controller = container.read(metaversePluginsProvider.notifier);
+    final elevated = controller.byId(old.id)!;
+    await expectLater(controller.replaceReviewed(signed, elevated, {}), throwsA(anything));
+    expect(controller.byId(old.id), same(elevated));
+    await controller.setEnabled(old.id, enabled: true);
+    await expectLater(controller.replaceReviewed(higher, elevated, {}), throwsA(anything));
+    final current = controller.byId(old.id)!;
+    final reinstalled = await controller.replaceReviewed(higher, current, {});
+    expect(reinstalled.enabled, isTrue);
+    expect((await plugins.readStorage(old.id))['draft'], 'keep');
+  });
   test('下载超时撤销写入资格，迟到结果丢弃', () async {
     downloadGate = Completer<void>();
     await updater.check(timeout: const Duration(milliseconds: 10));

@@ -60,6 +60,15 @@ abstract final class MetaverseHostPattern {
 
   static bool matchesAny(Iterable<String> patterns, String host) =>
       patterns.any((pattern) => matches(pattern, host));
+
+  /// 判断两个声明是否可能接管同一域名，不枚举实际子域。
+  static bool overlaps(String a, String b) {
+    if (a == b) return true;
+    if (!a.startsWith('*.')) return matches(b, a);
+    if (!b.startsWith('*.')) return matches(a, b);
+    return a.substring(2).endsWith(b.substring(1)) ||
+        b.substring(2).endsWith(a.substring(1));
+  }
 }
 
 /// 链接规则：声明某类外部链接由服务的哪个页面接管。
