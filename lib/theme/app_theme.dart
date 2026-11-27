@@ -135,6 +135,180 @@ ButtonStyle _iconButtonColors(ColorScheme scheme, UiEmphasis emphasis) =>
       }),
     );
 
+/// 统一构建三档输入框风格（填充 / 描边 / 下划线），保证 TextField 与
+/// AppDropdownFormField 在全主题与明暗/纯黑模式下视觉一致。
+InputDecorationThemeData _buildInputDecorationTheme(
+  ColorScheme scheme,
+  UiShapes shapes,
+  InputStyle inputStyle,
+  Color control,
+) {
+  final isDark = scheme.brightness == Brightness.dark;
+  final floatingLabelStyle = WidgetStateTextStyle.resolveWith((states) {
+    if (states.contains(WidgetState.error)) {
+      return TextStyle(color: scheme.error);
+    }
+    if (states.contains(WidgetState.focused)) {
+      return TextStyle(color: control);
+    }
+    if (states.contains(WidgetState.disabled)) {
+      return TextStyle(color: scheme.onSurface.withValues(alpha: 0.38));
+    }
+    return TextStyle(color: scheme.onSurfaceVariant);
+  });
+  final hintStyle = TextStyle(
+    color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
+  );
+
+  switch (inputStyle) {
+    case InputStyle.filled:
+      final radius = shapes.borderRadius(12);
+      RoundedSuperellipseInputBorder border(BorderSide side) =>
+          RoundedSuperellipseInputBorder(borderRadius: radius, borderSide: side);
+      return InputDecorationThemeData(
+        filled: true,
+        fillColor: WidgetStateColor.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return scheme.onSurface.withValues(alpha: 0.03);
+          }
+          if (states.contains(WidgetState.error)) {
+            return scheme.errorContainer.withValues(alpha: isDark ? 0.22 : 0.28);
+          }
+          if (states.contains(WidgetState.hovered)) {
+            return scheme.onSurface.withValues(alpha: isDark ? 0.10 : 0.08);
+          }
+          if (states.contains(WidgetState.focused)) {
+            return scheme.onSurface.withValues(alpha: isDark ? 0.09 : 0.07);
+          }
+          return scheme.onSurface.withValues(alpha: isDark ? 0.07 : 0.055);
+        }),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        border: border(BorderSide.none),
+        enabledBorder: border(BorderSide.none),
+        disabledBorder: border(BorderSide.none),
+        focusedBorder: border(BorderSide(color: control, width: 1.5)),
+        errorBorder: border(BorderSide(color: scheme.error, width: 1.2)),
+        focusedErrorBorder: border(BorderSide(color: scheme.error, width: 1.6)),
+        floatingLabelStyle: floatingLabelStyle,
+        hintStyle: hintStyle,
+      );
+    case InputStyle.outlined:
+      final radius = shapes.borderRadius(10);
+      RoundedSuperellipseInputBorder border(BorderSide side) =>
+          RoundedSuperellipseInputBorder(borderRadius: radius, borderSide: side);
+      return InputDecorationThemeData(
+        filled: false,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
+        border: border(BorderSide(color: scheme.outlineVariant)),
+        enabledBorder: border(BorderSide(color: scheme.outlineVariant)),
+        disabledBorder: border(
+          BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+        focusedBorder: border(BorderSide(color: control, width: 1.5)),
+        errorBorder: border(BorderSide(color: scheme.error, width: 1.2)),
+        focusedErrorBorder: border(BorderSide(color: scheme.error, width: 1.6)),
+        floatingLabelStyle: floatingLabelStyle,
+        hintStyle: hintStyle,
+      );
+    case InputStyle.underline:
+      return InputDecorationThemeData(
+        filled: false,
+        border: UnderlineInputBorder(
+          borderSide: BorderSide(color: scheme.outline),
+        ),
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: scheme.outline),
+        ),
+        disabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: scheme.outlineVariant),
+        ),
+        focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: control, width: 1.5),
+        ),
+        errorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: scheme.error, width: 1.2),
+        ),
+        focusedErrorBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: scheme.error, width: 1.6),
+        ),
+        floatingLabelStyle: floatingLabelStyle,
+        hintStyle: hintStyle,
+      );
+  }
+}
+
+CheckboxThemeData _buildCheckboxTheme(
+  ColorScheme scheme,
+  UiShapes shapes,
+  Color control,
+  Color onControl,
+) => CheckboxThemeData(
+  shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(5)),
+  side: WidgetStateBorderSide.resolveWith((states) {
+    if (states.contains(WidgetState.selected)) return null;
+    if (states.contains(WidgetState.disabled)) {
+      return BorderSide(
+        color: scheme.onSurface.withValues(alpha: 0.38),
+        width: 1.6,
+      );
+    }
+    return BorderSide(color: scheme.outline, width: 1.6);
+  }),
+  fillColor: WidgetStateProperty.resolveWith((states) {
+    if (states.contains(WidgetState.disabled)) {
+      return states.contains(WidgetState.selected)
+          ? scheme.onSurface.withValues(alpha: 0.38)
+          : Colors.transparent;
+    }
+    if (states.contains(WidgetState.selected)) return control;
+    return Colors.transparent;
+  }),
+  checkColor: WidgetStatePropertyAll(onControl),
+);
+
+RadioThemeData _buildRadioTheme(ColorScheme scheme, Color control) =>
+    RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return scheme.onSurface.withValues(alpha: 0.38);
+        }
+        if (states.contains(WidgetState.selected)) return control;
+        return scheme.onSurfaceVariant;
+      }),
+    );
+
+DropdownMenuThemeData _buildDropdownMenuTheme(
+  ColorScheme scheme,
+  UiShapes shapes,
+  InputDecorationThemeData inputTheme, {
+  Color? surfaceColor,
+  double? elevation,
+  BorderSide side = BorderSide.none,
+}) => DropdownMenuThemeData(
+  inputDecorationTheme: inputTheme,
+  menuStyle: MenuStyle(
+    backgroundColor: WidgetStatePropertyAll(
+      surfaceColor ?? scheme.surfaceContainerLow,
+    ),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    elevation: WidgetStatePropertyAll(elevation ?? 6),
+    shadowColor: WidgetStatePropertyAll(scheme.shadow.withValues(alpha: 0.22)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
+    shape: WidgetStatePropertyAll(
+      RoundedSuperellipseBorder(
+        borderRadius: shapes.borderRadius(16),
+        side: side,
+      ),
+    ),
+  ),
+);
+
 /// light/dark 共用的 ThemeData 装配(两侧必须对称,尤其 M3eFlags ——
 /// ThemeData.lerp 对单边缺失的 extension 不插值而是瞬时并入)。
 ThemeData buildAppTheme(
@@ -155,10 +329,16 @@ ThemeData buildAppTheme(
   );
   final buttonStyle = m3e ? _m3ePressedShapeStyle(shapes) : roundButtonStyle;
   // 强调 token：墨色控件的主题里，入口图标与选中标记一起换成墨色
-  final emphasisColor = style.controls == ControlStyle.ink
-      ? scheme.onSurface
-      : scheme.primary;
+  final inkControls = style.controls == ControlStyle.ink;
+  final emphasisColor = inkControls ? scheme.onSurface : scheme.primary;
+  final onEmphasisColor = inkControls ? scheme.surface : scheme.onPrimary;
   final emphasis = UiEmphasis(accent: emphasisColor, selected: emphasisColor);
+  final baseInputTheme = _buildInputDecorationTheme(
+    scheme,
+    shapes,
+    InputStyle.filled,
+    emphasisColor,
+  );
   final base = ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
@@ -274,6 +454,20 @@ ThemeData buildAppTheme(
       color: scheme.surfaceContainerLow,
       surfaceTintColor: Colors.transparent,
       menuPadding: const EdgeInsets.symmetric(vertical: 8),
+    ),
+    inputDecorationTheme: baseInputTheme,
+    checkboxTheme: _buildCheckboxTheme(
+      scheme,
+      shapes,
+      emphasisColor,
+      onEmphasisColor,
+    ),
+    radioTheme: _buildRadioTheme(scheme, emphasisColor),
+    dropdownMenuTheme: _buildDropdownMenuTheme(
+      scheme,
+      shapes,
+      baseInputTheme,
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.32)),
     ),
   );
   final themed = style.hasMaterialComponents
@@ -440,26 +634,12 @@ ThemeData _applyStyle(
     ),
   );
 
-  final InputBorder? inputBorder = switch (style.inputs) {
-    InputStyle.filled => null,
-    InputStyle.outlined => OutlineInputBorder(
-      borderRadius: shapes.borderRadius(8),
-      borderSide: hairlineSide,
-    ),
-    InputStyle.underline => UnderlineInputBorder(
-      borderSide: BorderSide(color: scheme.outline),
-    ),
-  };
-  final InputBorder? focusedInputBorder = switch (style.inputs) {
-    InputStyle.filled => null,
-    InputStyle.outlined => OutlineInputBorder(
-      borderRadius: shapes.borderRadius(8),
-      borderSide: BorderSide(color: control, width: 1.5),
-    ),
-    InputStyle.underline => UnderlineInputBorder(
-      borderSide: BorderSide(color: control, width: 1.5),
-    ),
-  };
+  final styledInputTheme = _buildInputDecorationTheme(
+    scheme,
+    shapes,
+    style.inputs,
+    control,
+  );
 
   final textTheme = base.textTheme.copyWith(
     displayLarge: _titleFont(base.textTheme.displayLarge, style.titleFont),
@@ -578,11 +758,18 @@ ThemeData _applyStyle(
       trackColor: selectedColor(control, null),
       trackOutlineColor: selectedColor(control, null),
     ),
-    checkboxTheme: CheckboxThemeData(
-      fillColor: selectedColor(control, null),
-      checkColor: WidgetStatePropertyAll(onControl),
+    checkboxTheme: _buildCheckboxTheme(scheme, shapes, control, onControl),
+    radioTheme: _buildRadioTheme(scheme, control),
+    dropdownMenuTheme: _buildDropdownMenuTheme(
+      scheme,
+      shapes,
+      styledInputTheme,
+      surfaceColor: overlayColor,
+      elevation: elevation,
+      side: style.shadows
+          ? BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.32))
+          : hairlineSide,
     ),
-    radioTheme: RadioThemeData(fillColor: selectedColor(control, null)),
     chipTheme: base.chipTheme.copyWith(
       backgroundColor: Colors.transparent,
       selectedColor: control,
@@ -632,14 +819,7 @@ ThemeData _applyStyle(
       dividerColor: hairline,
       labelStyle: const TextStyle(fontWeight: FontWeight.w600),
     ),
-    inputDecorationTheme: inputBorder == null
-        ? base.inputDecorationTheme
-        : InputDecorationThemeData(
-            border: inputBorder,
-            enabledBorder: inputBorder,
-            focusedBorder: focusedInputBorder,
-            filled: false,
-          ),
+    inputDecorationTheme: styledInputTheme,
     sliderTheme: base.sliderTheme.copyWith(
       activeTrackColor: control,
       thumbColor: control,

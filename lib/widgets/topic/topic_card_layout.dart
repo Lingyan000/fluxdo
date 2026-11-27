@@ -112,9 +112,11 @@ class TopicCardLayout {
   /// [ensureWidth] 提供,排版自我纠正并按宽缓存,后续帧零成本。
   double layoutWidth = -1;
   void Function(double width)? _doLayout;
+  String? _lastTimeStr;
+  String Function()? _resolveTimeStr;
 
-  /// 原地重排代数:每次 [refreshTime] 原地重排 +1。渲染对象据此感知
-  /// "同一 layout 实例内容变了"(identical 判不出),触发重布局。
+  /// 原地重排代数:每次 [refreshTime] 实际产生时间变化并重排后 +1。
+  /// 渲染对象据此感知 "同一 layout 实例内容变了"(identical 判不出),触发重布局。
   int revision = 0;
 
   /// 布局期宽度纠正:与当前排版宽差 >0.5px 才重排(重排 ≈1.5~2.5ms,
@@ -126,14 +128,19 @@ class TopicCardLayout {
     relayout(width);
   }
 
-  /// 分钟心跳的在屏原地刷新:重跑排版闭包(闭包体内重新求值
-  /// formatRelativeTime,时间串随之更新)。仅由在屏卡的心跳订阅调用
-  /// —— 离屏缓存不动,靠 stamp 里的分钟代在下次 obtain 时惰性换新。
-  void refreshTime() {
+  /// 分钟心跳的在屏原地刷新:先求值最新相对时间串,若展示文案未变化
+  /// (例如超过 1 小时的帖子仍显示 "3天前")则直接跳过,不做整卡重排。
+  /// 返回 true 表示时间文案确实变化并已完成重排。
+  bool refreshTime() {
     final relayout = _doLayout;
-    if (relayout == null || layoutWidth <= 0) return;
+    if (relayout == null || layoutWidth <= 0) return false;
+    final resolveTime = _resolveTimeStr;
+    if (resolveTime != null && resolveTime() == _lastTimeStr) {
+      return false;
+    }
     relayout(layoutWidth);
     revision++;
+    return true;
   }
 
   static final Map<String, TopicCardLayout> _cache = {};
@@ -143,11 +150,6 @@ class TopicCardLayout {
   /// 命中(O(1) 免费)与 miss(真付了排版成本),按 miss 计预算;
   /// 也可作性能诊断口径(挂载帧该值增长 = 预热漏了)。
   static int layoutBuildCount = 0;
-
-  /// 离屏缓存按实际分钟惰性失效，不为缓存永久订阅心跳。
-  /// 在屏卡仍由 RenderObject 的 attach/detach 管理心跳并刷新时间。
-  static int _currentMinuteEpoch() =>
-      DateTime.now().millisecondsSinceEpoch ~/ Duration.millisecondsPerMinute;
 
   /// 存入缓存(替换旧实例)并按需 LRU。**内容变化必产出新实例**:
   /// PaintedTopicCard 的渲染对象用 identical 判断是否重绘,若复用同一
@@ -167,6 +169,21 @@ class TopicCardLayout {
 
   /// 环境级失效(主题/字号变化时可由页面调用;逐卡 stamp 也会兜住)
   static void evictAll() => _cache.clear();
+
+  /// 话题卡排版依赖的主题值指纹。
+  ///
+  /// 不能用 `identityHashCode(theme)`:`Theme.of(context)` 的本地化缓存
+  /// 容量有限,其他页面创建局部 `ThemeData` 后可能把根主题挤出,导致返回
+  /// 内容相同但身份全新的对象,触发整屏话题卡无故重排。
+  static Object themeSignature(ThemeData theme) => (
+    theme.brightness,
+    theme.colorScheme,
+    theme.textTheme.bodyMedium,
+    theme.textTheme.labelSmall,
+    theme.cardTheme.color,
+    theme.iconTheme,
+    theme.appColors.green,
+  );
 
   /// 话题卡(普通 / 私信):取/建排版。命中 O(1);miss 全量排版
   /// ≈1.5~2.5ms,只发生在数据首达或环境变化后首次进屏。
@@ -190,19 +207,22 @@ class TopicCardLayout {
     final effStyle = messageStyle
         ? TopicCardStyle.defaults
         : (style ?? TopicCardStyleScope.current);
+    final initialTimeStr = TimeUtils.formatRelativeTime(topic.lastPostedAt);
     final stamp = (
       identityHashCode(topic),
-      identityHashCode(theme),
+      themeSignature(theme),
       statsAvailableWidth,
       messageStyle,
       bandExpired,
       identityHashCode(category),
-      _currentMinuteEpoch(),
+      initialTimeStr, // 按实际时间文案失效:文案不变的旧帖跨分钟继续命中
       effStyle, // 值语义 ==:改样式设置即重排
     );
     final cached = _cache[identity];
     if (cached != null && cached._stamp == stamp) return cached;
     final layout = TopicCardLayout._(identity, theme.iconTheme).._stamp = stamp;
+    layout._resolveTimeStr = () =>
+        TimeUtils.formatRelativeTime(topic.lastPostedAt);
     _put(identity, layout);
 
     final scheme = theme.colorScheme;
@@ -287,16 +307,18 @@ class TopicCardLayout {
     required String Function(String name) emojiUrlOf,
     double statsAvailableWidth = 460,
   }) {
+    final initialTimeStr = TimeUtils.formatRelativeTime(post.createdAt);
     final stamp = (
       identityHashCode(post),
-      identityHashCode(theme),
+      themeSignature(theme),
       statsAvailableWidth,
       identityHashCode(category),
-      _currentMinuteEpoch(),
+      initialTimeStr,
     );
     final cached = _cache[identity];
     if (cached != null && cached._stamp == stamp) return cached;
     final layout = TopicCardLayout._(identity, theme.iconTheme).._stamp = stamp;
+    layout._resolveTimeStr = () => TimeUtils.formatRelativeTime(post.createdAt);
     _put(identity, layout);
 
     final scheme = theme.colorScheme;
@@ -472,6 +494,7 @@ class TopicCardLayout {
     required TopicCardStyle style,
   }) {
     layoutBuildCount++;
+    _lastTimeStr = timeStr;
     final scheme = theme.colorScheme;
     final baseText = theme.textTheme.bodyMedium ?? const TextStyle();
     final labelSmall = theme.textTheme.labelSmall ?? const TextStyle();

@@ -72,7 +72,7 @@ class SearchPostPrewarmScope extends ConsumerWidget {
       items: posts,
       signature: (
         identityHashCode(posts),
-        identityHashCode(Theme.of(context)),
+        TopicCardLayout.themeSignature(Theme.of(context)),
         searchCardWidthFor(context),
         identityHashCode(categoryMap),
       ),

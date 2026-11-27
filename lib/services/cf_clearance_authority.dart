@@ -36,15 +36,57 @@ class CfClearanceAuthority {
   /// 换届窗口：在位值剩余有效期小于该值时允许替换（自然换届，零弹盾）。
   static const Duration rotationWindow = Duration(minutes: 30);
 
+  /// `/challenge` 完整过盾拿到的高权重 cf_clearance 短保护窗：
+  /// 窗口内不让后台 Turnstile 首铸覆盖该值，防止严格节点上被预签票降级；
+  /// 窗口过后或该值一旦被撞即自动解除，由 Turnstile 无缝接管续期。
+  static const Duration challengeProtectionWindow = Duration(minutes: 2);
+
   /// 最近一次撞盾时 jar 里的值（= 已死的在位值）。
   /// 只记这一个：撞了就过盾，没有语义要判，不需要计数/集合。
   String? _lastChallengedValue;
+  String? _challengeProtectedValue;
+  DateTime? _challengeProtectedUntil;
+
+  /// 记录刚通过 `/challenge` 完整验证同步落库的高权重 cf_clearance。
+  void noteChallengeVerified(String? value, {DateTime? now}) {
+    final normalized = _normalize(value ?? '');
+    if (normalized.isEmpty) return;
+    _challengeProtectedValue = normalized;
+    _challengeProtectedUntil = (now ?? DateTime.now()).add(
+      challengeProtectionWindow,
+    );
+  }
+
+  /// 当前在位值是否仍处于刚通过 `/challenge` 后的短保护窗内（且未被撞）。
+  Future<bool> isIncumbentChallengeProtected({DateTime? now}) async {
+    final protectedValue = _challengeProtectedValue;
+    final until = _challengeProtectedUntil;
+    if (protectedValue == null || until == null) return false;
+    final currentTime = now ?? DateTime.now();
+    if (!until.isAfter(currentTime)) {
+      _challengeProtectedValue = null;
+      _challengeProtectedUntil = null;
+      return false;
+    }
+    final current = await _readCanonical();
+    final currentValue = _normalize(current?.value ?? '');
+    if (currentValue.isEmpty || currentValue != protectedValue) return false;
+    if (_lastChallengedValue != null && _lastChallengedValue == currentValue) {
+      return false;
+    }
+    return true;
+  }
 
   /// 撞盾时登记：请求实际携带的 cf_clearance 已被 CF 挑战 = 在位值已死，
   /// 此后 sync 可以替换它（过盾新值继位，或 Turnstile 新铸值无缝补位）。
   void noteIncumbentChallenged(String? value) {
     final normalized = _normalize(value ?? '');
-    if (normalized.isEmpty || normalized == _lastChallengedValue) return;
+    if (normalized.isEmpty) return;
+    if (normalized == _challengeProtectedValue) {
+      _challengeProtectedValue = null;
+      _challengeProtectedUntil = null;
+    }
+    if (normalized == _lastChallengedValue) return;
     _lastChallengedValue = normalized;
     debugPrint('[CfClearanceAuthority] 在位 cf_clearance 被撞，放开换届');
     CfChallengeLogger.log(
@@ -117,6 +159,8 @@ class CfClearanceAuthority {
   /// 登出/换账号时清空：标记随登录会话失效。
   void reset() {
     _lastChallengedValue = null;
+    _challengeProtectedValue = null;
+    _challengeProtectedUntil = null;
   }
 
   // ---------------------------------------------------------------------------

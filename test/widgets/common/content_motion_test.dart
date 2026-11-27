@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
@@ -113,6 +115,83 @@ void main() {
     expect(tester.getRect(find.text('footer')), footer);
     expect(tester.getSize(find.byType(ListView)), size);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('固定工具栏下的滚动内容只在自己的顶部渐隐，回顶后恢复', (tester) async {
+    final capture = GlobalKey();
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    const toolbar = ColoredBox(
+      color: Colors.black,
+      child: SizedBox(width: double.infinity, height: 40),
+    );
+    await tester.pumpWidget(
+      host(
+        RepaintBoundary(
+          key: capture,
+          child: AppSheetScaffold(
+            title: '翻译',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                toolbar,
+                Flexible(
+                  child: SingleChildScrollView(
+                    controller: scroll,
+                    child: const ColoredBox(
+                      color: Colors.black,
+                      child: SizedBox(width: double.infinity, height: 1500),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final origin = tester.getTopLeft(find.byKey(capture));
+    final headerY = (tester.getTopLeft(find.byWidget(toolbar)) - origin).dy;
+    final viewport = tester
+        .getRect(find.byType(SingleChildScrollView))
+        .shift(-origin);
+    // 在同一条竖线上取样：固定工具栏、正文渐变的起点和中间、渐变下方。
+    Future<List<int>> sample() async => (await tester.runAsync(() async {
+      final box =
+          capture.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await box.toImage();
+      try {
+        final bytes = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        return [
+          for (final y in [
+            headerY + 1,
+            viewport.top + 1,
+            viewport.top + 8,
+            viewport.top + 20,
+          ])
+            bytes.getUint8(
+              (y.floor() * image.width + viewport.center.dx.floor()) * 4,
+            ),
+        ];
+      } finally {
+        image.dispose();
+      }
+    }))!;
+
+    expect(await sample(), [0, 0, 0, 0]);
+    scroll.jumpTo(60);
+    await tester.pumpAndSettle();
+    final [header, top, middle, below] = await sample();
+    expect(header, 0);
+    expect(top, greaterThan(middle));
+    expect(middle, greaterThan(0));
+    expect(below, 0);
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(await sample(), [0, 0, 0, 0]);
   });
 
   testWidgets('普通面板保持内容高度，窄屏大字体/键盘下无溢出', (tester) async {

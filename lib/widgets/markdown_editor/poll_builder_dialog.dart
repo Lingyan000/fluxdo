@@ -9,7 +9,8 @@
 /// 见 local_date_edit_dialog 同款注释)。
 library;
 
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
+import 'package:common_ui/common_ui.dart'
+    show AppDropdownFormField, AppDropdownItem;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -365,13 +366,7 @@ class _PollBuilderDialogState extends State<_PollBuilderDialog> {
       child: TextField(
         controller: c,
         keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(4),
-          ),
-        ),
+        decoration: InputDecoration(labelText: label, isDense: true),
       ),
     );
   }
@@ -422,9 +417,6 @@ class _PollBuilderDialogState extends State<_PollBuilderDialog> {
                             decoration: InputDecoration(
                               labelText: '选项 ${i + 1}',
                               isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: context.shapes.borderRadius(4),
-                              ),
                             ),
                           ),
                         ),
@@ -499,22 +491,20 @@ class _PollBuilderDialogState extends State<_PollBuilderDialog> {
                 ),
               ),
               if (_showAdvanced) ...[
-                DropdownButtonFormField<String>(
+                AppDropdownFormField<String>(
                   initialValue: _results,
-                  decoration: InputDecoration(
+                  isDense: true,
+                  decoration: const InputDecoration(
                     labelText: '结果可见性',
                     isDense: true,
-                    border: OutlineInputBorder(
-                      borderRadius: context.shapes.borderRadius(4),
-                    ),
                   ),
                   items: [
                     for (final (v, label) in kPollResults)
-                      DropdownMenuItem(value: v, child: Text(label)),
+                      AppDropdownItem(value: v, label: label),
                   ],
                   onChanged: (v) => setState(() => _results = v ?? 'always'),
                 ),
-                SwitchListTile(
+                M3eSwitchListTile(
                   value: _public,
                   onChanged: (v) => setState(() => _public = v),
                   title: const Text('公开投票人', style: TextStyle(fontSize: 14)),

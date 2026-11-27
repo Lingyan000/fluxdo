@@ -33,3 +33,12 @@ uv run --python 3.12 tool/ocr/convert_models.py --output .dart_tool/ocr-litert
 转换后的真实模型回归使用 `flutter test test/services/local_ocr_service_model_test.dart --dart-define=FLUXDO_OCR_TEST_MODEL_DIR=.dart_tool/ocr-litert/ppocr-v6-small-litert-1`。未指定模型目录时跳过这组测试；指定后会验证实际发布文件的摘要、识别结果与字符坐标。
 
 运行库下载缓存可提前放在 `packages/fluxdo_ocr/.dart_tool/runtime/`，文件名和 SHA-256 必须与构建 hook 一致。Flatpak manifest 已为离线构建预取 Linux 官方发布物。
+
+## 智能段落归并（line2para）
+
+`src/line2para.c` 与 `OcrParagraphModel` 提供基于视觉外观（前景/背景 HSV 色彩、笔画宽度与一致性）和几何布局上下文的轻量图注意力网络（B-Scale 4 层 GNN）段落归并能力，以纯 C99 编译进 `fluxdo_ocr_ops`，不额外引入 ONNX Runtime，适用于全部五个平台及系统原生 Vision / 本地 LiteRT 两种识字引擎；模型未就绪或不可用时自动回退到本地几何排版。
+
+上游来源与许可证：
+
+- 推理算法（特征提取、四层 B-Scale GNN 前向计算与 Signed 聚类解码）：移植自 [mg-chao/simd-paddle-ocr-rs](https://github.com/mg-chao/simd-paddle-ocr-rs)（`src/paragraph/`，Apache-2.0 许可证）。
+- 预训练模型文件 `line2para_1_2-epoch12-signed-1.625.onnx`（约 2.92 MiB）：来源于 [mgchao/SnowShotOCR](https://modelscope.cn/models/mgchao/SnowShotOCR)（固定提交 `a74b1a19f017058b3481906cbdb345622f2f2911`，Apache-2.0 许可证），按需下载并通过 SHA-256 校验，可通过 `--dart-define=FLUXDO_OCR_LINE2PARA_URL=<HTTPS URL>` 覆盖分发地址。

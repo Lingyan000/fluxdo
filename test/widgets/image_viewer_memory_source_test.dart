@@ -106,9 +106,11 @@ void main() {
     double scale = 1,
     Size size = const Size(360, 800),
     bool animated = false,
+    bool desktop = false,
     Future<void>? closeWhen,
   }) async {
     tester.view.devicePixelRatio = 1;
+    PlatformUtils.debugDesktopOverride = desktop;
     tester.view.physicalSize = size;
     addTearDown(tester.view.reset);
     SharedPreferences.setMockInitialValues({'pref_dialog_blur': false});
@@ -206,6 +208,25 @@ void main() {
       }
     });
   }
+
+  testWidgets('桌面受控图片复用三分区查看器并在撤权时关闭', (tester) async {
+    final revoked = Completer<void>();
+    final bytes = img.encodeJpg(img.Image(width: 200, height: 400));
+    await show(tester, () async => bytes, desktop: true,
+      size: const Size(1000, 700), closeWhen: revoked.future);
+    expect(find.byType(ExtendedImageSlidePage), findsNothing);
+    expect(find.text('200 × 400'), findsOneWidget);
+    expect(find.byIcon(Symbols.rotate_right_rounded), findsOneWidget);
+    expect(find.byIcon(Symbols.document_scanner_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Symbols.add_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('150%'), findsOneWidget);
+    expect(loads, 1);
+    revoked.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('私密来源撤销关闭所属查看器并清除解码缓存', (tester) async {
     final revoked = Completer<void>();
@@ -321,7 +342,7 @@ void main() {
         expect(overlay.sourceKey, 'memory');
         expect(overlay.gestureController, isNotNull);
         final png = await tester.runAsync(() => overlay.loadImage(CancelToken()));
-        final decoded = img.decodePng(png!);
+        final decoded = img.decodeImage(png!);
         expect(decoded, isNotNull);
         expect(decoded!.width / decoded.height, closeTo(24 / 32, 0.01));
         expect(loads, 1);

@@ -58,4 +58,51 @@ void main() {
     expect(warmed, [2]);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('手指按住拖动列表期间暂停空闲任务和卡片预热，松手停稳后恢复', (tester) async {
+    addTearDown(resetIdleTaskInteractionState);
+    final warmed = <int>[];
+    var idleRuns = 0;
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: CardPrewarmScope<int>(
+          items: const [1, 2, 3],
+          signature: 'drag-test',
+          warmItem: (_, item) {
+            warmed.add(item);
+            return null;
+          },
+          child: ListView.builder(
+            itemCount: 40,
+            itemBuilder: (_, i) => SizedBox(height: 60, child: Text('row $i')),
+          ),
+        ),
+      ),
+    );
+
+    // 模拟手指按下并持续拖动（此时无动画 ticker，transientCallbackCount == 0）
+    final gesture = await tester.startGesture(const Offset(100, 300));
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump();
+
+    scheduleIdleTask(() => idleRuns++);
+
+    // 拖动保持 300ms：期间不应执行空闲任务或预热
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(idleRuns, 0, reason: '手指按住拖动期间不应执行 scheduleIdleTask');
+    expect(warmed, isEmpty, reason: '手指按住拖动期间不应执行卡片预热');
+
+    // 松手并等待滚动停稳后恢复执行
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 24));
+    expect(idleRuns, 1, reason: '滚动停稳后空闲任务应正常执行');
+    expect(warmed, [1, 2, 3], reason: '滚动停稳后卡片预热应恢复完成');
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

@@ -71,6 +71,10 @@ import workmanager_apple
     MediaTranscodeHandler.shared.register(
       messenger: messenger
     )
+    // Apple Vision 原生 OCR 通道（神经网络引擎加速，免模型下载）
+    VisionOcrHandler.shared.register(
+      messenger: messenger
+    )
     // 注册代理 CA 证书 channel（原生层 SSL challenge 拦截）
     let proxyCertChannel = FlutterMethodChannel(
       name: "com.fluxdo/proxy_cert",

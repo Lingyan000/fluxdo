@@ -87,6 +87,23 @@
   "cf_sessionCompatCloseAction": "关闭",
   "cf_sessionCompatDisabled": "已关闭临时兼容模式",
   "cf_sessionCompatDisable": "退出临时兼容模式",
+  "cf_protocolMismatchHint": "检测到通道协议不一致（核心 {coreHttp}，浏览器 {webviewHttp}），开启主站协议对齐可缓解过盾失败",
+  "@cf_protocolMismatchHint": {
+    "placeholders": {
+      "coreHttp": {
+        "type": "String"
+      },
+      "webviewHttp": {
+        "type": "String"
+      }
+    }
+  },
+  "cf_protocolMismatchEnableAction": "开启对齐",
+  "cf_protocolMismatchEnabled": "已开启主站协议对齐，后续验证将与核心统一使用 HTTP/2",
+  "cf_protocolMismatchForceH3Action": "强制开启 HTTP/3",
+  "cf_protocolMismatchForceH3ConfirmTitle": "强制开启 HTTP/3？",
+  "cf_protocolMismatchForceH3ConfirmDesc": "当前未采集到 WebView 的 HTTP/3 模板，强制开启后网络核心将使用默认 QUIC 参数尝试 HTTP/3，部分节点仍可能触发风控。开启后会自动关闭主站协议对齐，通常更推荐优先使用「开启对齐」。",
+  "cf_protocolMismatchForceH3Enabled": "已强制开启 HTTP/3，后续请求将尝试升级",
   "@cf_verifying": {
     "placeholders": {
       "seconds": {

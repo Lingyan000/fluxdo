@@ -188,6 +188,9 @@ pub struct NetConfig {
     /// 经过 HTTPS 认证且声明 persist=1 的同源 Alt-Svc 缓存。
     #[serde(default)]
     pub http3_cache_path: Option<String>,
+    /// 无 H3/QUIC 模板时仍允许核心按默认 QUIC 参数尝试 HTTP/3（默认关闭）。
+    #[serde(default)]
+    pub allow_uncalibrated_http3: bool,
     /// 宿主当前 WebView UA，用于缓存失效与就近预置选择。
     #[serde(default)]
     pub fingerprint_user_agent: Option<String>,
@@ -228,6 +231,7 @@ impl Default for NetConfig {
             webview_mitm: false,
             fingerprint_cache_path: None,
             http3_cache_path: None,
+            allow_uncalibrated_http3: false,
             fingerprint_user_agent: None,
             fingerprint_runtime_identity: None,
             fingerprint_platform: None,

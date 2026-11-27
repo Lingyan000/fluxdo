@@ -114,8 +114,6 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsNameHint,
-                border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
@@ -169,8 +167,6 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               maxLines: 12,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTemplateHint,
-                border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
               validator: (v) {
@@ -210,8 +206,6 @@ class _PromptPresetEditPageState extends ConsumerState<PromptPresetEditPage> {
               enabled: !_isBuiltIn,
               decoration: InputDecoration(
                 hintText: AiL10n.current.quickPromptsTagsHint,
-                border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4)),
                 isDense: true,
               ),
             ),

@@ -69,6 +69,68 @@ abstract final class ImageToolBytes {
     }
   }
 
+  /// OCR 专用的快速字节准备：对未超像素预算的常规静态 JPEG/PNG 直接透传原字节，
+  /// 跳过耗时的 `ui.Image.toByteData(format: png)` 重压缩；动图/AVIF/SVG/超大图再回退转单帧 PNG。
+  static Future<Uint8List> ocrBytes(Uint8List bytes) async {
+    if (bytes.length >= 12 &&
+        !SvgUtils.isSvgBytes(bytes) &&
+        !bytesLookLikeAvif(bytes) &&
+        (_isJpeg(bytes) || _isStaticPng(bytes))) {
+      try {
+        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        final descriptor = await ui.ImageDescriptor.encoded(buffer);
+        buffer.dispose();
+        final ratio = _ratio(
+          descriptor.width.toDouble(),
+          descriptor.height.toDouble(),
+        );
+        descriptor.dispose();
+        if (ratio >= 1.0) return bytes;
+      } catch (_) {
+        // 头嗅探异常时回退到统一转码路径
+      }
+    }
+    return png(bytes);
+  }
+
+  static bool _isJpeg(Uint8List bytes) =>
+      bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF;
+
+  /// 检测静态 PNG（带 `acTL` 块的 APNG 排除，需取首帧）。
+  static bool _isStaticPng(Uint8List bytes) {
+    if (bytes.length < 24 ||
+        bytes[0] != 0x89 ||
+        bytes[1] != 0x50 ||
+        bytes[2] != 0x4E ||
+        bytes[3] != 0x47) {
+      return false;
+    }
+    // 扫描 IHDR 之后、IDAT 之前的块头，检查是否存在 APNG 的 `acTL` 块。
+    var offset = 8;
+    while (offset + 8 <= bytes.length) {
+      final length =
+          (bytes[offset] << 24) |
+          (bytes[offset + 1] << 16) |
+          (bytes[offset + 2] << 8) |
+          bytes[offset + 3];
+      final b0 = bytes[offset + 4];
+      final b1 = bytes[offset + 5];
+      final b2 = bytes[offset + 6];
+      final b3 = bytes[offset + 7];
+      // 'acTL'
+      if (b0 == 0x61 && b1 == 0x63 && b2 == 0x54 && b3 == 0x4C) return false;
+      // 'IDAT' — 到达图像数据后不会再出现 acTL
+      if (b0 == 0x49 && b1 == 0x44 && b2 == 0x41 && b3 == 0x54) return true;
+      final next = offset + 12 + length;
+      if (length < 0 || next <= offset) break;
+      offset = next;
+    }
+    return true;
+  }
+
   static double _ratio(double width, double height) => math.min(
     1.0,
     math.min(

@@ -19,6 +19,8 @@ import '../../services/fonts/font_catalog.dart';
 import '../../services/fonts/font_download_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
+import '../../utils/idle_task.dart';
+import '../../utils/scroll_busy_signal.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../widgets/common/emoji_text.dart';
 import '../../widgets/common/error_view.dart';
@@ -68,14 +70,43 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
   final ScrollController _scrollController = ScrollController();
   final ListController _listController = ListController();
   final HeadingAnchorRegistry _headingRegistry = HeadingAnchorRegistry();
+  final ParagraphWarmupTracker _warmupTracker = ParagraphWarmupTracker();
+  final GlyphPrebaker _glyphBaker = GlyphPrebaker(
+    shouldDefer: () => isIdleTaskUserInteracting,
+  );
+  int _warmUpGeneration = 0;
+  IdleTaskHandle? _pendingWarmUpHandle;
+  Object? _lastWarmupEnvKey;
+  int _warmItemCursor = 0;
+  int _warmNodeCursor = 0;
 
   FluxdoRenderCallbacks? _shortCallbacks;
   ReaderPositionStore? _positionStore;
+
+  /// 阅读进度与当前章节标题的局部状态源：滚动每 80ms 更新时仅通知页眉、
+  /// 顶栏副标题和宽屏目录侧栏，避免整页 setState 触发主题重建与正文重排。
+  final ValueNotifier<({double progress, String? activeHeadingId})>
+  _readingStateNotifier = ValueNotifier((progress: 0.0, activeHeadingId: null));
+
+  /// 记忆化阅读主题：开启纸张配色或独立阅读字体时按配置值复用同一 ThemeData，
+  /// 避免任意 rebuild 重复 copyWith 击穿正文缓存或挤出全局本地化主题缓存。
+  ThemeData? _cachedBaseThemeRaw;
+  Object? _cachedReaderThemeKey;
+  ThemeData? _cachedReaderTheme;
+
+  /// 稳定化的正文交互回调（按 post + callbacks 复用，防止父组件 rebuild 时
+  /// 因内联闭包不 identical 击穿 FluxdoRender._cachedColumn）。
+  Post? _cachedHandlersPost;
+  FluxdoRenderCallbacks? _cachedHandlersSource;
+  LinkActionHandler? _stableLinkHandler;
+  MentionTapHandler? _stableMentionHandler;
+  QuoteRequestCallback? _stableCopyQuoteHandler;
 
   Post? _firstPost;
   bool _isLoadingFirstPost = false;
   Object? _loadError;
   ReaderDocument? _document;
+  List<String> _documentItemKeys = const [];
 
   bool _chromeVisible = false;
   bool? _wideSidebarOverride;
@@ -144,6 +175,10 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     _spyThrottle?.cancel();
     _saveThrottle?.cancel();
     _persistPositionNow();
+    _cancelWarmUp();
+    _glyphBaker.dispose();
+    _readingStateNotifier.dispose();
+    _warmupTracker.reset();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _listController.itemPositions.removeListener(_onPositionsChanged);
@@ -209,7 +244,9 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
               ? firstPost.name!
               : firstPost.username);
     _shortCallbacks = null;
-    _document = ReaderDocumentBuilder.build(
+    _cachedHandlersPost = null;
+    _cachedHandlersSource = null;
+    final doc = ReaderDocumentBuilder.build(
       topicId: detail.id,
       title: detail.title,
       authorName: authorName,
@@ -217,6 +254,10 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
       firstPost: firstPost,
       replyCount: (detail.postsCount - 1).clamp(0, 999999),
     );
+    _document = doc;
+    _documentItemKeys = List<String>.unmodifiable([
+      for (final item in doc.items) item.itemKey,
+    ]);
   }
 
   void _resolveInitialRestoreIndex() {
@@ -231,7 +272,39 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
       _initialRestoreIndex = byKey;
       _currentItemKey = saved.itemKey;
       _progress = saved.progress;
+      _readingStateNotifier.value = (
+        progress: _progress,
+        activeHeadingId: _activeHeadingId,
+      );
     }
+  }
+
+  void _showCopyToast() {
+    if (!mounted) return;
+    ToastService.showSuccess(context.l10n.common_copiedToClipboard);
+  }
+
+  void _ensureStableHandlers(Post post, FluxdoRenderCallbacks callbacks) {
+    if (identical(_cachedHandlersPost, post) &&
+        identical(_cachedHandlersSource, callbacks)) {
+      return;
+    }
+    _cachedHandlersPost = post;
+    _cachedHandlersSource = callbacks;
+    _stableLinkHandler = (ctx, href) {
+      _markInteractiveTap();
+      callbacks.linkHandler(ctx, href);
+    };
+    _stableMentionHandler = (ctx, username, href) {
+      _markInteractiveTap();
+      callbacks.mentionTapHandler(ctx, username, href);
+    };
+    _stableCopyQuoteHandler = (plainText) =>
+        QuoteSelectionHelper.copyQuoteToClipboard(
+          selectedText: plainText,
+          post: post,
+          topicId: widget.initialDetail.id,
+        );
   }
 
   FluxdoRenderCallbacks _callbacksForShortPost(
@@ -267,6 +340,101 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     });
   }
 
+  void _cancelWarmUp() {
+    _warmUpGeneration++;
+    _pendingWarmUpHandle?.cancel();
+    _pendingWarmUpHandle = null;
+    _glyphBaker.clear();
+  }
+
+  /// 长文分块空闲预热：滚动停稳后预热当前锚点前方最多 3 个 chunk 的段落排版
+  /// 与字形（仅针对未缓存的新段落，单步 4ms，新滚动开始立即取消）。
+  void _scheduleReaderWarmUp() {
+    final doc = _document;
+    if (doc == null || doc.items.isEmpty) return;
+    final hasChunks = doc.items.any((item) => item is ReaderPostChunkItem);
+    if (!hasChunks) return;
+
+    _pendingWarmUpHandle?.cancel();
+    _pendingWarmUpHandle = null;
+    final generation = ++_warmUpGeneration;
+
+    int currentAnchorIndex() {
+      if (_listController.isAttached) {
+        final anchor = _listController.anchor;
+        if (anchor != null && anchor.index < doc.items.length) {
+          return anchor.index;
+        }
+      }
+      return doc.itemIndexByKey[_currentItemKey] ?? 0;
+    }
+
+    void step() {
+      if (!mounted || generation != _warmUpGeneration) return;
+      final snapshot = _warmupTracker.snapshot();
+      if (snapshot == null) return;
+      final envKey = snapshot.environmentKey;
+      final anchorIdx = currentAnchorIndex();
+      final maxItemIdx = (anchorIdx + 3).clamp(0, doc.items.length - 1);
+      if (_lastWarmupEnvKey != envKey || _warmItemCursor < anchorIdx) {
+        _lastWarmupEnvKey = envKey;
+        _warmItemCursor = anchorIdx;
+        _warmNodeCursor = 0;
+      }
+      if (_warmItemCursor > maxItemIdx) return;
+
+      _pendingWarmUpHandle = scheduleIdleTask(() {
+        _pendingWarmUpHandle = null;
+        if (!mounted || generation != _warmUpGeneration) return;
+        final currentSnapshot = _warmupTracker.snapshot();
+        if (currentSnapshot == null) return;
+        final currentEnvKey = currentSnapshot.environmentKey;
+        if (_lastWarmupEnvKey != currentEnvKey) {
+          _lastWarmupEnvKey = currentEnvKey;
+          _warmItemCursor = currentAnchorIndex();
+          _warmNodeCursor = 0;
+        }
+
+        final limitIdx = (currentAnchorIndex() + 3).clamp(
+          0,
+          doc.items.length - 1,
+        );
+        while (_warmItemCursor <= limitIdx) {
+          final item = doc.items[_warmItemCursor];
+          if (item is! ReaderPostChunkItem) {
+            _warmItemCursor++;
+            _warmNodeCursor = 0;
+            continue;
+          }
+          final nodes = item.longData.parsedChunkAt(item.chunkIndex);
+          final next = ParagraphWarmup.warmParagraphs(
+            nodes: nodes,
+            ctx: currentSnapshot,
+            context: context,
+            mentionTapHandler: FluxdoRenderCallbacks.handlePrewarmedMentionTap,
+            totalImagesInPost: 0,
+            glyphBaker: _glyphBaker,
+            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+            startIndex: _warmNodeCursor,
+            budgetMicros: 4000,
+          );
+          if (next == -1) {
+            _warmItemCursor++;
+            _warmNodeCursor = 0;
+          } else {
+            _warmNodeCursor = next;
+          }
+          break;
+        }
+        if (_warmItemCursor <= limitIdx) {
+          step();
+        }
+      }, isCanceled: () => !mounted || generation != _warmUpGeneration);
+    }
+
+    step();
+  }
+
   void _updateScrollState() {
     final doc = _document;
     if (doc == null || doc.items.isEmpty) return;
@@ -298,17 +466,18 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
       pixels: pixels,
     );
 
-    final changed =
+    final visualChanged =
         (nextProgress - _progress).abs() >= 0.005 ||
-        nextItemKey != _currentItemKey ||
         nextHeadingId != _activeHeadingId;
 
-    if (changed) {
-      setState(() {
-        _progress = nextProgress;
-        _currentItemKey = nextItemKey;
-        _activeHeadingId = nextHeadingId;
-      });
+    _currentItemKey = nextItemKey;
+    if (visualChanged) {
+      _progress = nextProgress;
+      _activeHeadingId = nextHeadingId;
+      _readingStateNotifier.value = (
+        progress: nextProgress,
+        activeHeadingId: nextHeadingId,
+      );
     }
     _schedulePersistPosition();
   }
@@ -442,9 +611,13 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     final gen = ++_jumpGeneration;
     _isJumping = true;
     _spyThrottle?.cancel();
-    setState(() {
+    if (_activeHeadingId != heading.id) {
       _activeHeadingId = heading.id;
-    });
+      _readingStateNotifier.value = (
+        progress: _progress,
+        activeHeadingId: heading.id,
+      );
+    }
 
     try {
       await _listController.jumpToIndex(
@@ -537,21 +710,25 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     unawaited(showReaderTypesettingSheet(context));
   }
 
-  String _runningHeaderTitle(ReaderDocument doc) {
-    if (_activeHeadingId != null) {
+  String _runningHeaderTitle(ReaderDocument doc, String? activeHeadingId) {
+    if (activeHeadingId != null) {
       for (final heading in doc.headings) {
-        if (heading.id == _activeHeadingId) return heading.title;
+        if (heading.id == activeHeadingId) return heading.title;
       }
     }
     return widget.initialDetail.title;
   }
 
-  String _topBarSubtitle(ReaderDocument doc) {
-    final percent = (_progress.clamp(0.0, 1.0) * 100).round();
-    final headingTitle = _activeHeadingId == null
+  String _topBarSubtitle(
+    ReaderDocument doc,
+    double progress,
+    String? activeHeadingId,
+  ) {
+    final percent = (progress.clamp(0.0, 1.0) * 100).round();
+    final headingTitle = activeHeadingId == null
         ? null
         : doc.headings
-              .where((h) => h.id == _activeHeadingId)
+              .where((h) => h.id == activeHeadingId)
               .firstOrNull
               ?.title;
     if (headingTitle != null && headingTitle.isNotEmpty) {
@@ -566,6 +743,39 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     ReaderPreferences prefs,
     Set<String> loadedFonts,
   ) {
+    // 选择了特定字体（系统或目录字体）时同步给标题渲染风格；跟随主题则保持主题默认。
+    final overrideFamily = prefs.resolveOverrideFontFamily(
+      loadedFonts: loadedFonts,
+      platform: baseTheme.platform,
+    );
+    if (!palette.isCustomLight && overrideFamily == null) {
+      return baseTheme;
+    }
+
+    final existingRenderStyle = baseTheme.extension<FluxdoRenderStyle>();
+    final themeKey = (
+      baseTheme.brightness,
+      baseTheme.colorScheme,
+      baseTheme.textTheme,
+      baseTheme.platform,
+      existingRenderStyle,
+      palette.isCustomLight,
+      palette.background,
+      palette.surface,
+      palette.ink,
+      palette.mutedInk,
+      palette.outline,
+      overrideFamily,
+    );
+    final cached = _cachedReaderTheme;
+    if (cached != null &&
+        (identical(_cachedBaseThemeRaw, baseTheme) ||
+            _cachedReaderThemeKey == themeKey) &&
+        _cachedReaderThemeKey == themeKey) {
+      _cachedBaseThemeRaw = baseTheme;
+      return cached;
+    }
+
     var themed = baseTheme;
     if (palette.isCustomLight) {
       final scheme = baseTheme.colorScheme;
@@ -583,13 +793,7 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
       );
     }
 
-    // 选择了特定字体（系统或目录字体）时同步给标题渲染风格；跟随主题则保持主题默认。
-    final overrideFamily = prefs.resolveOverrideFontFamily(
-      loadedFonts: loadedFonts,
-      platform: baseTheme.platform,
-    );
     if (overrideFamily != null) {
-      final existingRenderStyle = themed.extension<FluxdoRenderStyle>();
       final updatedRenderStyle = FluxdoRenderStyle(
         headingFontFamily: overrideFamily,
         headingFontFamilyFallback: null,
@@ -604,6 +808,9 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
         extensions: extensions.values,
       );
     }
+    _cachedBaseThemeRaw = baseTheme;
+    _cachedReaderThemeKey = themeKey;
+    _cachedReaderTheme = themed;
     return themed;
   }
 
@@ -663,10 +870,14 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
 
     final readingSurface = NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification is ScrollStartNotification &&
-            notification.dragDetails != null &&
-            _chromeVisible) {
-          _hideChrome();
+        ScrollBusySignal.onScrollNotification(notification);
+        if (notification is ScrollStartNotification) {
+          _cancelWarmUp();
+          if (notification.dragDetails != null && _chromeVisible) {
+            _hideChrome();
+          }
+        } else if (notification is ScrollEndNotification) {
+          _scheduleReaderWarmUp();
         }
         return false;
       },
@@ -678,36 +889,47 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
                 // 极简常驻页眉独立占位于滚动视口上方，避免正文与图片滚到页眉文字下方造成重影。
                 Padding(
                   padding: EdgeInsets.only(top: topPadding),
-                  child: ReaderRunningHeader(
-                    title: _runningHeaderTitle(doc),
-                    progress: _progress,
-                    palette: palette,
-                    visible: !_chromeVisible,
+                  child: ValueListenableBuilder<
+                    ({double progress, String? activeHeadingId})
+                  >(
+                    valueListenable: _readingStateNotifier,
+                    builder: (context, readingState, _) => ReaderRunningHeader(
+                      title: _runningHeaderTitle(
+                        doc,
+                        readingState.activeHeadingId,
+                      ),
+                      progress: readingState.progress,
+                      palette: palette,
+                      visible: !_chromeVisible,
+                    ),
                   ),
                 ),
                 Expanded(
-                  child: Listener(
-                    key: const ValueKey('reader_content_tap_surface'),
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: _handleReadingPointerDown,
-                    onPointerMove: _handleReadingPointerMove,
-                    onPointerUp: _handleReadingPointerUp,
-                    onPointerCancel: _handleReadingPointerCancel,
-                    child: PositionedStreamList(
-                      scrollController: _scrollController,
-                      listController: _listController,
-                      itemKeys: [for (final item in doc.items) item.itemKey],
-                      initialIndex: _initialRestoreIndex,
-                      positionKey: widget.initialDetail.id,
-                      cacheExtent: 900,
-                      itemBuilder: (context, index) => _buildListItem(
-                        context: context,
-                        item: doc.items[index],
-                        palette: palette,
-                        prefs: prefs,
-                        loadedFonts: loadedFonts,
-                        platform: baseTheme.platform,
-                        bodyStyle: bodyStyle,
+                  child: ParagraphWarmupScope(
+                    tracker: _warmupTracker,
+                    child: Listener(
+                      key: const ValueKey('reader_content_tap_surface'),
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _handleReadingPointerDown,
+                      onPointerMove: _handleReadingPointerMove,
+                      onPointerUp: _handleReadingPointerUp,
+                      onPointerCancel: _handleReadingPointerCancel,
+                      child: PositionedStreamList(
+                        scrollController: _scrollController,
+                        listController: _listController,
+                        itemKeys: _documentItemKeys,
+                        initialIndex: _initialRestoreIndex,
+                        positionKey: widget.initialDetail.id,
+                        cacheExtent: 900,
+                        itemBuilder: (context, index) => _buildListItem(
+                          context: context,
+                          item: doc.items[index],
+                          palette: palette,
+                          prefs: prefs,
+                          loadedFonts: loadedFonts,
+                          platform: baseTheme.platform,
+                          bodyStyle: bodyStyle,
+                        ),
                       ),
                     ),
                   ),
@@ -721,12 +943,21 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
             top: 0,
             left: 0,
             right: 0,
-            child: ReaderTopBar(
-              visible: _chromeVisible,
-              title: widget.initialDetail.title,
-              subtitle: _topBarSubtitle(doc),
-              palette: palette,
-              onBack: () => Navigator.of(context).pop(),
+            child: ValueListenableBuilder<
+              ({double progress, String? activeHeadingId})
+            >(
+              valueListenable: _readingStateNotifier,
+              builder: (context, readingState, _) => ReaderTopBar(
+                visible: _chromeVisible,
+                title: widget.initialDetail.title,
+                subtitle: _topBarSubtitle(
+                  doc,
+                  readingState.progress,
+                  readingState.activeHeadingId,
+                ),
+                palette: palette,
+                onBack: () => Navigator.of(context).pop(),
+              ),
             ),
           ),
 
@@ -789,16 +1020,21 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
                       maxWidth: TopicReaderPage._tocSidebarWidth,
                       child: Padding(
                         padding: EdgeInsets.only(top: topPadding),
-                        child: ReaderTocPanel(
-                          headings: doc.headings,
-                          palette: palette,
-                          activeHeadingId: _activeHeadingId,
-                          isSidebar: true,
-                          onClose: () => setState(() {
-                            _wideSidebarOverride = false;
-                          }),
-                          onSelectHeading: (heading) =>
-                              unawaited(_jumpToHeading(heading)),
+                        child: ValueListenableBuilder<
+                          ({double progress, String? activeHeadingId})
+                        >(
+                          valueListenable: _readingStateNotifier,
+                          builder: (context, readingState, _) => ReaderTocPanel(
+                            headings: doc.headings,
+                            palette: palette,
+                            activeHeadingId: readingState.activeHeadingId,
+                            isSidebar: true,
+                            onClose: () => setState(() {
+                              _wideSidebarOverride = false;
+                            }),
+                            onSelectHeading: (heading) =>
+                                unawaited(_jumpToHeading(heading)),
+                          ),
                         ),
                       ),
                     )
@@ -961,6 +1197,7 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
       item.preprocessedHtml,
       item.parsedNodes,
     );
+    _ensureStableHandlers(post, callbacks);
     return Padding(
       padding: const EdgeInsets.only(bottom: 22),
       child: HeadingAnchorScope(
@@ -970,15 +1207,9 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
           parsedNodes: item.parsedNodes,
           baseTextStyle: bodyStyle,
           selectionScopeId: post.id,
-          linkHandler: (ctx, href) {
-            _markInteractiveTap();
-            callbacks.linkHandler(ctx, href);
-          },
+          linkHandler: _stableLinkHandler,
           emojiImageBuilder: callbacks.emojiImageBuilder,
-          mentionTapHandler: (ctx, username, href) {
-            _markInteractiveTap();
-            callbacks.mentionTapHandler(ctx, username, href);
-          },
+          mentionTapHandler: _stableMentionHandler,
           imageContentBuilder: callbacks.imageContentBuilder,
           codeBlockHighlighter: callbacks.codeBlockHighlighter,
           codeBlockBuilder: callbacks.codeBlockBuilder,
@@ -1000,14 +1231,8 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
           audioBuilder: callbacks.audioBuilder,
           onDownloadAttachment: callbacks.onDownloadAttachment,
           selectionEnabled: true,
-          onCopyQuoteRequest: (plainText) =>
-              QuoteSelectionHelper.copyQuoteToClipboard(
-                selectedText: plainText,
-                post: post,
-                topicId: widget.initialDetail.id,
-              ),
-          onCopyToast: () =>
-              ToastService.showSuccess(context.l10n.common_copiedToClipboard),
+          onCopyQuoteRequest: _stableCopyQuoteHandler,
+          onCopyToast: _showCopyToast,
         ),
       ),
     );
@@ -1023,6 +1248,7 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
     final chunk = longData.chunks[item.chunkIndex];
     final callbacks = longData.callbacks;
     final isLastChunk = item.chunkIndex == longData.chunks.length - 1;
+    _ensureStableHandlers(post, callbacks);
 
     return Padding(
       padding: EdgeInsets.only(bottom: isLastChunk ? 22 : 0),
@@ -1038,15 +1264,9 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
           chunkIndex: item.chunkIndex,
           trimTopMargin: chunk.joinsPrevious,
           trimBottomMargin: chunk.joinsNext,
-          linkHandler: (ctx, href) {
-            _markInteractiveTap();
-            callbacks.linkHandler(ctx, href);
-          },
+          linkHandler: _stableLinkHandler,
           emojiImageBuilder: callbacks.emojiImageBuilder,
-          mentionTapHandler: (ctx, username, href) {
-            _markInteractiveTap();
-            callbacks.mentionTapHandler(ctx, username, href);
-          },
+          mentionTapHandler: _stableMentionHandler,
           imageContentBuilder: callbacks.imageContentBuilder,
           codeBlockHighlighter: callbacks.codeBlockHighlighter,
           codeBlockBuilder: callbacks.codeBlockBuilder,
@@ -1068,14 +1288,8 @@ class _TopicReaderPageState extends ConsumerState<TopicReaderPage> {
           audioBuilder: callbacks.audioBuilder,
           onDownloadAttachment: callbacks.onDownloadAttachment,
           selectionEnabled: true,
-          onCopyQuoteRequest: (plainText) =>
-              QuoteSelectionHelper.copyQuoteToClipboard(
-                selectedText: plainText,
-                post: post,
-                topicId: widget.initialDetail.id,
-              ),
-          onCopyToast: () =>
-              ToastService.showSuccess(context.l10n.common_copiedToClipboard),
+          onCopyQuoteRequest: _stableCopyQuoteHandler,
+          onCopyToast: _showCopyToast,
         ),
       ),
     );

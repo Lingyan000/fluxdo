@@ -35,6 +35,10 @@ class RenderParseCache {
   /// 长帖:post.id → (签名, LongPostParseData)
   static final _long = <int, _LongEntry>{};
 
+  /// 通用 HTML（如聊天消息等无 Post 语境）:cacheKey → (原始 cooked, parsedNodes)
+  static const int _genericCap = 256;
+  static final _generic = <String, _GenericEntry>{};
+
   /// 帖子渲染内容签名:cooked + mention 状态 + 链接点击数
   /// (preprocessCookedForRender 的全部输入)。
   static int signatureOf(Post post) {
@@ -118,6 +122,24 @@ class RenderParseCache {
     return data;
   }
 
+  /// 通用 HTML 解析产物（聊天消息等无 Post 语境）：按 [cacheKey] 与原文精确
+  /// 比对缓存纯数据节点，避免列表滚出回收再滑回时重复解析导致下游文字缓存失效。
+  static List<BlockNode> genericHtml(String cacheKey, String cookedHtml) {
+    final cached = _generic.remove(cacheKey);
+    if (cached != null && cached.cookedHtml == cookedHtml) {
+      _generic[cacheKey] = cached;
+      return cached.nodes;
+    }
+    final nodes = List<BlockNode>.unmodifiable(
+      ParagraphParser().parse(cookedHtml),
+    );
+    _generic[cacheKey] = _GenericEntry(cookedHtml: cookedHtml, nodes: nodes);
+    while (_generic.length > _genericCap) {
+      _generic.remove(_generic.keys.first);
+    }
+    return nodes;
+  }
+
   static void _evict(Map<int, Object?> map, int cap) {
     while (map.length > cap) {
       map.remove(map.keys.first);
@@ -129,7 +151,14 @@ class RenderParseCache {
   static void clear() {
     _short.clear();
     _long.clear();
+    _generic.clear();
   }
+}
+
+class _GenericEntry {
+  const _GenericEntry({required this.cookedHtml, required this.nodes});
+  final String cookedHtml;
+  final List<BlockNode> nodes;
 }
 
 class _ShortEntry {

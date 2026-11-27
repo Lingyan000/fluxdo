@@ -23,7 +23,7 @@ class CfVerifyCard extends ConsumerWidget {
 
     return SegmentedCardGroup(
       children: [
-        SwitchListTile(
+        M3eSwitchListTile(
           secondary: Icon(
             Symbols.shield_rounded,
             color: autoEnabled

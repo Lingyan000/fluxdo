@@ -538,14 +538,14 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
           ),
           SegmentedCardGroup(
             children: [
-              SwitchListTile(
+              M3eSwitchListTile(
                 secondary: const Icon(Symbols.notifications_off_rounded),
                 title: Text(context.l10n.chat_muteChannel),
                 value: channel.currentUserMembership?.muted == true,
                 onChanged: (v) => _setMuted(v),
               ),
               // 消息串开关(DM 成员可改;公共频道需管理权限,失败弹错)
-              SwitchListTile(
+              M3eSwitchListTile(
                 secondary: const Icon(Symbols.forum_rounded),
                 title: Text(context.l10n.chat_threadingEnabled),
                 subtitle: Text(

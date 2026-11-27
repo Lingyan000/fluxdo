@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/cf_clearance_authority.dart';
 import 'package:fluxdo/services/cf_clearance_refresh_service.dart';
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
 
@@ -168,7 +169,7 @@ void main() {
       expect(synced, 'minted-from-zero');
     });
 
-    test('健康在位值被 Authority 保护跳过覆盖时，token 回调与 WebView 新值仍推进活跃锚点', () async {
+    test('Turnstile 现场新铸的 cf_clearance 立即替换健康在位值并忽略旧残留', () async {
       if (Platform.isWindows) return;
 
       await CookieJarService().setCookie(
@@ -176,6 +177,8 @@ void main() {
         'healthy-incumbent',
         expires: DateTime.now().toUtc().add(const Duration(days: 7)),
       );
+      // 启动前 WebView 里已存在的旧残留必须被记入基线，不能借同步覆盖在位值。
+      platform.cookies.values = [cfTestCookie('preexisting-stale-residue')];
       final service = CfClearanceRefreshService();
       service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
       service.start();
@@ -184,20 +187,126 @@ void main() {
       final initialAnchor = service.latestActivityAnchorForTest;
       expect(initialAnchor, isNotNull);
 
+      // 仅旧残留存在时，即使触发 token 回调也不得覆盖健康在位值。
+      final controller = platform.headlessViews.single._controller;
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await CookieJarService().getCfClearance(), 'healthy-incumbent');
+
+      // Turnstile 现场铸出全新 cf_clearance（与旧残留并存），应立即替换 jar 在位值。
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      platform.cookies.values = [cfTestCookie('turnstile-rotated-value')];
+      platform.cookies.values = [
+        cfTestCookie('preexisting-stale-residue'),
+        cfTestCookie('turnstile-rotated-value'),
+      ];
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        await CookieJarService().getCfClearance(),
+        'turnstile-rotated-value',
+      );
+      expect(
+        service.latestActivityAnchorForTest!.isAfter(initialAnchor!),
+        isTrue,
+      );
+    });
+
+    test('pickFreshlyMintedClearance 仅接受不在基线中的唯一新值', () {
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a', 'incumbent'},
+          currentWebViewValues: {'old-a', 'fresh-b'},
+        ),
+        'fresh-b',
+      );
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a'},
+          currentWebViewValues: {'old-a'},
+        ),
+        isNull,
+      );
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a'},
+          currentWebViewValues: {'fresh-1', 'fresh-2'},
+        ),
+        isNull,
+      );
+    });
+
+    test('启动基线读取失败时禁用本代新票晋升，防止误放旧残留', () async {
+      if (Platform.isWindows) return;
+
+      await CookieJarService().setCookie(
+        'cf_clearance',
+        'healthy-incumbent',
+        expires: DateTime.now().toUtc().add(const Duration(days: 7)),
+      );
+      var readCount = 0;
+      platform.cookies.readSnapshot = () async {
+        readCount++;
+        if (readCount == 1) {
+          throw StateError('cookie store timeout');
+        }
+        return [cfTestCookie('untracked-old-residue')];
+      };
+
+      final service = CfClearanceRefreshService();
+      service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
       final controller = platform.headlessViews.single._controller;
       controller.handlers['onTurnstileToken']?.call([
         {'length': 256},
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      // jar 仍保留健康在位值（未被异值顶替），但活跃锚点已推进，不会 8 分钟后误判 stale。
       expect(await CookieJarService().getCfClearance(), 'healthy-incumbent');
-      expect(
-        service.latestActivityAnchorForTest!.isAfter(initialAnchor!),
-        isTrue,
+    });
+
+    test('/challenge 短保护窗内保留高权重票，解除后 Turnstile 新票立刻生效', () async {
+      if (Platform.isWindows) return;
+
+      await CookieJarService().setCookie(
+        'cf_clearance',
+        'challenge-high-trust',
+        expires: DateTime.now().toUtc().add(const Duration(days: 7)),
       );
+      CfClearanceAuthority.instance.noteChallengeVerified(
+        'challenge-high-trust',
+      );
+      platform.cookies.values = [cfTestCookie('challenge-high-trust')];
+
+      final service = CfClearanceRefreshService();
+      service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
+      service.start();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // 保护窗内 Turnstile 首铸新票不顶替刚过完 /challenge 的高权重票
+      platform.cookies.values = [cfTestCookie('turnstile-first-mint')];
+      final controller = platform.headlessViews.single._controller;
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await CookieJarService().getCfClearance(), 'challenge-high-trust');
+
+      // 保护窗解除（如在位值被撞或超窗）后，下一次回调立刻晋升 Turnstile 新票
+      CfClearanceAuthority.instance.noteIncumbentChallenged(
+        'challenge-high-trust',
+      );
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await CookieJarService().getCfClearance(), 'turnstile-first-mint');
     });
   });
 }

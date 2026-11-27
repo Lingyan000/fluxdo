@@ -609,9 +609,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
               maxLength: 100,
               decoration: InputDecoration(
                 labelText: context.l10n.invite_description,
-                border: OutlineInputBorder(
-                  borderRadius: context.shapes.borderRadius(4),
-                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -622,9 +619,6 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                 labelText: context.l10n.invite_restriction,
                 helperText: context.l10n.invite_restrictionHelper,
                 hintText: context.l10n.invite_restrictionHint,
-                border: OutlineInputBorder(
-                  borderRadius: context.shapes.borderRadius(4),
-                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -680,10 +674,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildReadOnlyField(ThemeData theme, {required String value}) {
     return InputDecorator(
-      decoration: InputDecoration(
-        border: OutlineInputBorder(
-          borderRadius: context.shapes.borderRadius(4),
-        ),
+      decoration: const InputDecoration(
         contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       ),
       child: Row(

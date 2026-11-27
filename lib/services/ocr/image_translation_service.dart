@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -5,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 
@@ -12,6 +15,7 @@ import '../../models/translation_engine.dart';
 import '../ai_translation_service.dart';
 import '../translation_service.dart';
 import 'local_ocr_service.dart';
+import 'picture_text_layout.dart';
 
 /// 待翻译的逻辑文本块（由一段或多段连续 OCR 文本行聚合而成）。
 class ImageTextBlock {
@@ -19,11 +23,23 @@ class ImageTextBlock {
     required this.bounds,
     required this.originalText,
     required this.lineCount,
+    this.sourceRows = const [],
+    this.textAlign = TextAlign.left,
+    this.sourceFontSize,
   });
 
   final Rect bounds;
   final String originalText;
   final int lineCount;
+
+  /// 构成该块的原始 OCR 行矩形列表，用于译图逐行擦除与智能字号约束。
+  final List<Rect> sourceRows;
+
+  /// 根据原文行几何分布推断出的水平对齐方式（左/中/右）。
+  final TextAlign textAlign;
+
+  /// 基于原文行高估算的参考字号（原图像素），防止短译文字号突兀放大。
+  final double? sourceFontSize;
 }
 
 /// 已完成翻译并提取原图配色的覆盖渲染块（原图像素坐标系）。
@@ -36,6 +52,9 @@ class TranslatedTextBlock {
     required this.foregroundColor,
     required this.lineCount,
     this.textAlign = TextAlign.left,
+    this.sourceRows = const [],
+    this.sourceRowBackgrounds = const [],
+    this.sourceFontSize,
   });
 
   final Rect bounds;
@@ -45,13 +64,17 @@ class TranslatedTextBlock {
   final Color foregroundColor;
   final int lineCount;
   final TextAlign textAlign;
+  final List<Rect> sourceRows;
+  final List<Color> sourceRowBackgrounds;
+  final double? sourceFontSize;
 }
 
 /// 图片覆盖式翻译服务：
-/// 1. 将 OCR 文本行按视觉段落聚合成独立块（保留表格/菜单/按钮独立性）；
+/// 1. 结合递归 XY-Cut 分区与段落几何特征聚合文本块（防多栏串行、保留表格/菜单独立性、识别首行缩进与对齐）；
 /// 2. 复用应用已配置的 Google / 哔哩哔哩 / AI 翻译引擎批量翻译并 1:1 映射回原块；
-/// 3. 在后台 isolate 提取每块背景色与文字前景色（兼容 8-bit/16-bit PNG）；
-/// 4. 通过统一矢量绘制函数在原图上实时高清覆盖，并支持合成高清 PNG 保存。
+/// 3. 在后台 isolate 按块与逐行提取原图背景色与文字前景色（兼容 8-bit/16-bit PNG）；
+/// 4. 通过 Smart Merge 排版策略在原图上高清矢量覆盖译文（对齐还原 + 原文字号约束 + 逐行背景贴合），
+///    并支持合成高清 PNG 保存。
 abstract final class ImageTranslationService {
   /// 跳过无需翻译的纯数字、纯符号、IP、常见可执行文件名等。
   static final _skipPattern = RegExp(
@@ -61,78 +84,235 @@ abstract final class ImageTranslationService {
     caseSensitive: false,
   );
 
-  /// 将 OCR 行聚合成适合原位翻译的区块。
-  static List<ImageTextBlock> groupBlocks(OcrResult ocr) {
-    if (ocr.isEmpty) return const [];
-    final lines = ocr.lines.where((l) => l.text.trim().isNotEmpty).toList()
-      ..sort((a, b) {
-        final dy = a.bounds.top.compareTo(b.bounds.top);
-        return dy != 0 ? dy : a.bounds.left.compareTo(b.bounds.left);
-      });
+  static final _listStartPattern = RegExp(
+    r'^(?:[•·▪▸►◆◇●○\-–—\*]\s+|\d{1,3}[.)、．]\s*|[(（][0-9a-zA-Z一二三四五六七八九十]+[)）]\s*|[一二三四五六七八九十]+、\s*)',
+  );
 
-    // 标记同一水平行存在多个独立文本框的行（例如表格多列、带标签徽章的下拉菜单项），
-    // 这类结构化列表项保持逐行独立，不合并为大段落。
-    final multiColIndices = <int>{};
-    for (var i = 0; i < lines.length; i++) {
-      for (var j = i + 1; j < lines.length; j++) {
-        if (_sharesHorizontalRow(lines[i], lines[j])) {
-          multiColIndices.add(i);
-          multiColIndices.add(j);
-        }
+  static const _maxCacheEntries = 512;
+  static final LinkedHashMap<String, String> _blockCache = LinkedHashMap();
+
+  /// 清空图片翻译块级缓存（供单元测试或主动重置使用）。
+  @visibleForTesting
+  static void clearCache() => _blockCache.clear();
+
+  static String? _readCache(String key) {
+    final hit = _blockCache.remove(key);
+    if (hit != null) _blockCache[key] = hit;
+    return hit;
+  }
+
+  static void _writeCache(String key, String value) {
+    _blockCache.remove(key);
+    _blockCache[key] = value;
+    while (_blockCache.length > _maxCacheEntries) {
+      _blockCache.remove(_blockCache.keys.first);
+    }
+  }
+
+  /// 快速判断单个文本块是否已经属于目标语言（用于混合语言截图跳过无效送翻）。
+  static bool isAlreadyTargetLanguage(String text, String targetCode) {
+    var han = 0;
+    var kana = 0;
+    var hangul = 0;
+    var cyrillic = 0;
+    var latin = 0;
+
+    for (final unit in text.codeUnits) {
+      if ((unit >= 0x4E00 && unit <= 0x9FFF) ||
+          (unit >= 0x3400 && unit <= 0x4DBF)) {
+        han++;
+      } else if ((unit >= 0x3040 && unit <= 0x30FF) ||
+          (unit >= 0x31F0 && unit <= 0x31FF)) {
+        kana++;
+      } else if ((unit >= 0xAC00 && unit <= 0xD7AF) ||
+          (unit >= 0x1100 && unit <= 0x11FF)) {
+        hangul++;
+      } else if (unit >= 0x0400 && unit <= 0x04FF) {
+        cyrillic++;
+      } else if ((unit >= 0x41 && unit <= 0x5A) ||
+          (unit >= 0x61 && unit <= 0x7A) ||
+          (unit >= 0xC0 && unit <= 0x024F)) {
+        latin++;
       }
     }
+    final letters = han + kana + hangul + cyrillic + latin;
+    if (letters == 0) return true;
 
-    final clusters = <List<OcrTextLine>>[];
-    final clusterLocked = <bool>[];
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final isStructuredRow = multiColIndices.contains(i);
-      List<OcrTextLine>? target;
-      if (!isStructuredRow) {
-        for (var c = 0; c < clusters.length; c++) {
-          if (clusterLocked[c]) continue;
-          if (_shouldMergeIntoParagraph(clusters[c].last, line)) {
-            target = clusters[c];
-            break;
+    switch (targetCode) {
+      case 'zh-CN':
+      case 'zh-TW':
+        return han > 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'en':
+        return latin > 0 &&
+            han == 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            cyrillic == 0;
+      case 'ja':
+        return kana > 0 &&
+            hangul == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'ko':
+        return hangul > 0 &&
+            kana == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'ru':
+        return cyrillic > 0 &&
+            han == 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            latin / letters < 0.35;
+      default:
+        return false;
+    }
+  }
+
+  /// 将 OCR 行聚合成适合原位翻译的区块（优先复用 line2para 视觉段落分组，未就绪时回退本地几何排版）。
+  static List<ImageTextBlock> groupBlocks(OcrResult ocr) {
+    if (ocr.isEmpty) return const [];
+    if (ocr.paragraphGroups != null && ocr.paragraphGroups!.isNotEmpty) {
+      final layout = PictureTextLayout.fromOcr(ocr);
+      if (layout.paragraphs.isNotEmpty) {
+        final blocks = <ImageTextBlock>[];
+        for (final para in layout.paragraphs) {
+          final text = para.text.trim();
+          if (text.isEmpty || _skipPattern.hasMatch(text)) continue;
+          final sourceRows = [for (final l in para.lines) l.bounds];
+          final rowHeights = [for (final l in para.lines) l.bounds.height]
+            ..sort();
+          final medianRowH = rowHeights[rowHeights.length ~/ 2];
+          blocks.add(
+            ImageTextBlock(
+              bounds: para.bounds,
+              originalText: text,
+              lineCount: para.lines.length,
+              sourceRows: sourceRows,
+              textAlign: para.alignment,
+              sourceFontSize: medianRowH * 0.85,
+            ),
+          );
+        }
+        return blocks;
+      }
+    }
+    final regions = PictureTextLayout.orderRegions(ocr.lines);
+    final blocks = <ImageTextBlock>[];
+
+    for (final region in regions) {
+      if (region.isEmpty) continue;
+      var regionBounds = region.first.bounds;
+      for (var i = 1; i < region.length; i++) {
+        regionBounds = regionBounds.expandToInclude(region[i].bounds);
+      }
+
+      // 标记同一水平行存在多个独立文本框的行（例如表格多列、带标签徽章的下拉菜单项），
+      // 这类结构化列表项保持逐行独立，不合并为大段落。
+      final multiColIndices = <int>{};
+      for (var i = 0; i < region.length; i++) {
+        for (var j = i + 1; j < region.length; j++) {
+          if (_sharesHorizontalRow(region[i], region[j])) {
+            multiColIndices.add(i);
+            multiColIndices.add(j);
           }
         }
       }
-      if (target != null) {
-        target.add(line);
-      } else {
-        clusters.add([line]);
-        clusterLocked.add(isStructuredRow);
-      }
-    }
 
-    final blocks = <ImageTextBlock>[];
-    for (final cluster in clusters) {
-      var bounds = cluster.first.bounds;
-      final textBuffer = StringBuffer();
-      for (var i = 0; i < cluster.length; i++) {
-        final item = cluster[i];
-        bounds = bounds.expandToInclude(item.bounds);
-        if (i > 0) {
-          final prevText = cluster[i - 1].text.trimRight();
-          final nextText = item.text.trimLeft();
-          final needSpace =
-              prevText.isNotEmpty &&
-              nextText.isNotEmpty &&
-              _isAsciiAlphaNum(prevText.codeUnitAt(prevText.length - 1)) &&
-              _isAsciiAlphaNum(nextText.codeUnitAt(0));
-          if (needSpace) textBuffer.write(' ');
+      final clusters = <List<OcrTextLine>>[];
+      final clusterLocked = <bool>[];
+      for (var i = 0; i < region.length; i++) {
+        final line = region[i];
+        final isStructuredRow = multiColIndices.contains(i);
+        List<OcrTextLine>? target;
+        if (!isStructuredRow) {
+          for (var c = 0; c < clusters.length; c++) {
+            if (clusterLocked[c]) continue;
+            if (_shouldMergeIntoParagraph(
+              clusters[c].last,
+              line,
+              clusterFirst: clusters[c].first,
+            )) {
+              target = clusters[c];
+              break;
+            }
+          }
         }
-        textBuffer.write(item.text.trim());
+        if (target != null) {
+          target.add(line);
+        } else {
+          clusters.add([line]);
+          clusterLocked.add(isStructuredRow);
+        }
       }
-      final text = textBuffer.toString().trim();
-      if (text.isEmpty || _skipPattern.hasMatch(text)) continue;
-      blocks.add(
-        ImageTextBlock(
-          bounds: bounds,
-          originalText: text,
-          lineCount: cluster.length,
-        ),
-      );
+
+      for (final cluster in clusters) {
+        var bounds = cluster.first.bounds;
+        final sourceRows = <Rect>[];
+        final rowHeights = <double>[];
+        final textBuffer = StringBuffer();
+        for (var i = 0; i < cluster.length; i++) {
+          final item = cluster[i];
+          bounds = bounds.expandToInclude(item.bounds);
+          sourceRows.add(item.bounds);
+          rowHeights.add(item.bounds.height);
+          var text = item.text.trim();
+          if (i > 0) {
+            final prevText = cluster[i - 1].text.trimRight();
+            final softHyphen =
+                prevText.length >= 2 &&
+                prevText.endsWith('-') &&
+                !prevText.endsWith('--') &&
+                _isAsciiAlpha(prevText.codeUnitAt(prevText.length - 2)) &&
+                text.isNotEmpty &&
+                _isAsciiLower(text.codeUnitAt(0));
+            if (!softHyphen) {
+              final needSpace =
+                  prevText.isNotEmpty &&
+                  text.isNotEmpty &&
+                  _isAsciiAlphaNum(prevText.codeUnitAt(prevText.length - 1)) &&
+                  _isAsciiAlphaNum(text.codeUnitAt(0));
+              if (needSpace) textBuffer.write(' ');
+            }
+          }
+          if (i + 1 < cluster.length &&
+              text.length >= 2 &&
+              text.endsWith('-') &&
+              !text.endsWith('--') &&
+              _isAsciiAlpha(text.codeUnitAt(text.length - 2))) {
+            final nextText = cluster[i + 1].text.trimLeft();
+            if (nextText.isNotEmpty && _isAsciiLower(nextText.codeUnitAt(0))) {
+              text = text.substring(0, text.length - 1);
+            }
+          }
+          textBuffer.write(text);
+        }
+        final text = textBuffer.toString().trim();
+        if (text.isEmpty || _skipPattern.hasMatch(text)) continue;
+
+        rowHeights.sort();
+        final medianRowH = rowHeights[rowHeights.length ~/ 2];
+        final textAlign = PictureTextLayout.detectParagraphAlignment(
+          cluster,
+          regionLeft: regionBounds.left,
+          regionRight: regionBounds.right,
+        );
+
+        blocks.add(
+          ImageTextBlock(
+            bounds: bounds,
+            originalText: text,
+            lineCount: cluster.length,
+            sourceRows: sourceRows,
+            textAlign: textAlign,
+            sourceFontSize: medianRowH * 0.85,
+          ),
+        );
+      }
     }
     return blocks;
   }
@@ -145,7 +325,11 @@ abstract final class ImageTranslationService {
     return minH > 0 && vOverlap >= minH * 0.45;
   }
 
-  static bool _shouldMergeIntoParagraph(OcrTextLine prev, OcrTextLine next) {
+  static bool _shouldMergeIntoParagraph(
+    OcrTextLine prev,
+    OcrTextLine next, {
+    required OcrTextLine clusterFirst,
+  }) {
     // 同一水平行不合并。
     final vOverlap =
         math.min(prev.bounds.bottom, next.bounds.bottom) -
@@ -154,33 +338,58 @@ abstract final class ImageTranslationService {
     if (minH <= 0 || vOverlap > minH * 0.25) return false;
 
     final gap = next.bounds.top - prev.bounds.bottom;
-    if (gap < -minH * 0.15 || gap > minH * 0.55) return false;
+    if (gap < -minH * 0.15 || gap > minH * 0.65) return false;
 
     final heightRatio = prev.bounds.height / next.bounds.height;
     if (heightRatio < 0.78 || heightRatio > 1.28) return false;
 
+    final prevTrim = prev.text.trimRight();
+    final nextTrim = next.text.trimLeft();
+    if (nextTrim.isNotEmpty && _listStartPattern.hasMatch(nextTrim)) {
+      return false;
+    }
+
     // 短行菜单/列表项（宽度不足 7.5 倍行高，或上一行已以句末标点结尾）不强行合并成段落。
     if (prev.bounds.width < minH * 7.5) return false;
-    final prevTrim = prev.text.trimRight();
     if (prevTrim.isNotEmpty &&
         RegExp(r'[。！？.!?…]$').hasMatch(prevTrim)) {
       return false;
     }
 
-    // 必须严格左对齐且水平重叠充分，避免跨列合并。
-    final leftDiff = (next.bounds.left - prev.bounds.left).abs();
-    if (leftDiff > minH * 0.85) return false;
     final hOverlap =
         math.min(prev.bounds.right, next.bounds.right) -
         math.max(prev.bounds.left, next.bounds.left);
     final minW = math.min(prev.bounds.width, next.bounds.width);
-    return minW > 0 && hOverlap >= minW * 0.6;
+    if (minW <= 0 || hOverlap < minW * 0.55) return false;
+
+    // 1. 常规左对齐。
+    final leftDiff = (next.bounds.left - prev.bounds.left).abs();
+    if (leftDiff <= minH * 0.85) return true;
+
+    // 2. 中文首行缩进（首行比次行缩进 1~3.2 倍行高且右侧基本齐平）。
+    final indent = prev.bounds.left - next.bounds.left;
+    if (identical(prev, clusterFirst) &&
+        indent > minH * 0.85 &&
+        indent <= minH * 3.2 &&
+        (prev.bounds.right - next.bounds.right).abs() <= minH * 2.5) {
+      return true;
+    }
+
+    // 3. 居中对齐多行标题/段落。
+    if ((prev.bounds.center.dx - next.bounds.center.dx).abs() <= minH * 0.85) {
+      return true;
+    }
+
+    return false;
   }
 
+  static bool _isAsciiAlpha(int u) =>
+      (u >= 0x41 && u <= 0x5A) || (u >= 0x61 && u <= 0x7A);
+
+  static bool _isAsciiLower(int u) => u >= 0x61 && u <= 0x7A;
+
   static bool _isAsciiAlphaNum(int u) =>
-      (u >= 0x30 && u <= 0x39) ||
-      (u >= 0x41 && u <= 0x5A) ||
-      (u >= 0x61 && u <= 0x7A);
+      (u >= 0x30 && u <= 0x39) || _isAsciiAlpha(u);
 
   /// 在后台 isolate 提取每个文本块的背景色（主色）和文字前景色（对比色）。
   static Future<List<({Color bg, Color fg})>> sampleBlockColors(
@@ -300,6 +509,11 @@ abstract final class ImageTranslationService {
       ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
 
   /// 批量翻译所有文本块并合并配色，返回可直接用于覆盖绘制的 [TranslatedTextBlock] 列表。
+  ///
+  /// 性能优化：
+  /// - 混合语言截图自动跳过已是目标语言的块（若全图皆为中文则保留，兼容繁简互转）；
+  /// - 命中块级 LRU 缓存的文本 0ms 即时返回；
+  /// - 多批次最多 3 路并发，且支持通过 [onPartialBlocks] 随批次或流式逐行渐进绘制译文。
   static Future<List<TranslatedTextBlock>> translateImage({
     required Uint8List imageBytes,
     required OcrResult ocr,
@@ -311,54 +525,152 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    void Function(List<TranslatedTextBlock> partialBlocks)? onPartialBlocks,
   }) async {
     final blocks = groupBlocks(ocr);
     if (blocks.isEmpty) return const [];
 
-    // 并行：后台采样原图前/背景色 + 批量翻译文字块。
-    final colorsFuture = sampleBlockColors(
-      imageBytes,
-      [for (final b in blocks) b.bounds],
-    );
-    final translations = await _translateBlocks(
-      blocks: blocks,
-      engine: engine,
-      targetCode: targetCode,
-      targetName: targetName,
-      translationService: translationService,
-      aiTranslationService: aiTranslationService,
-      aiModel: aiModel,
-      apiKey: apiKey,
-      cancelToken: cancelToken,
-    );
-    final colors = await colorsFuture;
+    // 1. 过滤已是目标语言的块：
+    //    若目标为中/简/繁且整张图全部都是中文（用户刻意做繁简转换），则不过滤；
+    //    在社区常见的中英/中日混排截图中，直接跳过已是目标语言的块可省去 40%~70% 翻译量。
+    final targetMatch = [
+      for (final b in blocks)
+        isAlreadyTargetLanguage(b.originalText, targetCode),
+    ];
+    final isChineseTarget = targetCode == 'zh-CN' || targetCode == 'zh-TW';
+    final skipSameLanguage =
+        !(isChineseTarget && targetMatch.every((matched) => matched));
 
-    final result = <TranslatedTextBlock>[];
-    for (var i = 0; i < blocks.length; i++) {
-      final block = blocks[i];
-      final translated = (i < translations.length ? translations[i] : '').trim();
-      if (translated.isEmpty) continue;
-      // 译文与原文完全一致（如软件名、命令、已是目标语言）时保留原图高清字样。
-      if (translated.toLowerCase() == block.originalText.trim().toLowerCase()) {
-        continue;
+    final candidateIndices = <int>[
+      for (var i = 0; i < blocks.length; i++)
+        if (!skipSameLanguage || !targetMatch[i]) i,
+    ];
+    if (candidateIndices.isEmpty) return const [];
+
+    // 2. 一次后台解码同时采样全部候选块及多行块内各原行的背景色。
+    final allRects = <Rect>[for (final i in candidateIndices) blocks[i].bounds];
+    final rowRanges = <({int start, int count})>[];
+    for (final i in candidateIndices) {
+      final b = blocks[i];
+      if (b.sourceRows.length > 1) {
+        rowRanges.add((start: allRects.length, count: b.sourceRows.length));
+        allRects.addAll(b.sourceRows);
+      } else {
+        rowRanges.add((start: -1, count: 0));
       }
-      final palette = colors[i];
-      result.add(
-        TranslatedTextBlock(
-          bounds: block.bounds,
-          originalText: block.originalText,
-          translatedText: translated,
-          backgroundColor: palette.bg,
-          foregroundColor: palette.fg,
-          lineCount: block.lineCount,
-        ),
+    }
+
+    final colorsFuture = sampleBlockColors(imageBytes, allRects);
+    List<({Color bg, Color fg})>? resolvedColors;
+    unawaited(
+      colorsFuture.then((c) {
+        resolvedColors = c;
+      }).catchError((Object _) {}),
+    );
+
+    final cachePrefix = engine == TranslationEngine.ai && aiModel != null
+        ? '${engine.name}:${aiModel.model.id}:$targetCode:'
+        : '${engine.name}:$targetCode:';
+    final outputs = List<String>.filled(candidateIndices.length, '');
+    final uncachedPositions = <int>[];
+
+    for (var pos = 0; pos < candidateIndices.length; pos++) {
+      final original = blocks[candidateIndices[pos]].originalText.trim();
+      final hit = _readCache('$cachePrefix$original');
+      if (hit != null) {
+        outputs[pos] = hit;
+      } else {
+        uncachedPositions.add(pos);
+      }
+    }
+
+    List<TranslatedTextBlock> assemble(List<({Color bg, Color fg})> colors) {
+      final result = <TranslatedTextBlock>[];
+      for (var pos = 0; pos < candidateIndices.length; pos++) {
+        final translated = outputs[pos].trim();
+        if (translated.isEmpty) continue;
+        final block = blocks[candidateIndices[pos]];
+        // 译文与原文完全一致（如软件名、命令、已是目标语言）时保留原图高清字样。
+        if (translated.toLowerCase() ==
+            block.originalText.trim().toLowerCase()) {
+          continue;
+        }
+        final palette = colors[pos];
+        final range = rowRanges[pos];
+        final rowBgs = range.start >= 0
+            ? [
+                for (var r = 0; r < range.count; r++)
+                  colors[range.start + r].bg,
+              ]
+            : const <Color>[];
+        result.add(
+          TranslatedTextBlock(
+            bounds: block.bounds,
+            originalText: block.originalText,
+            translatedText: translated,
+            backgroundColor: palette.bg,
+            foregroundColor: palette.fg,
+            lineCount: block.lineCount,
+            textAlign: block.textAlign,
+            sourceRows: block.sourceRows,
+            sourceRowBackgrounds: rowBgs,
+            sourceFontSize: block.sourceFontSize,
+          ),
+        );
+      }
+      return result;
+    }
+
+    void emitPartialIfReady() {
+      if (onPartialBlocks == null || cancelToken.isCancelled) return;
+      final colors = resolvedColors;
+      if (colors == null) return;
+      final built = assemble(colors);
+      if (built.isNotEmpty) {
+        onPartialBlocks(built);
+      }
+    }
+
+    // 命中缓存的块待配色就绪后立刻先行渲染。
+    if (onPartialBlocks != null &&
+        uncachedPositions.length < candidateIndices.length) {
+      unawaited(
+        colorsFuture.then((colors) {
+          resolvedColors = colors;
+          emitPartialIfReady();
+        }).catchError((Object _) {}),
       );
     }
-    return result;
+
+    if (uncachedPositions.isNotEmpty) {
+      await _translateBlocksConcurrent(
+        blocks: blocks,
+        candidateIndices: candidateIndices,
+        uncachedPositions: uncachedPositions,
+        outputs: outputs,
+        cachePrefix: cachePrefix,
+        engine: engine,
+        targetCode: targetCode,
+        targetName: targetName,
+        translationService: translationService,
+        aiTranslationService: aiTranslationService,
+        aiModel: aiModel,
+        apiKey: apiKey,
+        cancelToken: cancelToken,
+        onUpdated: emitPartialIfReady,
+      );
+    }
+
+    final colors = resolvedColors ?? await colorsFuture;
+    return assemble(colors);
   }
 
-  static Future<List<String>> _translateBlocks({
+  static Future<void> _translateBlocksConcurrent({
     required List<ImageTextBlock> blocks,
+    required List<int> candidateIndices,
+    required List<int> uncachedPositions,
+    required List<String> outputs,
+    required String cachePrefix,
     required TranslationEngine engine,
     required String targetCode,
     required String targetName,
@@ -367,32 +679,79 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    required VoidCallback onUpdated,
   }) async {
-    final outputs = List<String>.filled(blocks.length, '');
-    final maxBatchChars = engine == TranslationEngine.google ? 700 : 2200;
+    final (maxBatchChars, maxBatchBlocks) = switch (engine) {
+      TranslationEngine.google => (2200, 30),
+      // 必应网页端单次硬上限 1000 字且长包易走慢速 LLM，小批次 + 并发更快。
+      TranslationEngine.bing => (560, 14),
+      TranslationEngine.bilibili => (1800, 25),
+      TranslationEngine.ai => (2200, 25),
+    };
 
+    final batches = <List<int>>[];
     var start = 0;
-    while (start < blocks.length) {
-      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+    while (start < uncachedPositions.length) {
       final batch = <int>[];
       var chars = 0;
-      while (start < blocks.length) {
-        final len = blocks[start].originalText.length + 12;
-        if (batch.isNotEmpty && (chars + len > maxBatchChars || batch.length >= 25)) {
+      while (start < uncachedPositions.length) {
+        final pos = uncachedPositions[start];
+        final len = blocks[candidateIndices[pos]].originalText.length + 12;
+        if (batch.isNotEmpty &&
+            (chars + len > maxBatchChars || batch.length >= maxBatchBlocks)) {
           break;
         }
-        batch.add(start);
+        batch.add(pos);
         chars += len;
         start++;
       }
+      batches.add(batch);
+    }
 
+    final isStreaming =
+        engine == TranslationEngine.ai || engine == TranslationEngine.bilibili;
+
+    Future<void> runBatch(List<int> batch) async {
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
       final payload = StringBuffer();
-      for (final idx in batch) {
-        final sanitized = blocks[idx].originalText.replaceAll('\n', ' ');
-        payload.writeln('[$idx] $sanitized');
+      for (final pos in batch) {
+        final sanitized = blocks[candidateIndices[pos]].originalText.replaceAll(
+          '\n',
+          ' ',
+        );
+        payload.writeln('[$pos] $sanitized');
+      }
+      final expectedSet = batch.toSet();
+      final marker = RegExp(r'^\s*[\[【]\s*(\d+)\s*[\]】]\s*(.*)$');
+      final fullBuffer = StringBuffer();
+      var parsedCursor = 0;
+
+      void absorbStreamingLines() {
+        if (!isStreaming) return;
+        final raw = fullBuffer.toString();
+        final lastNl = raw.lastIndexOf('\n');
+        if (lastNl <= parsedCursor) return;
+        final slice = raw.substring(parsedCursor, lastNl);
+        parsedCursor = lastNl + 1;
+        var changed = false;
+        for (final line in slice.split('\n')) {
+          final m = marker.firstMatch(line.trim());
+          if (m == null) continue;
+          final pos = int.tryParse(m.group(1)!);
+          final text = m.group(2)!.trim();
+          if (pos != null && expectedSet.contains(pos) && text.isNotEmpty) {
+            outputs[pos] = text;
+            _writeCache(
+              '$cachePrefix${blocks[candidateIndices[pos]].originalText.trim()}',
+              text,
+            );
+            changed = true;
+          }
+        }
+        if (changed) onUpdated();
       }
 
-      final raw = await _runSingleBatch(
+      await _streamSingleBatch(
         engine: engine,
         payload: payload.toString().trim(),
         targetCode: targetCode,
@@ -402,17 +761,65 @@ abstract final class ImageTranslationService {
         aiModel: aiModel,
         apiKey: apiKey,
         cancelToken: cancelToken,
+        onChunk: (delta) {
+          fullBuffer.write(delta);
+          absorbStreamingLines();
+        },
       );
 
-      final parsed = parseIndexedTranslations(raw, batch);
+      final parsed = parseIndexedTranslations(fullBuffer.toString(), batch);
+      var changed = false;
       for (final entry in parsed.entries) {
-        outputs[entry.key] = entry.value;
+        if (outputs[entry.key] != entry.value) {
+          outputs[entry.key] = entry.value;
+          changed = true;
+        }
+        _writeCache(
+          '$cachePrefix${blocks[candidateIndices[entry.key]].originalText.trim()}',
+          entry.value,
+        );
+      }
+      if (changed) onUpdated();
+    }
+
+    const maxConcurrency = 3;
+    if (batches.length <= 1) {
+      for (final batch in batches) {
+        await runBatch(batch);
+      }
+      return;
+    }
+
+    var nextIdx = 0;
+    Object? firstError;
+    StackTrace? firstStack;
+    final workerCount = math.min(maxConcurrency, batches.length);
+
+    Future<void> worker() async {
+      while (true) {
+        if (firstError != null || cancelToken.isCancelled) return;
+        if (nextIdx >= batches.length) return;
+        final batch = batches[nextIdx++];
+        try {
+          await runBatch(batch);
+        } catch (error, stackTrace) {
+          if (firstError == null) {
+            firstError = error;
+            firstStack = stackTrace;
+          }
+          return;
+        }
       }
     }
-    return outputs;
+
+    await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
+    if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
   }
 
-  static Future<String> _runSingleBatch({
+  static Future<void> _streamSingleBatch({
     required TranslationEngine engine,
     required String payload,
     required String targetCode,
@@ -422,6 +829,7 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    required void Function(String chunk) onChunk,
   }) async {
     if (engine == TranslationEngine.ai) {
       if (aiTranslationService == null ||
@@ -430,7 +838,6 @@ abstract final class ImageTranslationService {
           apiKey.trim().isEmpty) {
         throw const TranslationException(TranslationFailure.unavailable);
       }
-      final buffer = StringBuffer();
       await for (final delta in aiTranslationService.translateStream(
         provider: aiModel.provider,
         model: aiModel.model,
@@ -440,12 +847,11 @@ abstract final class ImageTranslationService {
         targetLanguage: targetName,
       )) {
         if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-        buffer.write(delta);
+        onChunk(delta);
       }
-      return buffer.toString();
+      return;
     }
 
-    final buffer = StringBuffer();
     await for (final chunk in translationService.translate(
       engine: engine,
       text: payload,
@@ -453,9 +859,9 @@ abstract final class ImageTranslationService {
       targetName: targetName,
       cancelToken: cancelToken,
     )) {
-      buffer.write(chunk);
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+      onChunk(chunk);
     }
-    return buffer.toString();
   }
 
   /// 解析带 `[index]` 编号的批量译文，兼容全角括号 `【index】` 和行序回退。
@@ -492,7 +898,7 @@ abstract final class ImageTranslationService {
     return result;
   }
 
-  /// 在任意画布上高清矢量绘制覆盖式译文（实时预览与导出保存共用同一算法）。
+  /// 在任意画布上高清矢量绘制覆盖式译文（Smart Merge：逐行背景擦除 + 原文字号约束 + 对齐还原）。
   static void paintTranslatedBlocks(
     Canvas canvas, {
     required Rect displayRect,
@@ -509,16 +915,18 @@ abstract final class ImageTranslationService {
     final scaleX = displayRect.width / imageSize.width;
     final scaleY = displayRect.height / imageSize.height;
 
+    Rect mapToDisplay(Rect r) => Rect.fromLTRB(
+      displayRect.left + r.left * scaleX,
+      displayRect.top + r.top * scaleY,
+      displayRect.left + r.right * scaleX,
+      displayRect.top + r.bottom * scaleY,
+    );
+
     for (final block in blocks) {
-      final raw = Rect.fromLTRB(
-        displayRect.left + block.bounds.left * scaleX,
-        displayRect.top + block.bounds.top * scaleY,
-        displayRect.left + block.bounds.right * scaleX,
-        displayRect.top + block.bounds.bottom * scaleY,
-      );
+      final raw = mapToDisplay(block.bounds);
       // 轻微扩边覆盖原字边缘抗锯齿毛边，同时保持克制避免盖住邻近图标。
-      final padX = math.max(1.0, raw.height * 0.05);
-      final padY = math.max(1.0, raw.height * 0.05);
+      final padX = math.max(1.5, raw.height * 0.05);
+      final padY = math.max(1.5, raw.height * 0.05);
       final fillRect = Rect.fromLTRB(
         math.max(displayRect.left, raw.left - padX),
         math.max(displayRect.top, raw.top - padY),
@@ -530,15 +938,45 @@ abstract final class ImageTranslationService {
       final radius = math.min(4.0, fillRect.height * 0.16);
       final rrect = RRect.fromRectAndRadius(fillRect, Radius.circular(radius));
 
-      // 1. 以采样到的原图背景色覆盖原文。
-      canvas.drawRRect(
-        rrect,
-        Paint()..color = block.backgroundColor.withValues(alpha: opacity),
-      );
+      // 1. 擦除原文：多行段落优先按逐行原背景色精确覆盖，避免把末行右侧空白处无关元素盖成大色块。
+      if (block.sourceRows.length > 1) {
+        for (var r = 0; r < block.sourceRows.length; r++) {
+          final rowDisp = mapToDisplay(block.sourceRows[r]);
+          final rPadX = math.max(1.5, rowDisp.height * 0.08);
+          final rPadY = math.max(1.5, rowDisp.height * 0.12);
+          final rowFill = Rect.fromLTRB(
+            math.max(displayRect.left, rowDisp.left - rPadX),
+            math.max(displayRect.top, rowDisp.top - rPadY),
+            math.min(displayRect.right, rowDisp.right + rPadX),
+            math.min(displayRect.bottom, rowDisp.bottom + rPadY),
+          );
+          final rowColor = r < block.sourceRowBackgrounds.length
+              ? block.sourceRowBackgrounds[r]
+              : block.backgroundColor;
+          final rowRadius = math.min(3.5, rowFill.height * 0.18);
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rowFill, Radius.circular(rowRadius)),
+            Paint()..color = rowColor.withValues(alpha: opacity),
+          );
+        }
+        // 在段落内部区域补充柔和底色以承载重排后的多行译文。
+        canvas.drawRRect(
+          rrect,
+          Paint()..color = block.backgroundColor.withValues(alpha: opacity * 0.94),
+        );
+      } else {
+        canvas.drawRRect(
+          rrect,
+          Paint()..color = block.backgroundColor.withValues(alpha: opacity),
+        );
+      }
 
-      // 2. 二分计算恰好适配区域的最大清晰字号并矢量绘制。
-      final availW = math.max(4.0, fillRect.width - 2.0);
+      // 2. 基于原文字号上限二分计算最舒适字号并按原文对齐方式矢量绘制。
+      final availW = math.max(4.0, fillRect.width - 4.0);
       final availH = math.max(4.0, fillRect.height - 1.0);
+      final fontCap = block.sourceFontSize != null
+          ? block.sourceFontSize! * scaleY * 1.08
+          : null;
       final painter = _fitTextPainter(
         text: block.translatedText,
         color: block.foregroundColor.withValues(alpha: opacity),
@@ -546,13 +984,24 @@ abstract final class ImageTranslationService {
         maxHeight: availH,
         lineCountHint: block.lineCount,
         textAlign: block.textAlign,
+        maxFontCap: fontCap,
       );
 
       canvas.save();
       canvas.clipRRect(rrect);
-      final dx = fillRect.left + 1.0 + math.max(0.0, (availW - painter.width) / 2);
-      final dy = fillRect.top + math.max(0.0, (fillRect.height - painter.height) / 2);
-      painter.paint(canvas, Offset(block.textAlign == TextAlign.left ? fillRect.left + 2.0 : dx, dy));
+      final double dx;
+      switch (block.textAlign) {
+        case TextAlign.center:
+          dx = fillRect.left + 2.0 + math.max(0.0, (availW - painter.width) / 2);
+        case TextAlign.right:
+        case TextAlign.end:
+          dx = fillRect.left + 2.0 + math.max(0.0, availW - painter.width);
+        default:
+          dx = fillRect.left + 2.0;
+      }
+      final dy =
+          fillRect.top + math.max(0.0, (fillRect.height - painter.height) / 2);
+      painter.paint(canvas, Offset(dx, dy));
       canvas.restore();
     }
   }
@@ -564,12 +1013,18 @@ abstract final class ImageTranslationService {
     required double maxHeight,
     required int lineCountHint,
     required TextAlign textAlign,
+    double? maxFontCap,
   }) {
     final minFont = math.min(8.0, maxHeight * 0.7);
-    final maxFont = math.max(
-      minFont,
-      math.min(maxHeight / math.max(1, lineCountHint) * 0.92, 64.0),
+    final rawMax = math.min(
+      maxHeight / math.max(1, lineCountHint) * 0.94,
+      64.0,
     );
+    final cappedMax = maxFontCap != null && maxFontCap.isFinite && maxFontCap > 0
+        ? math.min(rawMax, maxFontCap)
+        : rawMax;
+    final maxFont = math.max(minFont, cappedMax);
+    final lineHeight = lineCountHint > 1 ? 1.18 : 1.08;
 
     TextPainter build(double fontSize) {
       final tp = TextPainter(
@@ -578,7 +1033,7 @@ abstract final class ImageTranslationService {
           style: TextStyle(
             color: color,
             fontSize: fontSize,
-            height: 1.15,
+            height: lineHeight,
             fontWeight: FontWeight.w500,
           ),
         ),

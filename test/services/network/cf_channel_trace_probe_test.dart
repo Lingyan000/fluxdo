@@ -77,12 +77,17 @@ kex=X25519
     expect(report!.sameIp, isTrue);
     expect(report.sameColo, isTrue);
     expect(report.sameHttp, isFalse);
+    expect(report.hasHttpProtocolMismatch, isTrue);
+    expect(probe.protocolMismatchNotifier.value, same(report));
     expect(report.sameTls, isTrue);
     expect(report.sameKex, isFalse);
     expect(report.core.ipVersion, 'v4');
     expect(report.core.ipHash, isNotNull);
     expect(report.core.ipHash, equals(report.webview.ipHash));
     expect(jsonEncode(report.toJson()), isNot(contains(rawIp)));
+
+    probe.clearProtocolMismatch();
+    expect(probe.protocolMismatchNotifier.value, isNull);
 
     await LogWriter.instance.flushNow();
     final logText = await _readAllLogText(tempDir);
@@ -115,6 +120,8 @@ kex=X25519
     expect(report, isNotNull);
     expect(report!.sameIp, isFalse);
     expect(report.sameColo, isFalse);
+    expect(report.hasHttpProtocolMismatch, isFalse);
+    expect(probe.protocolMismatchNotifier.value, isNull);
     expect(report.core.ipVersion, 'v4');
     expect(report.webview.ipVersion, 'v6');
     expect(report.core.ipHash, isNot(equals(report.webview.ipHash)));

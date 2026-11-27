@@ -1,14 +1,14 @@
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
-
 import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../models/ocr_engine_preference.dart';
 import '../../models/translation_engine.dart';
 import '../../modules/mini_apps/mini_app_engine_picker.dart';
 import '../../providers/ai_post_review_provider.dart';
@@ -227,12 +227,76 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           subtitle: PlatformUtils.isDesktop
               ? l10n.imageViewer_directTextSelectDescDesktop
               : l10n.imageViewer_directTextSelectDescMobile,
+          subtitleBuilder: (ref) {
+            final useSystemOcr =
+                (Platform.isMacOS || Platform.isIOS) &&
+                ref.watch(preferencesProvider).ocrEngine ==
+                    OcrEnginePreference.system;
+            if (PlatformUtils.isDesktop) {
+              return useSystemOcr
+                  ? l10n.imageViewer_directTextSelectDescDesktopSystem
+                  : l10n.imageViewer_directTextSelectDescDesktop;
+            }
+            return useSystemOcr
+                ? l10n.imageViewer_directTextSelectDescMobileSystem
+                : l10n.imageViewer_directTextSelectDescMobile;
+          },
           icon: Symbols.document_scanner_rounded,
           getValue: (ref) =>
               ref.watch(preferencesProvider).imageDirectTextSelect,
           onChanged: (ref, v) => ref
               .read(preferencesProvider.notifier)
               .setImageDirectTextSelect(v),
+        ),
+        PlatformConditionalModel(
+          inner: ActionModel(
+            id: 'ocrEngine',
+            title: l10n.imageViewer_ocrEngine,
+            subtitle: l10n.imageViewer_ocrEngineSystemDesc,
+            icon: Symbols.memory_rounded,
+            getDynamicSubtitle: (ref) =>
+                ref.watch(preferencesProvider).ocrEngine ==
+                    OcrEnginePreference.system
+                ? l10n.imageViewer_ocrEngineSystem
+                : l10n.imageViewer_ocrEngineLitert,
+            onTap: (context, ref) async {
+              final current = ref.read(preferencesProvider).ocrEngine;
+              final selected = await showAppDialog<OcrEnginePreference>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  title: Text(l10n.imageViewer_ocrEngine),
+                  children: [
+                    for (final option in OcrEnginePreference.values)
+                      ListTile(
+                        title: Text(
+                          option == OcrEnginePreference.system
+                              ? l10n.imageViewer_ocrEngineSystem
+                              : l10n.imageViewer_ocrEngineLitert,
+                        ),
+                        subtitle: Text(
+                          option == OcrEnginePreference.system
+                              ? l10n.imageViewer_ocrEngineSystemDesc
+                              : l10n.imageViewer_ocrEngineLitertDesc,
+                        ),
+                        trailing: option == current
+                            ? Icon(
+                                Symbols.check_rounded,
+                                color: ctx.emphasis.accent,
+                              )
+                            : null,
+                        onTap: () => Navigator.pop(ctx, option),
+                      ),
+                  ],
+                ),
+              );
+              if (selected != null && context.mounted) {
+                await ref
+                    .read(preferencesProvider.notifier)
+                    .setOcrEngine(selected);
+              }
+            },
+          ),
+          condition: () => Platform.isMacOS || Platform.isIOS,
         ),
       ],
     ),
@@ -779,7 +843,7 @@ class _TopicFilterKeywordsDialogState
               },
             ),
             const SizedBox(height: 8),
-            SwitchListTile.adaptive(
+            M3eSwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(l10n.preferences_topicFilterWholeWord),
               subtitle: Text(l10n.preferences_topicFilterWholeWordDesc),
@@ -1025,9 +1089,6 @@ class _EntryChipsEditorState extends State<_EntryChipsEditor> {
             hintText: widget.hintText,
             helperText: widget.helperText,
             helperMaxLines: 2,
-            border: OutlineInputBorder(
-              borderRadius: context.shapes.borderRadius(4),
-            ),
           ),
           keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
@@ -1058,9 +1119,6 @@ void _showStickerBaseUrlDialog(BuildContext context, WidgetRef ref) {
             controller: controller,
             decoration: InputDecoration(
               hintText: context.l10n.preferences_enterUrl,
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
             ),
             keyboardType: TextInputType.url,
             autofocus: true,

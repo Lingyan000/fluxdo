@@ -51,6 +51,9 @@ class CfChallengeLogger {
       'coreRunning': core.running,
       'coreWebViewMitmEnabled': core.webViewMitm,
       'webViewProxyOverrideRegistered': settings.webViewProxyOverrideRegistered,
+      'webViewSiteTunnelEnabled': settings.current.webViewSiteTunnelEnabled,
+      'webViewSiteTunnelActive': settings.webViewSiteTunnelActive,
+      'allowUncalibratedHttp3': settings.current.allowUncalibratedHttp3,
       'vpnDetectionReportedActive': vpn.vpnActive,
       'vpnDetectionMode': vpn.detectionMode.name,
     };

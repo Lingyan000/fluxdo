@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -136,8 +137,9 @@ class _FontMigrationDialogState extends ConsumerState<_FontMigrationDialog> {
                     Text(l10n.appearance_fontChangeSource),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: DropdownButton<FontSourceKind>(
+                      child: AppDropdown<FontSourceKind>(
                         isExpanded: true,
+                        isDense: true,
                         value: _service.sourceKind,
                         items: [
                           for (final kind in FontSourceKind.values)
@@ -145,24 +147,20 @@ class _FontMigrationDialogState extends ConsumerState<_FontMigrationDialog> {
                                 FontSource.isValidTemplate(
                                   _service.customTemplate,
                                 ))
-                              DropdownMenuItem(
+                              AppDropdownItem(
                                 value: kind,
-                                child: Text(
-                                  switch (kind) {
-                                    FontSourceKind.auto =>
-                                      l10n.appearance_fontSourceAuto,
-                                    FontSourceKind.npmmirror =>
-                                      l10n.appearance_fontSourceNpmmirror,
-                                    FontSourceKind.fastly =>
-                                      'jsDelivr (Fastly)',
-                                    FontSourceKind.jsdelivr => 'jsDelivr',
-                                    FontSourceKind.unpkg => 'unpkg',
-                                    FontSourceKind.npmjs => 'npmjs.org',
-                                    FontSourceKind.custom =>
-                                      l10n.appearance_fontSourceCustom,
-                                  },
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                label: switch (kind) {
+                                  FontSourceKind.auto =>
+                                    l10n.appearance_fontSourceAuto,
+                                  FontSourceKind.npmmirror =>
+                                    l10n.appearance_fontSourceNpmmirror,
+                                  FontSourceKind.fastly => 'jsDelivr (Fastly)',
+                                  FontSourceKind.jsdelivr => 'jsDelivr',
+                                  FontSourceKind.unpkg => 'unpkg',
+                                  FontSourceKind.npmjs => 'npmjs.org',
+                                  FontSourceKind.custom =>
+                                    l10n.appearance_fontSourceCustom,
+                                },
                               ),
                         ],
                         onChanged: (kind) {

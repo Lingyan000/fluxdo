@@ -9,8 +9,6 @@
 /// 立即 dispose 会崩,见 rich_composer_editor 的 _MarkdownInputDialog)。
 library;
 
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show LocalDateRun;
 
@@ -197,13 +195,10 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _timezoneController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: '时区',
               hintText: 'Asia/Shanghai',
               isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
             ),
           ),
           const SizedBox(height: 4),

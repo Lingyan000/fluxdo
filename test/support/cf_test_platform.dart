@@ -20,6 +20,21 @@ class CfTestPlatform extends InAppWebViewPlatform {
           const MethodChannel('plugins.flutter.io/path_provider'),
           (_) async => cookieDirectory,
         );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.fluxdo/raw_cookie'),
+          (call) async {
+            if (call.method == 'nukeAllVariants') {
+              final args = Map<String, dynamic>.from(call.arguments as Map);
+              final name = args['name'] as String?;
+              if (name == null) return 0;
+              final before = cookies.values.length;
+              cookies.values.removeWhere((cookie) => cookie.name == name);
+              return before - cookies.values.length;
+            }
+            return null;
+          },
+        );
     await CookieJarService().initialize();
   }
 

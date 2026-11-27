@@ -4,6 +4,7 @@
 /// 支持 ENC1（自动识别内嵌算法）/ OpenSSL Salted / 裸 base64 / 编码文本。
 library;
 
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -373,10 +374,11 @@ class _CryptoDecryptSheetState extends ConsumerState<CryptoDecryptSheet> {
     }
     return Row(
       children: [
-        Switch(
+        M3eSwitch(
           value: _rememberPassword,
           onChanged: (v) => setState(() => _rememberPassword = v),
         ),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             '${s.crypto_rememberPassword}（${s.crypto_secureStorageNote}）',

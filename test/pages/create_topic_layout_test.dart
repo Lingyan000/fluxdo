@@ -192,15 +192,8 @@ void main() {
                         w.text.toPlainText().contains('大家平时更习惯'),
                   ),
                 );
-          if (empty) {
-            // 空段落的提示只在获得焦点后显示，先点击首行输入区域。
-            await tester.tapAt(
-              tester.getTopLeft(find.byType(FluxdoEditor)) +
-                  const Offset(20, 12),
-            );
-          } else {
-            await tester.tap(tail);
-          }
+          // 空白正文在未聚焦时就应能按提示所在的首行开始输入。
+          await tester.tapAt(tester.getCenter(tail));
           await tester.pump();
           expect(richEditor.focusNode!.hasFocus, isTrue);
           for (final height in [60.0, 120.0, 200.0, 300.0]) {

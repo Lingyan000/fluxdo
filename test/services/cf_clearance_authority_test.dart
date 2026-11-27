@@ -175,6 +175,37 @@ void main() {
     });
   });
 
+  group('/challenge 过盾短保护窗', () {
+    test('窗口内保护在位值，超时或被撞后立即解除', () async {
+      final t0 = DateTime(2026, 11, 27, 10, 0, 0);
+      jarWith(clearance('challenge-v1', expiresAt: t0.add(const Duration(days: 7))));
+
+      authority.noteChallengeVerified('challenge-v1', now: t0);
+      expect(
+        await authority.isIncumbentChallengeProtected(
+          now: t0.add(const Duration(seconds: 30)),
+        ),
+        isTrue,
+      );
+      expect(
+        await authority.isIncumbentChallengeProtected(
+          now: t0.add(CfClearanceAuthority.challengeProtectionWindow),
+        ),
+        isFalse,
+      );
+
+      // 重新登记保护后，一旦被撞立刻解除保护
+      authority.noteChallengeVerified('challenge-v1', now: t0);
+      authority.noteIncumbentChallenged('challenge-v1');
+      expect(
+        await authority.isIncumbentChallengeProtected(
+          now: t0.add(const Duration(seconds: 5)),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('extractFromCookieHeader', () {
     test('提取与误匹配', () {
       expect(

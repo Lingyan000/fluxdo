@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/ocr_engine_preference.dart';
 import '../models/topic_card_style.dart';
 import '../models/translation_engine.dart';
 import '../navigation/nav_action_bus.dart';
@@ -346,6 +347,9 @@ class AppPreferences {
   /// 看图页免点按钮直接划选文字（桌面端静默识别后左键拖选，移动端长按文字直达）
   final bool imageDirectTextSelect;
 
+  /// 图片文字识别引擎偏好（macOS / iOS 默认系统 Vision 引擎，可切回 PP-OCR 离线模型）
+  final OcrEnginePreference ocrEngine;
+
   AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
@@ -416,6 +420,7 @@ class AppPreferences {
     this.topicCardStyle = TopicCardStyle.defaults,
     this.emojiStyle = EmojiHandler.defaultPreference,
     this.imageDirectTextSelect = true,
+    this.ocrEngine = OcrEnginePreference.system,
   });
 
   AppPreferences copyWith({
@@ -488,6 +493,7 @@ class AppPreferences {
     TopicCardStyle? topicCardStyle,
     String? emojiStyle,
     bool? imageDirectTextSelect,
+    OcrEnginePreference? ocrEngine,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -584,6 +590,7 @@ class AppPreferences {
       emojiStyle: emojiStyle ?? this.emojiStyle,
       imageDirectTextSelect:
           imageDirectTextSelect ?? this.imageDirectTextSelect,
+      ocrEngine: ocrEngine ?? this.ocrEngine,
     );
   }
 }
@@ -678,6 +685,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _emojiStyleKey = 'pref_emoji_style';
   static const String _imageDirectTextSelectKey =
       'pref_image_direct_text_select';
+  static const String _ocrEngineKey = 'pref_ocr_engine';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -811,6 +819,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               EmojiHandler.defaultPreference,
           imageDirectTextSelect:
               _prefs.getBool(_imageDirectTextSelectKey) ?? true,
+          ocrEngine: OcrEnginePreference.parse(_prefs.getString(_ocrEngineKey)),
         ),
       ) {
     // 首次迁移即固定服务，避免新用户开启翻译后被识别成旧版 AI 用户。
@@ -1313,6 +1322,13 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.imageDirectTextSelect == enabled) return;
     state = state.copyWith(imageDirectTextSelect: enabled);
     await _prefs.setBool(_imageDirectTextSelectKey, enabled);
+  }
+
+  /// 图片文字识别引擎偏好（macOS / iOS 可在系统 Vision 与离线 PP-OCR 之间切换）
+  Future<void> setOcrEngine(OcrEnginePreference engine) async {
+    if (state.ocrEngine == engine) return;
+    state = state.copyWith(ocrEngine: engine);
+    await _prefs.setString(_ocrEngineKey, engine.name);
   }
 
   void _syncSchedulerConfig() {

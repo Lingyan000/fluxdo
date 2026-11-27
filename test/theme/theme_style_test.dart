@@ -293,18 +293,64 @@ void main() {
       }
     });
 
-    testWidgets('Material 主题没有输入框边框，外壳不画线', (tester) async {
+    testWidgets('Material 填充主题：常态无描边，聚焦画强调色描边，且无边框输入框不继承填充', (
+      tester,
+    ) async {
+      final theme = _build(ThemeStyle.material);
+      final inputTheme = theme.inputDecorationTheme;
+      expect(inputTheme.filled, isTrue);
+      expect(inputTheme.enabledBorder, isA<RoundedSuperellipseInputBorder>());
+      expect(inputTheme.enabledBorder?.borderSide, BorderSide.none);
+      expect(inputTheme.focusedBorder?.borderSide.color, theme.colorScheme.primary);
+
+      await pump(tester, theme);
+      expectStroke(tester, inputTheme.enabledBorder);
+
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expectStroke(tester, inputTheme.focusedBorder);
+
+      // 无边框输入框清除默认填充与边框
       await tester.pumpWidget(
         MaterialApp(
-          theme: _build(ThemeStyle.material),
-          home: const Scaffold(
-            body: InputFieldShell(child: TextField(autofocus: true)),
+          theme: theme,
+          home: Scaffold(
+            body: TextField(
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '标题').withoutBorder(),
+            ),
           ),
         ),
       );
       await tester.pump();
-      await tester.pump();
-      expectStroke(tester, null);
+      final decorator = tester.widget<InputDecorator>(
+        find.byType(InputDecorator),
+      );
+      expect(decorator.decoration.filled, isFalse);
+      expect(decorator.decoration.focusedBorder, InputBorder.none);
+      expect(decorator.decoration.enabledBorder, InputBorder.none);
+    });
+
+    test('Checkbox / Radio / DropdownMenu 跟随主题超椭圆与控件色', () {
+      for (final style in [ThemeStyle.material, ThemeRegistry.minimal.style]) {
+        final theme = _build(style);
+        expect(theme.checkboxTheme.shape, isA<RoundedSuperellipseBorder>());
+        final expectedControl = style.controls == ControlStyle.ink
+            ? theme.colorScheme.onSurface
+            : theme.colorScheme.primary;
+        expect(
+          theme.checkboxTheme.fillColor?.resolve({WidgetState.selected}),
+          expectedControl,
+        );
+        expect(
+          theme.radioTheme.fillColor?.resolve({WidgetState.selected}),
+          expectedControl,
+        );
+        expect(
+          theme.dropdownMenuTheme.menuStyle?.shape?.resolve({}),
+          isA<RoundedSuperellipseBorder>(),
+        );
+      }
     });
   });
 

@@ -21,6 +21,7 @@ void main() {
       expect(FluxRequestKeys.skipSessionStateSync, 'skipSessionStateSync');
       expect(FluxRequestKeys.skipWebViewAdapter, 'skipWebViewAdapter');
       expect(FluxRequestKeys.skipScheduler, 'skipScheduler');
+      expect(FluxRequestKeys.allowCoalescing, 'allowCoalescing');
       expect(FluxRequestKeys.allowRedirectSetCookie, 'allowRedirectSetCookie');
       expect(FluxRequestKeys.skipCfChallenge, 'skipCfChallenge');
       expect(FluxRequestKeys.skipCfBlock, 'skipCfBlock');
@@ -53,6 +54,7 @@ void main() {
       expect(spec.skipSessionStateSync, isFalse);
       expect(spec.skipWebViewAdapter, isFalse);
       expect(spec.skipScheduler, isFalse);
+      expect(spec.allowCoalescing, isFalse);
       expect(spec.allowRedirectSetCookie, isFalse);
       expect(spec.skipCfChallenge, isFalse);
       expect(spec.skipCfBlock, isFalse);

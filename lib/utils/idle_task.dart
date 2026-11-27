@@ -1,6 +1,46 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
+
+import 'scroll_busy_signal.dart';
+
+bool _pointerRouteInstalled = false;
+final Set<int> _activePointers = {};
+final Set<int> _activePanZooms = {};
+
+void _ensurePointerRouteInstalled() {
+  if (_pointerRouteInstalled) return;
+  _pointerRouteInstalled = true;
+  GestureBinding.instance.pointerRouter.addGlobalRoute(_handleGlobalPointer);
+}
+
+void _handleGlobalPointer(PointerEvent event) {
+  if (event is PointerDownEvent) {
+    _activePointers.add(event.pointer);
+  } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+    _activePointers.remove(event.pointer);
+  } else if (event is PointerPanZoomStartEvent) {
+    _activePanZooms.add(event.pointer);
+  } else if (event is PointerPanZoomEndEvent) {
+    _activePanZooms.remove(event.pointer);
+  }
+}
+
+/// 当前是否处于手指按下拖动、触控板手势或活跃滚动状态。
+bool get isIdleTaskUserInteracting =>
+    _activePointers.isNotEmpty ||
+    _activePanZooms.isNotEmpty ||
+    ScrollBusySignal.isScrolling;
+
+@visibleForTesting
+void resetIdleTaskInteractionState() {
+  _activePointers.clear();
+  _activePanZooms.clear();
+  // ignore: invalid_use_of_visible_for_testing_member
+  ScrollBusySignal.reset();
+}
 
 /// 空闲任务调度:替代 `SchedulerBinding.scheduleTask(..., Priority.idle)`。
 ///
@@ -11,21 +51,33 @@ import 'package:flutter/scheduler.dart';
 /// (实测每秒 9~18 万条空消息)。这里用 8ms 定时器链自实现"空闲礼让",
 /// 完全不进框架任务队列。
 ///
-/// 语义:动画进行中每 8ms 探测一次(代价可忽略),动画停止后执行;
-/// 连续礼让超过 [maxDeferral] 后强制执行,避免常驻动画把任务饿死。
+/// 语义:
+/// - 手指按住拖动、触控板缩放/滚动或列表活跃滚动期间始终让路，不计入
+///   [maxDeferral]（避免长拖动中强制抢跑重预热）；
+/// - 仅存在动画回调（transientCallbackCount>0）时每 8ms 探测一次，停止后
+///   执行；连续动画礼让超过 [maxDeferral] 后强制执行，避免常驻动画把任务
+///   饿死。
 IdleTaskHandle scheduleIdleTask(
   void Function() task, {
   bool Function()? isCanceled,
   Duration maxDeferral = const Duration(seconds: 2),
 }) {
+  _ensurePointerRouteInstalled();
   final handle = IdleTaskHandle();
-  final deadline = DateTime.now().add(maxDeferral);
+  final maxDeferralMs = maxDeferral.inMilliseconds;
+  var animationDeferredMs = 0;
+
   void attempt() {
     handle._timer = Timer(const Duration(milliseconds: 8), () {
       handle._timer = null;
       if (handle._canceled || (isCanceled?.call() ?? false)) return;
+      if (isIdleTaskUserInteracting) {
+        attempt();
+        return;
+      }
       if (SchedulerBinding.instance.transientCallbackCount > 0 &&
-          DateTime.now().isBefore(deadline)) {
+          animationDeferredMs < maxDeferralMs) {
+        animationDeferredMs += 8;
         attempt();
         return;
       }

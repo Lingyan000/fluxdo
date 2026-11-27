@@ -229,6 +229,7 @@
   "ai_quickPromptsValidateTemplateRequired": "請輸入 prompt 模板",
   "ai_translationEngine": "翻譯服務",
   "ai_translationGoogle": "Google（免費）",
+  "ai_translationBing": "微軟（免費）",
   "ai_translationBilibili": "嗶哩嗶哩（免費）",
   "ai_translationAi": "AI",
   "ai_translationRateLimited": "翻譯服務請求過於頻繁，請稍後重試或切換服務",

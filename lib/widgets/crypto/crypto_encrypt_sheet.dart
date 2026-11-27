@@ -5,6 +5,7 @@
 library;
 
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -431,10 +432,11 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
     }
     return Row(
       children: [
-        Switch(
+        M3eSwitch(
           value: _rememberPassword,
           onChanged: (v) => setState(() => _rememberPassword = v),
         ),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             '${s.crypto_rememberPassword}（${s.crypto_secureStorageNote}）',

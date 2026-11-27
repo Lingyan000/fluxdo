@@ -24,6 +24,12 @@ class _ReadyModelStore extends Fake implements OcrModelStore {
   @override
   Future<OcrModelPaths> paths() async =>
       (detector: 'det', recognizer: 'rec', config: 'cfg');
+
+  @override
+  Future<String?> paragraphModelPathIfReady() async => null;
+
+  @override
+  Future<String?> ensureParagraphModel({Duration? waitTimeout}) async => null;
 }
 
 class _FailingDownloadModelStore extends Fake implements OcrModelStore {
@@ -54,10 +60,16 @@ class _StubOcrService extends Fake implements LocalOcrService {
   final OcrResult ocrResult;
 
   @override
+  Future<bool> isSystemEngineAvailable() async => false;
+
+  @override
   Future<OcrResult> recognizeDetailed(
     Uint8List pngBytes,
-    OcrModelPaths paths, {
+    OcrModelPaths? paths, {
+    bool useSystemEngine = false,
+    String? paragraphModelPath,
     CancelToken? cancelToken,
+    Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,
     void Function(int imageWidth, int imageHeight, List<Rect> boxes)?
     onDetected,
@@ -579,6 +591,136 @@ void main() {
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
     expect(failingStore.downloadAttempts, 2);
+    expect(tester.takeException(), isNull);
+
+    chromeVisible.dispose();
+    gestureController.dispose();
+  });
+
+  testWidgets('下滑关闭时覆盖层高亮矩形同步位移与缩放，底部控制坞随进度渐隐且回弹后恢复', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
+
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 400, height: 800)),
+    );
+    final ocr = OcrResult(
+      imageWidth: 400,
+      imageHeight: 800,
+      lines: [
+        OcrTextLine(
+          text: 'Hello',
+          bounds: const Rect.fromLTRB(40, 100, 200, 130),
+          charBounds: const [
+            Rect.fromLTRB(40, 100, 72, 130),
+            Rect.fromLTRB(72, 100, 104, 130),
+            Rect.fromLTRB(104, 100, 136, 130),
+            Rect.fromLTRB(136, 100, 168, 130),
+            Rect.fromLTRB(168, 100, 200, 130),
+          ],
+          rowIndex: 0,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final chromeVisible = ValueNotifier(true);
+    final gestureController = ImageGestureController();
+    // 模拟 RawGestureImage 初始绘制后的基线矩形（400x800 全屏贴合）
+    gestureController.details = GestureDetails(
+      offset: Offset.zero,
+      totalScale: 1.0,
+    )..calculateFinalDestinationRect(
+        const Rect.fromLTWH(0, 0, 400, 800),
+        const Rect.fromLTWH(0, 0, 400, 800),
+      );
+    final overlayKey = GlobalKey<ImageLiveOverlayState>();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          ocrModelStoreProvider.overrideWithValue(_ReadyModelStore()),
+          localOcrServiceProvider.overrideWithValue(_StubOcrService(ocr)),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: Scaffold(
+              body: ImageLiveOverlay(
+                key: overlayKey,
+                sourceKey: 'slide-sync',
+                mode: ImageLiveOverlayMode.liveText,
+                loadImage: (_) async => png,
+                gestureController: gestureController,
+                chromeVisible: chromeVisible,
+                onClose: () {},
+                onModeChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(const Duration(milliseconds: 100));
+
+    const viewport = Size(400, 800);
+    expect(
+      overlayKey.currentState!.debugDisplayRect(viewport),
+      const Rect.fromLTRB(0, 0, 400, 800),
+    );
+
+    // 1. 模拟下滑关闭第一帧：controller.updateSlide 先更新，RawGestureImage 尚未重绘
+    const slideOffset = Offset(0, 200);
+    const slideScale = 0.78;
+    gestureController.updateSlide(slideOffset, slideScale);
+    await tester.pump();
+
+    // 与 GestureImageView 的 Transform.translate + 居中 Transform.scale 逐像素一致：
+    // center = (200, 400)
+    // left = 200 + (0 - 200) * 0.78 = 44, right = 356
+    // top = 400 + (0 - 400) * 0.78 + 200 = 288, bottom = 912
+    final expectedRect = const Rect.fromLTRB(44, 288, 356, 912);
+    final rectBeforePaint = overlayKey.currentState!.debugDisplayRect(viewport);
+    expect(rectBeforePaint.left, closeTo(expectedRect.left, 0.01));
+    expect(rectBeforePaint.top, closeTo(expectedRect.top, 0.01));
+    expect(rectBeforePaint.right, closeTo(expectedRect.right, 0.01));
+    expect(rectBeforePaint.bottom, closeTo(expectedRect.bottom, 0.01));
+
+    // 2. 模拟 RawGestureImage.paint 以 -slideOffset 重算 layoutRect/rawDestinationRect 后，仍严格一致
+    gestureController.details!.calculateFinalDestinationRect(
+      const Rect.fromLTWH(0, 0, 400, 800).shift(-slideOffset),
+      const Rect.fromLTWH(0, 0, 400, 800).shift(-slideOffset),
+    );
+    await tester.pump();
+    final rectAfterPaint = overlayKey.currentState!.debugDisplayRect(viewport);
+    expect(rectAfterPaint.left, closeTo(expectedRect.left, 0.01));
+    expect(rectAfterPaint.top, closeTo(expectedRect.top, 0.01));
+    expect(rectAfterPaint.right, closeTo(expectedRect.right, 0.01));
+    expect(rectAfterPaint.bottom, closeTo(expectedRect.bottom, 0.01));
+
+    // 底部控制坞 Opacity 随 slideOffset 同步衰减到 1 - 200*2/800 = 0.5
+    final dockOpacity = tester
+        .widgetList<Opacity>(find.byType(Opacity))
+        .where((w) => (w.opacity - 0.5).abs() < 0.01);
+    expect(dockOpacity, isNotEmpty);
+
+    // 3. 模拟未触发关闭、回弹归位后，覆盖层与底栏完整恢复
+    gestureController.updateSlide(Offset.zero, 1.0);
+    gestureController.details!.calculateFinalDestinationRect(
+      const Rect.fromLTWH(0, 0, 400, 800),
+      const Rect.fromLTWH(0, 0, 400, 800),
+    );
+    await tester.pump();
+    expect(
+      overlayKey.currentState!.debugDisplayRect(viewport),
+      const Rect.fromLTRB(0, 0, 400, 800),
+    );
     expect(tester.takeException(), isNull);
 
     chromeVisible.dispose();

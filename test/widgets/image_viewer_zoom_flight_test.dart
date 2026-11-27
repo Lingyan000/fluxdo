@@ -22,10 +22,12 @@ void main() {
   const viewerBox = Rect.fromLTWH(0, 0, 400, 800); // 查看器布局盒子(全屏)
   const thumbBox = Rect.fromLTWH(20, 300, 80, 80); // 源端缩略图
 
-  test('未放大:走框架默认几何(起点=查看器布局盒子)', () {
+  test('未放大:走直线 RectTween（起点=查看器布局盒子，无弧线偏移）', () {
     final tween = buildTween(viewerBox, thumbBox);
     expect(tween.begin, viewerBox);
     expect(tween.end, thumbBox);
+    final mid = tween.transform(0.5)!;
+    expect(mid.center, Offset.lerp(viewerBox.center, thumbBox.center, 0.5));
   });
 
   test('放大态:起点换成放大后可见矩形,终点仍是缩略图', () {

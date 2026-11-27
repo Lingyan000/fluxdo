@@ -80,7 +80,8 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   Widget? _cachedAvatarWidget;
   int? _cachedPostId;
   bool? _cachedHasMention;
-  ThemeData? _cachedAvatarTheme;
+  ThemeData? _cachedAvatarThemeRaw;
+  Object? _cachedAvatarThemeKey;
 
   /// 父帖快照存放处(页面级),State 随 sliver 回收后靠它恢复;
   /// 不在话题页内为 null,不保留
@@ -143,12 +144,25 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   void _rebuildAvatarIfNeeded() {
     final hasMention = widget.onMentionUser != null;
     final theme = Theme.of(context);
-    // theme 进失效条件(按实例恒等比较):此前只看 postId/hasMention,
-    // 深浅色切换后缓存的 PostAvatar 仍持旧 theme,边框/底色残留旧配色
+    var themeChanged = false;
+    if (!identical(_cachedAvatarThemeRaw, theme)) {
+      final nextKey = (
+        theme.brightness,
+        theme.colorScheme,
+        theme.textTheme.labelSmall,
+      );
+      _cachedAvatarThemeRaw = theme;
+      if (_cachedAvatarThemeKey != nextKey) {
+        _cachedAvatarThemeKey = nextKey;
+        themeChanged = true;
+      }
+    }
+    // theme 按值指纹进失效条件:深浅色切换必重建,同时避免 Theme.of 本地化
+    // 缓存被挤出后产生同值新对象导致头像缓存误失效
     if (_cachedAvatarWidget == null ||
         _cachedPostId != widget.post.id ||
         _cachedHasMention != hasMention ||
-        !identical(_cachedAvatarTheme, theme)) {
+        themeChanged) {
       _cachedAvatarWidget = PostAvatar(
         key: ValueKey('avatar-${widget.post.id}'),
         post: widget.post,
@@ -158,7 +172,6 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
       );
       _cachedPostId = widget.post.id;
       _cachedHasMention = hasMention;
-      _cachedAvatarTheme = theme;
     }
   }
 

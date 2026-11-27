@@ -270,10 +270,6 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                   decoration: InputDecoration(
                     labelText: context.l10n.notion_tokenSection,
                     hintText: 'secret_xxxxxxxxxxxxxxxx',
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: context.shapes.borderRadius(8),
-                    ),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureToken
@@ -305,10 +301,6 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                   decoration: InputDecoration(
                     labelText: context.l10n.notion_databaseSection,
                     hintText: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: context.shapes.borderRadius(8),
-                    ),
                     suffixIcon: IconButton(
                       tooltip: context.l10n.common_paste,
                       icon: const Icon(Symbols.content_paste_rounded, size: 18),
@@ -382,7 +374,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
             const SizedBox(height: 8),
             SegmentedCardGroup(
               children: [
-                SwitchListTile(
+                M3eSwitchListTile(
                   title: Text(
                     context.l10n.notion_autoSyncOnBookmark,
                     style: theme.textTheme.bodyMedium?.copyWith(

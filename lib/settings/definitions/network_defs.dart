@@ -25,7 +25,7 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
           id: 'engine',
           title: l10n.networkSettings_status,
           subtitle:
-              'DNS · DoH · ECH · ${l10n.httpProxy_title} · ${l10n.webviewAdapter_title}',
+              'DNS · DoH · ECH · HTTP/3 · ${l10n.httpProxy_title} · ${l10n.webviewAdapter_title}',
           builder: (context, ref) => const EngineCard(),
         ),
       ],

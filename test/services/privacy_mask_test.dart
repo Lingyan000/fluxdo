@@ -254,5 +254,49 @@ void main() {
       expect(minR, greaterThan(10), reason: '导出马赛克不应坍缩成纯黑 0');
       expect(maxR, greaterThan(70), reason: '导出马赛克应保留清晰亮暗像素颗粒');
     });
+
+    test('白底细字马赛克按纯区域均值渲染：留白保持纯白，文字呈柔和多阶灰格且约 3 行高', () async {
+      expect(ImageMaskRenderer.mosaicBlockSizeForRegion(180, 16), 5);
+      expect(ImageMaskRenderer.mosaicBlockSizeForRegion(180, 180), 24);
+
+      final page = img.Image(width: 200, height: 60);
+      img.fill(page, color: img.ColorRgb8(255, 255, 255));
+      // 在 y=[20..36] 画一组 2px 粗的黑字竖/横笔画，左右留白
+      for (var y = 22; y <= 34; y++) {
+        for (var x = 30; x <= 140; x++) {
+          if (x % 10 < 2 || (y == 28 && x % 5 < 3)) {
+            page.setPixelRgb(x, y, 0, 0, 0);
+          }
+        }
+      }
+      final png = Uint8List.fromList(img.encodePng(page));
+      final out = await ImageMaskRenderer.render(
+        imageBytes: png,
+        rects: const [Rect.fromLTWH(20, 20, 140, 16)],
+        style: PrivacyMaskStyle.mosaic,
+      );
+      final decoded = img.decodeImage(out)!;
+
+      // 区域内的纯白留白块仍应保持纯白 (255)，无缝融入白底
+      final whiteMargin = decoded.getPixel(22, 27);
+      expect(whiteMargin.r, 255);
+      expect(whiteMargin.g, 255);
+      expect(whiteMargin.b, 255);
+
+      // 文字笔画处应形成柔和浅灰~深灰方格，不应人为压成纯黑
+      final shades = <int>{};
+      var minGray = 255;
+      for (var y = 22; y <= 34; y++) {
+        for (var x = 30; x <= 140; x++) {
+          final v = decoded.getPixel(x, y).r.toInt();
+          if (v < 250) {
+            shades.add(v);
+            if (v < minGray) minGray = v;
+          }
+        }
+      }
+      expect(shades.length, greaterThanOrEqualTo(2));
+      expect(minGray, greaterThan(40), reason: '细字均值马赛克不应压成纯黑块');
+    });
   });
 }

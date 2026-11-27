@@ -35,6 +35,7 @@ import '../services/auth_session.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
+import '../services/image_decode_spec_memo.dart';
 import '../services/svg_image_cache.dart';
 import '../theme/app_colors.dart';
 import '../services/media_compat_service.dart';
@@ -74,12 +75,13 @@ import '../widgets/media_player/video/discourse_video_player.dart';
 import '../widgets/content/discourse_html_content/image_utils.dart';
 import '../widgets/content/discourse_html_content/lazy_image.dart';
 import '../widgets/content/lazy_load_scope.dart';
+import '../widgets/user/user_card.dart';
 
 /// 把 fluxdo_render 的全部 callback 一次性创建好,给 FluxdoRender 用。
 ///
 /// 这是主项目侧的"接入层" —— 子包不依赖任何主项目 service,所有真实
 /// 体系(emojiImageProvider / SmartAvatar / DiscourseImageUtils.openViewer /
-/// HighlighterService / UserProfilePage 路由 / launchContentLink 等)
+/// HighlighterService / showUserCard / launchContentLink 等)
 /// 都在这里组装。
 ///
 /// 两个入口:
@@ -345,15 +347,44 @@ class FluxdoRenderCallbacks {
     return RepaintBoundary(child: image);
   };
 
-  /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
-  static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
-    // 优先 href 解析(group/user 路由不同);兜底走 username
+  /// 预热缓存会保留点击回调。等段落挂载后，再交给当前正文处理提及。
+  static void handlePrewarmedMentionTap(
+    BuildContext context,
+    String username,
+    String href,
+  ) {
+    final render = context.findAncestorWidgetOfExactType<FluxdoRender>();
+    render?.mentionTapHandler?.call(context, username, href);
+  }
+
+  static MentionTapHandler _mentionTapHandler({
+    int? topicId,
+    int? postNumber,
+  }) => (ctx, username, href) {
+    final position = lastInlineTapGlobalPosition;
+    lastInlineTapGlobalPosition = null;
     if (DiscourseUrlParser.parseGroup(href) != null) {
       launchContentLink(ctx, href);
       return;
     }
-    final user = DiscourseUrlParser.parseUser(href);
-    EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
+    final user = DiscourseUrlParser.parseUser(href)?.username ?? username;
+    if (user.isEmpty) return;
+    // 文字提及没有独立的布局框，优先锚定点击位置。无指针操作时用段落中心。
+    final anchor =
+        position ??
+        switch (ctx.findRenderObject()) {
+          final RenderBox box when box.hasSize => box.localToGlobal(
+            box.size.center(Offset.zero),
+          ),
+          _ => Offset.zero,
+        };
+    showUserCard(
+      context: ctx,
+      anchorRect: anchor & Size.zero,
+      username: user,
+      topicId: topicId,
+      postNumber: postNumber,
+    );
   };
 
   /// 代码块高亮:走 HighlighterService(mermaid 不会到这里 ——
@@ -1002,7 +1033,10 @@ class FluxdoRenderCallbacks {
         );
       },
       emojiImageBuilder: _emojiBuilder,
-      mentionTapHandler: _mentionTapHandler,
+      mentionTapHandler: _mentionTapHandler(
+        topicId: topicId,
+        postNumber: post.postNumber,
+      ),
       imageContentBuilder: _imageContentBuilder(
         heroNamespace: heroNamespace,
         galleryResolver: resolveGallery,
@@ -1128,7 +1162,7 @@ class FluxdoRenderCallbacks {
         );
       },
       emojiImageBuilder: _emojiBuilder,
-      mentionTapHandler: _mentionTapHandler,
+      mentionTapHandler: _mentionTapHandler(topicId: topicId),
       imageContentBuilder: _imageContentBuilder(
         heroNamespace: heroTagNamespace,
         topicId: topicId,
@@ -1859,6 +1893,13 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     final imageUrl = onInk
         ? _buildMermaidInkUrl(widget.code, isDark)
         : _buildKrokiUrl(widget.code, isDark);
+    final previewProvider = ImageDecodeSpecMemo.remember(
+      imageUrl,
+      BlobImageProvider(
+        imageUrl,
+        bucket: BlobImageCache.externalBucket,
+      ),
+    );
     return ContentTapTarget(
       cursor: imageZoomCursor,
       onTap: () {
@@ -1868,16 +1909,18 @@ class _MermaidBlockState extends State<_MermaidBlock> {
         final hdUrl = onInk
             ? _buildMermaidInkUrl(widget.code, isDark, width: 2000)
             : imageUrl;
-        ImageViewerPage.open(context, hdUrl, enableShare: true);
+        ImageViewerPage.open(
+          context,
+          hdUrl,
+          thumbnailUrl: imageUrl,
+          enableShare: true,
+        );
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Image(
           key: ValueKey('$imageUrl-$_retryCount'),
-          image: BlobImageProvider(
-            imageUrl,
-            bucket: BlobImageCache.externalBucket,
-          ),
+          image: previewProvider,
           fit: BoxFit.contain,
           gaplessPlayback: true,
           frameBuilder: (context, child, frame, wasSync) {

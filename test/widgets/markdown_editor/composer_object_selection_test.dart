@@ -1167,33 +1167,56 @@ void main() {
   });
 
   for (final desktop in [false, true]) {
-    testWidgets('末尾已有空段时点击续写区，光标必须进入下一行 desktop=$desktop', (tester) async {
+    testWidgets('空白正文点画布即聚焦首行，末行有内容才显示续写入口 desktop=$desktop', (tester) async {
       final controller = TextEditingController();
       await _pump(
         tester,
-        RichComposerEditor(controller: controller),
+        RichComposerEditor(controller: controller, autofocus: false),
         desktop: desktop,
         width: desktop ? 1000 : 390,
       );
       await tester.pump(const Duration(milliseconds: 800));
       final editor = tester.widget<FluxdoEditor>(find.byType(FluxdoEditor));
-      final previous = editor.state.blocks.last.id;
       final tail = find.byKey(const ValueKey('editor-trailing-paragraph'));
-      final count = editor.state.blocks.length;
-      await tester.tap(
-        tail,
+      final hint = find.byKey(const ValueKey('editor-empty-paragraph-hint'));
+      final first = editor.state.blocks.single.id;
+      expect(hint, findsOneWidget);
+      expect(tail, findsNothing);
+      expect(editor.focusNode!.hasFocus, isFalse);
+      final point = tester.getRect(find.byType(FluxdoEditor)).center;
+      expect(point.dy, greaterThan(tester.getBottomLeft(hint).dy + 60));
+      await tester.tapAt(
+        point,
         kind: desktop ? PointerDeviceKind.mouse : PointerDeviceKind.touch,
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 120));
-      expect(editor.state.blocks.length, count + 1);
-      expect(editor.state.selection!.extent.blockId, isNot(previous));
-      final inserted = editor.state.blocks.last as TextBlock;
-      expect(editor.state.selection!.extent.blockId, inserted.id);
-      expect(inserted.content.length, 0);
-      editor.state.insertText('在新的一行输入');
-      expect(editor.state.textBlockById(previous)!.content.length, 0);
-      expect(editor.state.textBlockById(inserted.id)!.content.text, '在新的一行输入');
+      expect(editor.focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(
+        editor.state.selection!.extent,
+        EditorPosition(blockId: first, offset: 0),
+      );
+      expect(editor.state.canUndo, isFalse);
+      final input = TextEditingValue.fromJSON(
+        tester.testTextInput.editingState!,
+      );
+      tester.testTextInput.updateEditingValue(
+        input.replaced(input.selection, '正文').copyWith(
+          selection: TextSelection.collapsed(offset: input.selection.start + 2),
+        ),
+      );
+      await tester.pump();
+      expect(editor.state.blocks.single.id, first);
+      expect(editor.state.textBlockById(first)!.content.text, '正文');
+      expect(hint, findsNothing);
+      expect(tail, findsOneWidget);
+
+      editor.state.insertText('\n  ');
+      await tester.pump();
+      expect(tail, findsNothing);
+      editor.state.insertText('下一行');
+      await tester.pump();
+      expect(tail, findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
     });
@@ -1261,19 +1284,14 @@ void main() {
       expect(last.isParagraph, isTrue);
       expect(last.containers, isEmpty);
       expect(editor.state.selection!.extent.blockId, last.id);
-      await tester.tap(tail);
-      await tester.pump();
-      await tester.pump();
-      expect(
-        editor.state.blocks.length,
-        initialCount + 2,
-        reason: '再次点击下一行，应在所点位置新增一行',
-      );
+      expect(tail, findsNothing);
+      final revision = editor.state.docRevision;
+      editor.state.continueAfterDocument();
+      expect(editor.state.docRevision, revision, reason: '重复续写只聚焦已有空段');
       editor.state.undo();
       await tester.pump();
-      expect(editor.state.blocks.length, initialCount + 1);
-      editor.state.undo();
       expect(editor.state.blocks.length, initialCount);
+      expect(tail, findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
     });

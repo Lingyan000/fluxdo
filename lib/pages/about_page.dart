@@ -327,7 +327,7 @@ class _AboutPageState extends State<AboutPage> {
             child: SegmentedCardGroup(
               children: [
                 if (_developerMode)
-                  SwitchListTile(
+                  M3eSwitchListTile(
                     title: Text(context.l10n.about_developerMode),
                     subtitle: Text(context.l10n.about_tapToDisableDeveloperMode),
                     value: true,

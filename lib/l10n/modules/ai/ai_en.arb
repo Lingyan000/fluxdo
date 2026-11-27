@@ -208,6 +208,7 @@
   "ai_quickPromptsValidateTemplateRequired": "Please enter a prompt template",
   "ai_translationEngine": "Translation service",
   "ai_translationGoogle": "Google (free)",
+  "ai_translationBing": "Microsoft (free)",
   "ai_translationBilibili": "Bilibili (free)",
   "ai_translationAi": "AI",
   "ai_translationRateLimited": "Too many translation requests. Try again later or switch services",

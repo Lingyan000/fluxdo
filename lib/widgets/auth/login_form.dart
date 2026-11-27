@@ -120,19 +120,10 @@ class _LoginFormState extends State<LoginForm> {
     required IconData icon,
     Widget? suffixIcon,
   }) {
-    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
-      borderRadius: context.shapes.borderRadius(14),
-      borderSide: BorderSide(color: color, width: width),
-    );
     return InputDecoration(
       labelText: label,
-      filled: true,
-      fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
       prefixIcon: Icon(icon),
       suffixIcon: suffixIcon,
-      border: border(Colors.transparent, 0),
-      enabledBorder: border(Colors.transparent, 0),
-      focusedBorder: border(scheme.primary, 1.5),
     );
   }
 

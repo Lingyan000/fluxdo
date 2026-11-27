@@ -193,6 +193,12 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
   }
 
   Future<void> _scanOcrIfReady(Uint8List png) async {
+    final useSystemEngine = await shouldUseSystemOcrEngine(ref);
+    if (!mounted || _token.isCancelled) return;
+    if (useSystemEngine) {
+      await _runOcrScan(png, useSystemEngine: true);
+      return;
+    }
     final store = ref.read(ocrModelStoreProvider);
     final ready = await store.isReady();
     if (!mounted || _token.isCancelled) return;
@@ -241,7 +247,7 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
     }
   }
 
-  Future<void> _runOcrScan(Uint8List png) async {
+  Future<void> _runOcrScan(Uint8List png, {bool useSystemEngine = false}) async {
     setState(() {
       _scanningOcr = true;
       _ocrProgress = null;
@@ -249,9 +255,16 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
     try {
       final store = ref.read(ocrModelStoreProvider);
       final service = ref.read(localOcrServiceProvider);
+      final paths = useSystemEngine
+          ? (await store.isReady() ? await store.paths() : null)
+          : await store.paths();
+      final paragraphModelPath = await store.paragraphModelPathIfReady();
+      if (!mounted || _token.isCancelled) return;
       final ocr = await service.recognizeDetailed(
         png,
-        await store.paths(),
+        paths,
+        useSystemEngine: useSystemEngine,
+        paragraphModelPath: paragraphModelPath,
         cancelToken: _token,
         onProgress: (progress) {
           if (mounted) setState(() => _ocrProgress = progress);
@@ -957,7 +970,7 @@ class _PrivacyOverlayPainter extends CustomPainter {
       if (region.enabled) {
         switch (style) {
           case PrivacyMaskStyle.mosaic:
-            _paintMosaicPreview(canvas, size, rrect, rect);
+            _paintMosaicPreview(canvas, size, rect);
           case PrivacyMaskStyle.solid:
             canvas.drawRRect(
               rrect,
@@ -967,12 +980,13 @@ class _PrivacyOverlayPainter extends CustomPainter {
             // 模糊内容由下方 BackdropFilter 渲染，这里只补边框。
             break;
         }
+        final isMosaic = style == PrivacyMaskStyle.mosaic;
         canvas.drawRRect(
           rrect,
           Paint()
-            ..color = accentColor.withValues(alpha: 0.9)
+            ..color = accentColor.withValues(alpha: isMosaic ? 0.45 : 0.9)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.6,
+            ..strokeWidth = isMosaic ? 1.0 : 1.6,
         );
       } else {
         canvas.drawRRect(
@@ -1010,11 +1024,10 @@ class _PrivacyOverlayPainter extends CustomPainter {
   void _paintMosaicPreview(
     Canvas canvas,
     Size canvasSize,
-    RRect rrect,
     Rect rect,
   ) {
     canvas.save();
-    canvas.clipRRect(rrect);
+    canvas.clipRect(rect);
     final mosaic = mosaicImage;
     if (mosaic != null) {
       // 将真实像素化纹理以最近邻采样对齐铺满画布并裁切到目标区域，与导出效果像素一致。

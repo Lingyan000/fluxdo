@@ -275,10 +275,7 @@ impl Http3Upgrade {
     where
         F: Future<Output = Result<Sender, BoxError>>,
     {
-        if ((target.uses_browser_fingerprint || target.template.is_some())
-            && target.h3_template.is_none())
-            || egress.has_fixed_proxy()
-        {
+        if blocks_uncalibrated_h3(target) || egress.has_fixed_proxy() {
             return tcp.await;
         }
         // 竞速的第二条连接也要占全局容量；已饱和时直接使用原 TCP 路径。
@@ -288,11 +285,16 @@ impl Http3Upgrade {
         let Some(probe) = self.reserve(target.key) else {
             return tcp.await;
         };
+        let fallback_tls = target.h3_template.is_none().then(|| {
+            target
+                .template
+                .map(|t| (t.hello.clone(), t.tls_permute_extensions == Some(true)))
+        }).flatten();
         let h3 = async {
             let result = tokio::select! {
                 _ = probe.token.cancelled() => Err(NetError::Cancelled.into()),
                 value = tokio::time::timeout(PROBE_TIMEOUT,
-                    self.connect_profile(egress, target.host, target.port, probe.alternative.port, exec, target.h3_template.as_deref())) =>
+                    self.connect_profile(egress, target.host, target.port, probe.alternative.port, exec, target.h3_template.as_deref(), fallback_tls.as_ref())) =>
                     value.map_err(|_| BoxError::from("H3 connect timeout")).and_then(|r| r),
             };
             if result.is_ok() {
@@ -313,13 +315,9 @@ impl Http3Upgrade {
         generation: u64,
     ) {
         // TLS/TCP 与 H2 模板不包含 QUIC 传输参数、H3 SETTINGS 或 QPACK。
-        // 在实现相应采样前，浏览器模板请求不能升级为默认 QUIC 指纹。
-        // 首次采样/缓存缺失也属于浏览器客户端，不能趁模板为空升级。
+        // 除非用户显式开启无模板强制 HTTP/3，否则浏览器模板请求不能升级为默认 QUIC 指纹。
         // 固定代理同样不支持直接 UDP；两者都不启动后台探测。
-        if ((target.uses_browser_fingerprint || target.template.is_some())
-            && target.h3_template.is_none())
-            || egress.has_fixed_proxy()
-        {
+        if blocks_uncalibrated_h3(target) || egress.has_fixed_proxy() {
             return;
         }
         if !self.observe_at(target.key, target.host, headers, generation) {
@@ -337,12 +335,17 @@ impl Http3Upgrade {
         let origin_port = target.port;
         let epoch = pool.epoch();
         let h3_profile = target.h3_template.clone();
+        let fallback_tls = h3_profile.is_none().then(|| {
+            target
+                .template
+                .map(|t| (t.hello.clone(), t.tls_permute_extensions == Some(true)))
+        }).flatten();
         // 后台升级和冷建连共用两个探测名额；超时、切网和 RAII 负责清理。
         tokio::spawn(async move {
             let started = Instant::now();
             let result = tokio::select! {
                 _ = probe.token.cancelled() => return,
-                result = tokio::time::timeout(PROBE_TIMEOUT, state.connect_profile(&egress, &host, origin_port, probe.alternative.port, exec, h3_profile.as_deref())) =>
+                result = tokio::time::timeout(PROBE_TIMEOUT, state.connect_profile(&egress, &host, origin_port, probe.alternative.port, exec, h3_profile.as_deref(), fallback_tls.as_ref())) =>
                     result.map_err(|_| BoxError::from("H3 probe timeout")).and_then(|r| r),
             };
             let mut alternatives = state.alternatives.lock();
@@ -413,6 +416,7 @@ impl Http3Upgrade {
         alt_port: u16,
         exec: Executor,
         profile: Option<&crate::h3_template::Profile>,
+        fallback_tls: Option<&(rama::tls::client::ClientHello, bool)>,
     ) -> Result<Sender, BoxError> {
         // Resolve using origin policy first. A proxy route never becomes direct QUIC.
         let (targets, ech) = egress.resolve_egress(host, origin_port).await?;
@@ -441,6 +445,17 @@ impl Http3Upgrade {
                     let mut tls = TlsClientConfig::new_from_client_hello(&profile.sample.hello);
                     tls.set_permute_extensions(profile.permute_tls);
                     tls
+                } else if let Some((hello, permute)) = fallback_tls {
+                    use rama::tls::boring::{
+                        client::BoringClientConfigExt as _,
+                        core::ssl::UnknownValues,
+                    };
+                    // 无 H3 模板但用户强制启用 HTTP/3 时，复用已采样的 TLS ClientHello
+                    // 与扩展乱序策略（ALPN 随后覆写为 h3），避免退化为裸默认 TLS 握手。
+                    let mut tls = TlsClientConfig::new_from_client_hello(hello)
+                        .with_unknown_values(UnknownValues::Drop);
+                    tls.set_permute_extensions(*permute);
+                    tls
                 } else {
                     TlsClientConfig::default()
                 };
@@ -457,6 +472,7 @@ impl Http3Upgrade {
                 // 同一 origin 的端口、模板和 ECH 政策分别隔离票据；网络重置另换缓存域。
                 let fingerprint = profile
                     .map(|p| crate::mirror::profile_hash(&p.sample.hello))
+                    .or_else(|| fallback_tls.map(|(hello, _)| crate::mirror::profile_hash(hello)))
                     .unwrap_or_default();
                 let ech_digest = ech
                     .as_ref()
@@ -602,6 +618,12 @@ impl Http3Upgrade {
             _capacity: None,
         }))
     }
+}
+
+fn blocks_uncalibrated_h3(target: &Target<'_>) -> bool {
+    (target.uses_browser_fingerprint || target.template.is_some())
+        && target.h3_template.is_none()
+        && !target.allow_uncalibrated_http3
 }
 
 /// 服务能力按 origin 保存；连接池仍按模板版本隔离。
@@ -1048,6 +1070,7 @@ mod tests {
             port: 443,
             template: None,
             uses_browser_fingerprint: false,
+            allow_uncalibrated_http3: false,
             h3_template: None,
             secure: true,
         };
@@ -1131,6 +1154,7 @@ mod tests {
             key: "proxy",
             template: None,
             uses_browser_fingerprint: false,
+            allow_uncalibrated_http3: false,
             h3_template: None,
             host: "not-resolved.invalid",
             port: 443,
@@ -1209,6 +1233,7 @@ mod tests {
             key: "key",
             template: None,
             uses_browser_fingerprint: false,
+            allow_uncalibrated_http3: false,
             h3_template: None,
             host: "127.0.0.1",
             port,
@@ -1423,6 +1448,7 @@ mod tests {
                 key: "https://localhost:443#1",
                 template: sample,
                 uses_browser_fingerprint: true,
+                allow_uncalibrated_http3: false,
                 h3_template: None,
                 host: "localhost",
                 port: 443,
@@ -1465,5 +1491,98 @@ mod tests {
                     .probing
             );
         }
+    }
+
+    #[tokio::test]
+    async fn allow_uncalibrated_http3_unblocks_browser_template_and_keeps_proxy_guard() {
+        let blackhole = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = blackhole.local_addr().unwrap().port();
+        let template = crate::presets::by_id("android-webview133").unwrap();
+        // 确认从 TCP 浏览器模板构造的 TLS 配置可经 BoringSSL QUIC 构造器通过。
+        let mut fallback_tls = {
+            use rama::tls::boring::{client::BoringClientConfigExt as _, core::ssl::UnknownValues};
+            let mut tls = TlsClientConfig::new_from_client_hello(&template.hello)
+                .with_unknown_values(UnknownValues::Drop);
+            tls.set_permute_extensions(template.tls_permute_extensions == Some(true));
+            tls
+        };
+        fallback_tls.set_platform_verifier();
+        fallback_tls.set_server_name("example.test".parse::<Host>().unwrap());
+        fallback_tls.set_alpn([ApplicationProtocol::HTTP_3].into_iter().collect());
+        BoringTlsProvider
+            .client_config(&fallback_tls, TlsOptions::default().with_early_data(false))
+            .expect("TCP 浏览器模板的 TLS ClientHello 应能构造 QUIC TLS 配置");
+
+        let state = Arc::new(Http3Upgrade::default());
+        let pool = Arc::new(PoolState::default());
+        pool.hosts
+            .lock()
+            .insert("https://127.0.0.1:443#1".into(), HostPool::default());
+        let egress = Arc::new(EgressConnector::new(
+            None,
+            None,
+            None,
+            None,
+            Duration::from_secs(1),
+        ));
+        let target = Target {
+            key: "https://127.0.0.1:443#1",
+            template: Some(&template),
+            uses_browser_fingerprint: true,
+            allow_uncalibrated_http3: true,
+            h3_template: None,
+            host: "127.0.0.1",
+            port: 443,
+            secure: true,
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "alt-svc",
+            format!("h3=\":{port}\"; ma=600").parse().unwrap(),
+        );
+        state.observe_and_upgrade(
+            &target,
+            &headers,
+            egress.clone(),
+            pool.clone(),
+            Executor::new(),
+            state.generation(),
+        );
+        assert!(
+            state
+                .alternatives
+                .lock()
+                .contains_key(origin(target.key))
+        );
+        let mut bytes = [0; 1500];
+        let packet = tokio::time::timeout(Duration::from_secs(1), blackhole.recv_from(&mut bytes))
+            .await
+            .expect("允许无模板 H3 后应发出真实 QUIC 探测包")
+            .unwrap();
+        assert!(packet.0 > 0);
+        state.reset().await;
+
+        // 即使开启无模板强制 H3，固定代理仍禁止直连 UDP。
+        let proxy: crate::UpstreamProxyConfig = serde_json::from_value(serde_json::json!({
+            "host": "127.0.0.1", "port": 7890, "protocol": "http"
+        }))
+        .unwrap();
+        let proxied_egress = Arc::new(EgressConnector::new(
+            None,
+            None,
+            Some(proxy),
+            None,
+            Duration::from_secs(1),
+        ));
+        let proxied_state = Arc::new(Http3Upgrade::default());
+        proxied_state.observe_and_upgrade(
+            &target,
+            &headers,
+            proxied_egress,
+            pool,
+            Executor::new(),
+            proxied_state.generation(),
+        );
+        assert!(proxied_state.alternatives.lock().is_empty());
     }
 }

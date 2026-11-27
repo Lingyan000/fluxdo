@@ -26,6 +26,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../utils/fluxdo_render_callbacks.dart';
 import 'post_item/quote_selection_helper.dart';
+import 'post_item/render_parse_cache.dart';
 import '../crypto/crypto_decrypt_sheet.dart';
 import '../../services/crypto/crypto_cipher_format.dart';
 import 'post_item/widgets/post_footer_section/post_footer_section.dart';
@@ -538,37 +539,42 @@ class _PostRepliesSheetContentState
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child:
-              FluxdoRenderCallbacks.forPost(
-                post: post,
-                topicId: widget.topicId,
-              ).render(
-                cookedHtml: post.cooked,
-                baseTextStyle: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(fontSize: 14, height: 1.5),
-                compact: true,
-                selectionEnabled: _isLoggedIn,
-                onQuoteRequest: _isLoggedIn
-                    ? (plainText) => _handleQuoteSelection(plainText, post)
-                    : null,
-                onCopyQuoteRequest: (plainText) =>
-                    QuoteSelectionHelper.copyQuoteToClipboard(
-                      selectedText: plainText,
-                      post: post,
-                      topicId: widget.topicId,
-                    ),
-                onCopyToast: () => ToastService.showSuccess(
-                  S.current.common_copiedToClipboard,
-                ),
-                onDecryptRequest: (plainText) => showCryptoDecryptSheet(
-                  context: context,
-                  initialCiphertext: plainText,
-                  onQuoteReply: _isLoggedIn
-                      ? (plaintext) => _handleQuoteSelection(plaintext, post)
-                      : null,
-                ),
-                decryptTextDetector: isDecryptableText,
+          child: () {
+            final parsed = RenderParseCache.shortPost(post);
+            return FluxdoRenderCallbacks.forPost(
+              post: post,
+              topicId: widget.topicId,
+              preprocessedCooked: parsed.preprocessed,
+              parsedNodes: parsed.nodes,
+            ).render(
+              cookedHtml: parsed.preprocessed,
+              parsedNodes: parsed.nodes,
+              baseTextStyle: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(fontSize: 14, height: 1.5),
+              compact: true,
+              selectionEnabled: _isLoggedIn,
+              onQuoteRequest: _isLoggedIn
+                  ? (plainText) => _handleQuoteSelection(plainText, post)
+                  : null,
+              onCopyQuoteRequest: (plainText) =>
+                  QuoteSelectionHelper.copyQuoteToClipboard(
+                    selectedText: plainText,
+                    post: post,
+                    topicId: widget.topicId,
+                  ),
+              onCopyToast: () => ToastService.showSuccess(
+                S.current.common_copiedToClipboard,
               ),
+              onDecryptRequest: (plainText) => showCryptoDecryptSheet(
+                context: context,
+                initialCiphertext: plainText,
+                onQuoteReply: _isLoggedIn
+                    ? (plaintext) => _handleQuoteSelection(plaintext, post)
+                    : null,
+              ),
+              decryptTextDetector: isDecryptableText,
+            );
+          }(),
         ),
         PostFooterSection(
           post: post,

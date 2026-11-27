@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../services/svg_image_cache.dart';
+import '../../utils/idle_task.dart';
 import '../../utils/relative_time_clock.dart';
 import '../../utils/svg_utils.dart';
 import '../common/animated_avatar_overlay.dart';
@@ -223,12 +224,27 @@ class _RenderTopicCard extends RenderBox
     markNeedsPaint();
   }
 
-  /// 在屏订阅分钟心跳:跳一次即原地重排本卡(时间串换新)并重绘。
-  /// attach/detach 管理生命周期 —— 滚出 cacheExtent 即退订,离屏卡
-  /// 靠 obtain 的分钟代惰性换新,全 app 每分钟只有在屏的十几张卡
-  /// 各付一次 ~1ms 重排,发生在无滚动的静止帧
+  IdleTaskHandle? _deferredTimeRefresh;
+
+  /// 在屏订阅分钟心跳:时间文案真正变化时才原地重排本卡并重绘。
+  /// 若心跳恰好撞上拖动/滚动，延后到交互空闲后再执行，避免在滚动帧重排。
   void _onClockTick() {
-    _layout.refreshTime();
+    if (isIdleTaskUserInteracting) {
+      _deferredTimeRefresh ??= scheduleIdleTask(
+        () {
+          _deferredTimeRefresh = null;
+          if (!attached) return;
+          _applyTimeRefresh();
+        },
+        isCanceled: () => !attached,
+      );
+      return;
+    }
+    _applyTimeRefresh();
+  }
+
+  void _applyTimeRefresh() {
+    if (!_layout.refreshTime()) return;
     _seenRevision = _layout.revision;
     markNeedsLayout();
   }
@@ -241,6 +257,8 @@ class _RenderTopicCard extends RenderBox
 
   @override
   void detach() {
+    _deferredTimeRefresh?.cancel();
+    _deferredTimeRefresh = null;
     TopicCardImages.releaseRequester(this);
     RelativeTimeClock.instance.removeListener(_onClockTick);
     super.detach();

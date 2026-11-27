@@ -108,6 +108,9 @@
   "webviewAdapter_title": "WebView 网络引擎",
   "webviewAdapter_autoFallbackTitle": "验证无效时自动切换兼容模式",
   "webviewAdapter_autoFallbackDesc": "安全验证完成但原生网络仍被拦截时，自动在本次会话切换到 WebView 兼容模式",
+  "webviewAdapter_siteTunnelTitle": "对齐主站传输协议",
+  "webviewAdapter_siteTunnelDesc": "仅将主站 HTTPS 经本地 TCP 隧道转发（不解密 TLS），使 WebView 与网络核心统一使用 HTTP/2，缓解部分代理节点过盾后仍被拦截",
+  "webviewAdapter_siteTunnelUnsupported": "当前系统 WebView 版本不支持按域名代理，无法开启协议对齐",
   "networkSettings_upload": "文件上传",
   "networkSettings_forceDisableMultipart": "强制关闭分片上传",
   "networkSettings_forceDisableMultipartDescription": "开启后，所有文件均使用普通上传，忽略站点分片配置。服务端分片异常时可开启，对下一次上传生效。",
@@ -164,5 +167,10 @@
         "type": "int"
       }
     }
-  }
+  },
+  "networkCore_forceHttp3Section": "传输协议",
+  "networkCore_forceHttp3Title": "无模板时强制开启 HTTP/3",
+  "networkCore_forceHttp3Desc": "未采集到 H3 模板时，仍允许网络核心使用默认 QUIC 参数尝试 HTTP/3（与主站协议对齐互斥，可能影响风控表现）",
+  "networkCore_forceHttp3MutualExclusiveTip": "已强制开启 HTTP/3，并自动关闭主站协议对齐",
+  "webviewAdapter_siteTunnelMutualExclusiveTip": "已开启主站协议对齐，并自动关闭强制 HTTP/3"
 }

@@ -111,6 +111,9 @@
   "webviewAdapter_title": "WebView 網絡引擎",
   "webviewAdapter_autoFallbackTitle": "驗證無效時自動切換兼容模式",
   "webviewAdapter_autoFallbackDesc": "安全驗證完成但原生網絡仍被攔截時，自動在本次會話切換到 WebView 兼容模式",
+  "webviewAdapter_siteTunnelTitle": "對齊主站傳輸協議",
+  "webviewAdapter_siteTunnelDesc": "僅將主站 HTTPS 經本地 TCP 隧道轉發（不解密 TLS），使 WebView 與網絡核心統一使用 HTTP/2，緩解部分代理節點過盾後仍被攔截",
+  "webviewAdapter_siteTunnelUnsupported": "目前系統 WebView 版本不支援按網域代理，無法開啟協議對齊",
   "fingerprintPreset_title": "指紋範本",
   "fingerprintPreset_auto": "自動",
   "fingerprintPreset_autoDescription": "優先使用目前裝置的瀏覽器取樣，取樣完成前使用匹配的預設範本。",
@@ -164,5 +167,10 @@
         "type": "int"
       }
     }
-  }
+  },
+  "networkCore_forceHttp3Section": "傳輸協議",
+  "networkCore_forceHttp3Title": "無範本時強制開啟 HTTP/3",
+  "networkCore_forceHttp3Desc": "未採集到 H3 範本時，仍允許網絡核心使用預設 QUIC 參數嘗試 HTTP/3（與主站協議對齊互斥，可能影響風控表現）",
+  "networkCore_forceHttp3MutualExclusiveTip": "已強制開啟 HTTP/3，並自動關閉主站協議對齊",
+  "webviewAdapter_siteTunnelMutualExclusiveTip": "已開啟主站協議對齊，並自動關閉強制 HTTP/3"
 }

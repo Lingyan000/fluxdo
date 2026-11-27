@@ -221,75 +221,82 @@ class _SheetHeaderFade extends StatefulWidget {
   State<_SheetHeaderFade> createState() => _SheetHeaderFadeState();
 }
 
-class _SheetHeaderFadeState extends State<_SheetHeaderFade> {
-  final _strength = ValueNotifier(0.0);
+typedef _ScrollFade = ({RenderBox viewport, double strength});
+const double _kFadeHeight = 16;
 
-  void _update(ScrollMetrics metrics, int depth) {
-    if (depth == 0 && metrics.axisDirection == AxisDirection.down) {
-      _strength.value = (metrics.extentBefore / 16).clamp(0.0, 1.0);
+class _SheetHeaderFadeState extends State<_SheetHeaderFade> {
+  final _fade = ValueNotifier<_ScrollFade?>(null);
+
+  void _update(ScrollMetrics metrics, int depth, BuildContext? source) {
+    if (depth != 0 || metrics.axisDirection != AxisDirection.down) return;
+    final viewport = source?.findRenderObject();
+    if (viewport is! RenderBox) return;
+    final strength = (metrics.extentBefore / _kFadeHeight).clamp(0.0, 1.0);
+    if (strength > 0) {
+      _fade.value = (viewport: viewport, strength: strength);
+    } else if (_fade.value?.viewport == viewport) {
+      _fade.value = null;
     }
   }
 
   @override
   void dispose() {
-    _strength.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    fit: StackFit.passthrough,
-    children: [
+  Widget build(BuildContext context) =>
       NotificationListener<ScrollMetricsNotification>(
-        onNotification: (notification) {
-          _update(notification.metrics, notification.depth);
+        onNotification: (n) {
+          _update(n.metrics, n.depth, n.context);
           return false;
         },
         child: NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            _update(notification.metrics, notification.depth);
+          onNotification: (n) {
+            _update(n.metrics, n.depth, n.context);
             return false;
           },
-          child: widget.child,
-        ),
-      ),
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 16,
-        child: IgnorePointer(
-          child: ExcludeSemantics(
-            child: RepaintBoundary(
-              child: CustomPaint(
-                painter: _HeaderFadePainter(
-                  _strength,
-                  color: widget.color,
-                  enabled: widget.enabled,
-                ),
-              ),
-            ),
+          child: CustomPaint(
+            foregroundPainter: widget.enabled
+                ? _HeaderFadePainter(_fade, context, widget.color)
+                : null,
+            child: widget.child,
           ),
         ),
-      ),
-    ],
-  );
+      );
 }
 
 class _HeaderFadePainter extends CustomPainter {
-  _HeaderFadePainter(
-    this.strength, {
-    required this.color,
-    required this.enabled,
-  }) : super(repaint: strength);
-  final ValueNotifier<double> strength;
+  _HeaderFadePainter(this.fade, this.sheet, this.color) : super(repaint: fade);
+  final ValueNotifier<_ScrollFade?> fade;
+  final BuildContext sheet;
   final Color color;
-  final bool enabled;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (!enabled || strength.value == 0) return;
-    final rect = Offset.zero & size;
+    final active = fade.value;
+    if (active == null || !active.viewport.attached) return;
+    final viewport = active.viewport;
+    final body = sheet.findRenderObject();
+    // 切换内容时，原滚动区可能仍在树里但已隐藏或移出当前弹框。
+    RenderObject child = viewport;
+    while (child != body) {
+      final parent = child.parent;
+      if (parent == null || !parent.paintsChild(child)) return;
+      child = parent;
+    }
+
+    // 在绘制时取视口坐标，固定工具栏换行或尺寸变化后仍能贴住正文。
+    final rect =
+        Offset.zero &
+        Size(
+          viewport.size.width,
+          viewport.size.height.clamp(0.0, _kFadeHeight),
+        );
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.transform(viewport.getTransformTo(body).storage);
     canvas.drawRect(
       rect,
       Paint()
@@ -297,17 +304,17 @@ class _HeaderFadePainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            color.withValues(alpha: strength.value),
+            color.withValues(alpha: active.strength),
             color.withValues(alpha: 0),
           ],
-          stops: const [0, 1],
         ).createShader(rect),
     );
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(_HeaderFadePainter oldDelegate) =>
       color != oldDelegate.color ||
-      enabled != oldDelegate.enabled ||
-      strength != oldDelegate.strength;
+      fade != oldDelegate.fade ||
+      sheet != oldDelegate.sheet;
 }

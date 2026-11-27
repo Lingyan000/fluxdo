@@ -370,6 +370,7 @@ pub struct HttpEgressClient {
     sessions: ClientSessions,
     exec: Executor,
     h3: Arc<h3::Http3Upgrade>,
+    allow_uncalibrated_http3: bool,
     #[cfg(test)]
     test_tls: parking_lot::Mutex<Option<TlsClientConfig>>,
 }
@@ -385,6 +386,7 @@ impl HttpEgressClient {
             sessions: ClientSessions::default(),
             exec: Executor::new(),
             h3: Arc::default(),
+            allow_uncalibrated_http3: false,
             #[cfg(test)]
             test_tls: Default::default(),
         }
@@ -399,6 +401,11 @@ impl HttpEgressClient {
         if let Some(path) = path {
             self.h3 = Arc::new(h3::Http3Upgrade::with_cache(path.into(), namespace));
         }
+        self
+    }
+
+    pub(crate) fn with_allow_uncalibrated_http3(mut self, allow: bool) -> Self {
+        self.allow_uncalibrated_http3 = allow;
         self
     }
 
@@ -482,6 +489,7 @@ impl HttpEgressClient {
             key: &key,
             template: template.as_ref(),
             uses_browser_fingerprint: self.templates.is_some(),
+            allow_uncalibrated_http3: self.allow_uncalibrated_http3,
             h3_template: h3_profile.map(|(_,p)|p),
             host: &host,
             port,
@@ -1001,6 +1009,8 @@ struct Target<'a> {
     template: Option<&'a FingerprintTemplate>,
     /// 区分尚无样本的浏览器客户端与不使用指纹的普通/DoH 客户端。
     uses_browser_fingerprint: bool,
+    /// 用户显式允许在缺少 H3 模板时按默认 QUIC 参数尝试 HTTP/3。
+    allow_uncalibrated_http3: bool,
     h3_template: Option<Arc<crate::h3_template::Profile>>,
     host: &'a str,
     port: u16,
@@ -1308,6 +1318,14 @@ fn build_request(
                 {
                     headers.insert(name, value);
                 }
+            }
+            if template.is_calibrated()
+                && let Some(value) = template
+                    .accept_language
+                    .as_deref()
+                    .and_then(|value| HeaderValue::from_str(value).ok())
+            {
+                headers.insert("accept-language", value);
             }
         }
         if headers.contains_key("range") {
@@ -1641,6 +1659,52 @@ mod tests {
                 assert_eq!(request.headers()["if-none-match"].hpack_indexing(), None);
             }
         }
+    }
+
+    #[test]
+    fn sampled_accept_language_replays_only_for_calibrated_same_ua_https() {
+        let mut template = crate::presets::by_id("android-webview133").unwrap();
+        assert!(template.accept_language.is_none());
+        template.user_agent = Some("Probe-UA".into());
+        template.tls_permute_extensions = Some(true);
+        template.low_entropy_client_hints = Some(Vec::new());
+        template.accept_language = Some("zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7".into());
+
+        let make = |tmpl: &FingerprintTemplate, scheme: &str, ua: &str| {
+            let request = Request::builder()
+                .uri(format!("{scheme}://example.test/latest.json"))
+                .header("user-agent", ua)
+                .header("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .body(Body::empty())
+                .unwrap();
+            build_request(Some(tmpl), request, "example.test", 443, Version::HTTP_2).unwrap()
+        };
+
+        let matched = make(&template, "https", "Probe-UA");
+        assert_eq!(
+            matched.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+        );
+
+        let wrong_scheme = make(&template, "http", "Probe-UA");
+        assert_eq!(
+            wrong_scheme.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
+
+        let wrong_ua = make(&template, "https", "Other-UA");
+        assert_eq!(
+            wrong_ua.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
+
+        let mut uncalibrated = template.clone();
+        uncalibrated.tls_permute_extensions = None;
+        let not_ready = make(&uncalibrated, "https", "Probe-UA");
+        assert_eq!(
+            not_ready.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
     }
 
     #[test]

@@ -1,4 +1,3 @@
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter/services.dart';
@@ -88,12 +87,7 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(6),
             ],
-            decoration: InputDecoration(
-              hintText: '000000',
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
-            ),
+            decoration: const InputDecoration(hintText: '000000'),
             onChanged: (v) {
               if (v.length == 6) _submit();
             },

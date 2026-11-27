@@ -423,30 +423,8 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   // ────────────────── 配置 Tab ──────────────────
 
   Widget _buildConfigTab() {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     InputDecoration inputDeco(String label, {String? hint, Widget? suffix}) =>
-        InputDecoration(
-          labelText: label,
-          hintText: hint,
-          filled: true,
-          fillColor: cs.surfaceContainerLow,
-          border: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(14),
-            borderSide:
-                BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(14),
-            borderSide:
-                BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(14),
-            borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
-          ),
-          suffixIcon: suffix,
-        );
+        InputDecoration(labelText: label, hintText: hint, suffixIcon: suffix);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -457,11 +435,11 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
               inputDeco(AiL10n.current.name, hint: AiL10n.current.nameHint),
         ),
         const SizedBox(height: 14),
-        DropdownButtonFormField<AiProviderType>(
+        AppDropdownFormField<AiProviderType>(
           initialValue: _selectedType,
           decoration: inputDeco(AiL10n.current.providerType),
           items: AiProviderType.values
-              .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+              .map((t) => AppDropdownItem(value: t, label: t.label))
               .toList(),
           onChanged: _onTypeChanged,
         ),

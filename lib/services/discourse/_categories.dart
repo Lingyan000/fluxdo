@@ -3,7 +3,10 @@ part of 'discourse_service.dart';
 /// 分类和标签相关
 mixin _CategoriesMixin on _DiscourseServiceBase {
   Future<Category> getCategory(int id) async {
-    final response = await _dio.get('/c/$id/show.json');
+    final response = await _dio.get(
+      '/c/$id/show.json',
+      options: Options(extra: const {FluxRequestKeys.allowCoalescing: true}),
+    );
     return Category.fromJson(response.data['category'] as Map<String, dynamic>);
   }
 
@@ -15,7 +18,10 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
       return preloadedCategories;
     }
 
-    final response = await _dio.get('/site.json');
+    final response = await _dio.get(
+      '/site.json',
+      options: Options(extra: const {FluxRequestKeys.allowCoalescing: true}),
+    );
     final site = SiteResponse.fromJson(response.data);
     return site.categories;
   }
@@ -29,7 +35,10 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
     }
 
     try {
-      final response = await _dio.get('/site.json');
+      final response = await _dio.get(
+        '/site.json',
+        options: Options(extra: const {FluxRequestKeys.allowCoalescing: true}),
+      );
       final data = response.data as Map<String, dynamic>;
 
       final canTagTopics = data['can_tag_topics'] as bool? ?? false;
@@ -58,7 +67,10 @@ mixin _CategoriesMixin on _DiscourseServiceBase {
   /// top_tags 只有名字且数量有限，侧栏标签区需要带 count 的完整数据。
   Future<List<SiteTagGroup>> getSiteTagGroups() async {
     try {
-      final response = await _dio.get('/tags.json');
+      final response = await _dio.get(
+        '/tags.json',
+        options: Options(extra: const {FluxRequestKeys.allowCoalescing: true}),
+      );
       final data = response.data as Map<String, dynamic>;
 
       final seen = <String>{};

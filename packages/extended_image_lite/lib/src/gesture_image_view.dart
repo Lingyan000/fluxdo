@@ -1,3 +1,5 @@
+import 'dart:async' show Timer;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -41,6 +43,7 @@ class GestureImageView extends StatefulWidget {
     this.failedBuilder,
     this.loadingBuilder,
     this.progressBuilder,
+    this.progressDelay = const Duration(milliseconds: 220),
     this.onImageLoaded,
   });
 
@@ -71,6 +74,10 @@ class GestureImageView extends StatefulWidget {
   /// 显示也会叠加，适合在缩略图上表达原图下载进度。
   final GestureImageProgressBuilder? progressBuilder;
 
+  /// 有缩略图占位时延迟显露进度指示器的时长：本地磁盘缓存解码（通常 15~60ms）
+  /// 在此窗口内出首帧，避免每次点开图片正中央闪一下黑圈菊花。
+  final Duration progressDelay;
+
   /// 主图首帧就绪回调(供 viewer 缓存尺寸做智能双击缩放)
   final void Function(ImageInfo info)? onImageLoaded;
 
@@ -86,6 +93,8 @@ class _GestureImageViewState extends State<GestureImageView>
   ImageChunkEvent? _mainChunkEvent;
   bool _mainFailed = false;
   bool _mainFirstFrameNotified = false;
+  Timer? _progressDelayTimer;
+  bool _progressRevealed = false;
 
   ImageStream? _placeholderStream;
   ImageStreamListener? _placeholderListener;
@@ -130,11 +139,40 @@ class _GestureImageViewState extends State<GestureImageView>
         _mainFailed = false;
         _mainFirstFrameNotified = false;
         _mainChunkEvent = null;
+        _cancelProgressReveal();
         _fadeController.value = 0.0;
         _replaceMainInfo(null);
       }
       _resolveStreams();
     }
+  }
+
+  void _cancelProgressReveal() {
+    _progressDelayTimer?.cancel();
+    _progressDelayTimer = null;
+    _progressRevealed = false;
+  }
+
+  void _armProgressRevealIfNeeded() {
+    if (_mainInfo != null || _mainFailed || widget.progressBuilder == null) {
+      _cancelProgressReveal();
+      return;
+    }
+    if (_progressRevealed || _progressDelayTimer != null) return;
+    final delay = widget.placeholder != null
+        ? widget.progressDelay
+        : (widget.progressDelay > const Duration(milliseconds: 80)
+              ? const Duration(milliseconds: 80)
+              : widget.progressDelay);
+    if (delay <= Duration.zero) {
+      _progressRevealed = true;
+      return;
+    }
+    _progressDelayTimer = Timer(delay, () {
+      _progressDelayTimer = null;
+      if (!mounted || _mainInfo != null || _mainFailed) return;
+      setState(() => _progressRevealed = true);
+    });
   }
 
   void _resolveStreams() {
@@ -173,9 +211,11 @@ class _GestureImageViewState extends State<GestureImageView>
       _detachPlaceholderStream();
       _replacePlaceholderInfo(null);
     }
+    _armProgressRevealIfNeeded();
   }
 
   void _handleMainFrame(ImageInfo info, bool synchronousCall) {
+    _cancelProgressReveal();
     _replaceMainInfo(info);
     _mainChunkEvent = null;
     _mainFailed = false;
@@ -208,6 +248,7 @@ class _GestureImageViewState extends State<GestureImageView>
   }
 
   void _handleMainError(Object exception, StackTrace? stackTrace) {
+    _cancelProgressReveal();
     _mainChunkEvent = null;
     _mainFailed = true;
     if (mounted) {
@@ -301,6 +342,7 @@ class _GestureImageViewState extends State<GestureImageView>
 
   @override
   void dispose() {
+    _cancelProgressReveal();
     _detachMainStream();
     _detachPlaceholderStream();
     _mainInfo?.dispose();
@@ -320,10 +362,11 @@ class _GestureImageViewState extends State<GestureImageView>
     final ImageGestureController controller = widget.controller;
     final bool showFailed = _mainFailed && widget.failedBuilder != null;
     final bool isLoading = !showFailed && _mainInfo == null && !_mainFailed;
-    final bool showProgress = isLoading && widget.progressBuilder != null;
+    final bool showProgress =
+        isLoading && widget.progressBuilder != null && _progressRevealed;
     final bool showLoading =
         isLoading &&
-        !showProgress &&
+        widget.progressBuilder == null &&
         _placeholderInfo == null &&
         widget.loadingBuilder != null;
 
@@ -351,7 +394,14 @@ class _GestureImageViewState extends State<GestureImageView>
           ),
         if (showFailed) widget.failedBuilder!(context, controller),
         if (showProgress)
-          widget.progressBuilder!(context, _mainChunkEvent)
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            builder: (context, opacity, child) =>
+                Opacity(opacity: opacity, child: child),
+            child: widget.progressBuilder!(context, _mainChunkEvent),
+          )
         else if (showLoading)
           widget.loadingBuilder!(context),
       ],

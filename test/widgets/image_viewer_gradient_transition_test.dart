@@ -132,7 +132,9 @@ void main() {
 
   testWidgets('点开时，飞行末帧和落位后的画面边缘亮度连续', (tester) async {
     await open(tester);
-    await tester.pump(const Duration(milliseconds: 284));
+    await tester.pump();
+    final route = ModalRoute.of(tester.element(find.byType(ImageViewerPage)))!;
+    await tester.pump(route.transitionDuration - const Duration(milliseconds: 16));
     expect(find.byType(CoverContainFlightImage), findsOneWidget);
     final before = await edgeBrightness(tester);
     await tester.pumpAndSettle();
@@ -156,7 +158,9 @@ void main() {
 
   testWidgets('打开途中立即关闭，画面边缘亮度在换向时连续', (tester) async {
     await open(tester);
-    await tester.pump(const Duration(milliseconds: 254));
+    await tester.pump();
+    final route = ModalRoute.of(tester.element(find.byType(ImageViewerPage)))!;
+    await tester.pump(route.transitionDuration - const Duration(milliseconds: 46));
     expect(find.byType(CoverContainFlightImage), findsOneWidget);
     final before = await edgeBrightness(tester);
     await tester.tap(find.byIcon(Symbols.close_rounded));

@@ -1,10 +1,16 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../l10n/app_localizations.dart';
+import '../../../l10n/s.dart';
+import '../../../services/cf_challenge_service.dart';
+import '../../../services/network/cf_channel_trace_probe.dart';
+import '../../../services/network/doh/network_settings_service.dart';
 import '../../../services/network/fingerprint/fingerprint_presets.dart';
+import '../../../services/network/webview/webview_adapter_settings_service.dart';
+import '../../../services/toast_service.dart';
 
 /// 自动档独立展示，手动档按平台浏览；选择仍直接返回稳定 ID。
 class FingerprintPresetDialog extends StatefulWidget {
@@ -119,6 +125,64 @@ class _FingerprintPresetDialogState extends State<FingerprintPresetDialog> {
                         padding: const EdgeInsets.only(bottom: 4),
                         child: _option(preset.id, preset.label),
                       ),
+                    const SizedBox(height: 12),
+                    Divider(
+                      height: 1,
+                      color: colors.outlineVariant.withValues(alpha: 0.4),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
+                      child: Text(
+                        l10n.networkCore_forceHttp3Section,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    AnimatedBuilder(
+                      animation: NetworkSettingsService.instance.notifier,
+                      builder: (context, _) {
+                        final settings = NetworkSettingsService.instance;
+                        final forceH3 =
+                            settings.current.allowUncalibratedHttp3;
+                        return M3eSwitchListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          secondary: Icon(
+                            Symbols.bolt_rounded,
+                            color: forceH3
+                                ? context.emphasis.selected
+                                : colors.onSurfaceVariant,
+                          ),
+                          title: Text(l10n.networkCore_forceHttp3Title),
+                          subtitle: Text(l10n.networkCore_forceHttp3Desc),
+                          value: forceH3,
+                          onChanged: (value) async {
+                            final hadSiteTunnel =
+                                settings.current.webViewSiteTunnelEnabled;
+                            await settings.setAllowUncalibratedHttp3(value);
+                            if (value) {
+                              CfChannelTraceProbe.instance
+                                  .clearProtocolMismatch();
+                              CfChallengeService().resetCooldown();
+                              final webview =
+                                  WebViewAdapterSettingsService.instance;
+                              if (webview.sessionFallbackEnabled) {
+                                webview.disableSessionFallback();
+                              }
+                              if (hadSiteTunnel) {
+                                ToastService.showInfo(
+                                  S
+                                      .current
+                                      .networkCore_forceHttp3MutualExclusiveTip,
+                                );
+                              }
+                            }
+                          },
+                        );
+                      },
+                    ),
                     const SizedBox(height: 8),
                     ExpansionTile(
                       tilePadding: const EdgeInsets.symmetric(horizontal: 8),

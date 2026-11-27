@@ -50,6 +50,7 @@ class MainFlutterWindow: NSWindow {
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
       ImageZoomCursor.register(with: controller.engine)
+      VisionOcrHandler.shared.register(messenger: controller.engine.binaryMessenger)
       let channel = FlutterMethodChannel(name: "com.fluxdo/mini_app_window_controls",
                                          binaryMessenger: controller.engine.binaryMessenger)
       channel.setMethodCallHandler { [weak controller] call, result in
@@ -94,6 +95,10 @@ class MainFlutterWindow: NSWindow {
 
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
     MediaTranscodeHandler.shared.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    // Apple Vision 原生 OCR 通道（神经网络引擎加速，免模型下载）
+    VisionOcrHandler.shared.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
 

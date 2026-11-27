@@ -1,4 +1,3 @@
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -270,9 +269,6 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
               labelText: context.l10n.reward_customAmount,
               hintText: '$_minAmount - $_maxAmount',
               suffixText: 'LDC',
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
               isDense: true,
             ),
           ),
@@ -285,9 +281,6 @@ class _LdcRewardSheetState extends ConsumerState<_LdcRewardSheet> {
             decoration: InputDecoration(
               labelText: context.l10n.reward_noteLabel,
               hintText: context.l10n.reward_noteHint,
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
               isDense: true,
             ),
           ),

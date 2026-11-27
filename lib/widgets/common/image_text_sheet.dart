@@ -11,6 +11,7 @@ import '../../providers/image_ocr_provider.dart';
 import '../../services/app_logger.dart';
 import '../../services/ocr/local_ocr_service.dart';
 import '../../services/ocr/ocr_model_store.dart';
+import '../../services/ocr/picture_text_layout.dart';
 import '../../services/toast_service.dart';
 import '../ai/ai_translation_sheet.dart';
 import 'app_bottom_sheet.dart';
@@ -19,11 +20,13 @@ import 'error_view.dart';
 Future<void> showImageTextSheet(
   BuildContext context, {
   required Future<Uint8List> Function(CancelToken) loadImage,
+  OcrResult? initialResult,
 }) => AppBottomSheet.show<void>(
   context: context,
   title: context.l10n.imageViewer_recognizeText,
   maxHeightFactor: 0.85,
-  builder: (_) => ImageTextSheet(loadImage: loadImage),
+  builder: (_) =>
+      ImageTextSheet(loadImage: loadImage, initialResult: initialResult),
 );
 
 enum _OcrSheetPhase {
@@ -36,18 +39,29 @@ enum _OcrSheetPhase {
 }
 
 class ImageTextSheet extends ConsumerStatefulWidget {
-  const ImageTextSheet({super.key, required this.loadImage});
+  const ImageTextSheet({
+    super.key,
+    required this.loadImage,
+    this.initialResult,
+  });
   final Future<Uint8List> Function(CancelToken) loadImage;
+
+  /// 若宿主已完成识字（如实况选字页点击「全文」），直接复用结果免重复推理。
+  final OcrResult? initialResult;
 
   @override
   ConsumerState<ImageTextSheet> createState() => _ImageTextSheetState();
 }
 
 class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
+  static OcrTextLayoutMode _lastLayoutMode = OcrTextLayoutMode.smartParagraph;
+
   final _token = CancelToken();
   _OcrSheetPhase _phase = _OcrSheetPhase.checking;
   double? _downloadProgress;
   OcrProgress? _ocrProgress;
+  PictureTextLayout? _layout;
+  OcrTextLayoutMode _layoutMode = _lastLayoutMode;
   String? _text;
   String? _selectedText;
   String? _error;
@@ -57,7 +71,15 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
   @override
   void initState() {
     super.initState();
-    _recognize();
+    final initial = widget.initialResult;
+    if (initial != null) {
+      final layout = PictureTextLayout.fromOcr(initial);
+      _layout = layout;
+      _text = layout.formatText(_layoutMode);
+      _phase = _OcrSheetPhase.done;
+    } else {
+      _recognize();
+    }
   }
 
   @override
@@ -78,9 +100,12 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
       _errorStackTrace = null;
     });
     var failedWhileDownloading = download;
+    var useSystemEngine = false;
     try {
+      useSystemEngine = await shouldUseSystemOcrEngine(ref);
+      if (!mounted) return;
       final store = ref.read(ocrModelStoreProvider);
-      if (!await store.isReady()) {
+      if (!useSystemEngine && !await store.isReady()) {
         if (!mounted) return;
         if (!download) {
           setState(() => _phase = _OcrSheetPhase.needsDownload);
@@ -113,9 +138,18 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
       final service = ref.read(localOcrServiceProvider);
       final bytes = await widget.loadImage(_token);
       if (!mounted) return;
+      final paths = useSystemEngine
+          ? (await store.isReady() ? await store.paths() : null)
+          : await store.paths();
+      final paragraphModelPath = await store.ensureParagraphModel(
+        waitTimeout: const Duration(seconds: 4),
+      );
+      if (!mounted) return;
       final result = await service.recognizeDetailed(
         bytes,
-        await store.paths(),
+        paths,
+        useSystemEngine: useSystemEngine,
+        paragraphModelPath: paragraphModelPath,
         cancelToken: _token,
         onProgress: (progress) {
           if (mounted && _phase == _OcrSheetPhase.recognizing) {
@@ -124,8 +158,10 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
         },
       );
       if (!mounted) return;
+      final layout = PictureTextLayout.fromOcr(result);
       setState(() {
-        _text = result.plainText;
+        _layout = layout;
+        _text = layout.formatText(_layoutMode);
         _selectedText = null;
         _phase = _OcrSheetPhase.done;
       });
@@ -147,7 +183,9 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
           _errorStackTrace = stackTrace;
         });
       } else {
-        ref.read(ocrModelStoreProvider).invalidateVerificationCache();
+        if (!useSystemEngine) {
+          ref.read(ocrModelStoreProvider).invalidateVerificationCache();
+        }
         setState(() {
           _phase = _OcrSheetPhase.error;
           _ocrProgress = null;
@@ -361,6 +399,25 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
     );
   }
 
+  void _setLayoutMode(OcrTextLayoutMode mode) {
+    if (_layoutMode == mode) return;
+    _lastLayoutMode = mode;
+    setState(() {
+      _layoutMode = mode;
+      _text = _layout?.formatText(mode) ?? _text;
+      _selectedText = null;
+    });
+  }
+
+  String _layoutModeLabel(BuildContext context, OcrTextLayoutMode mode) {
+    final l10n = context.l10n;
+    return switch (mode) {
+      OcrTextLayoutMode.smartParagraph => l10n.imageViewer_ocrLayoutSmart,
+      OcrTextLayoutMode.preserveLines => l10n.imageViewer_ocrLayoutLines,
+      OcrTextLayoutMode.singleParagraph => l10n.imageViewer_ocrLayoutSingle,
+    };
+  }
+
   Widget _buildResultView(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
@@ -390,8 +447,12 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 _hasSelection
@@ -403,6 +464,22 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (_layout != null && _layout!.lines.length > 1)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final mode in OcrTextLayoutMode.values)
+                      ChoiceChip(
+                        selected: _layoutMode == mode,
+                        label: Text(_layoutModeLabel(context, mode)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        showCheckmark: false,
+                        onSelected: (_) => _setLayoutMode(mode),
+                      ),
+                  ],
+                ),
             ],
           ),
         ),
