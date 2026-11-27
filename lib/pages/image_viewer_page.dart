@@ -3077,21 +3077,62 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     final chromeVisible = _showUI.value && !isZoomed;
     final showDesktopZoom = PlatformUtils.isDesktop && pageSize.width >= 560;
 
+    final statusBarScrimHeight = padding.top + 32;
+    final statusBarMidStop = statusBarScrimHeight > 0
+        ? (padding.top / statusBarScrimHeight).clamp(0.45, 0.72)
+        : 0.58;
+
     return ValueListenableBuilder<Offset>(
       valueListenable: _dismissOffset,
       builder: (context, offset, child) {
         final opacity = _dismissOpacity(offset, pageSize);
         return IgnorePointer(
-          ignoring: !chromeVisible || opacity == 0,
+          ignoring: opacity == 0,
           child: Opacity(opacity: opacity, child: child),
         );
       },
-      child: AnimatedOpacity(
-        opacity: chromeVisible ? 1 : 0,
-        duration: const Duration(milliseconds: 180),
-        child: Stack(
-          children: [
-            // 1. 极简顶栏：多图居中玻璃页码 + 右上角单个轻量关闭按钮（无脏黑渐变、无拥挤按钮排）。
+      child: Stack(
+        children: [
+          // 0. 移动端状态栏轻量保护渐隐：仅覆盖状态栏及下方 32px 平滑过渡，
+          // 防止浅色/白底图片让白色状态栏文字融进背景看不清；沉浸隐藏系统栏时一同淡出，
+          // 仅双指缩放但未隐藏系统栏时保持托底。
+          if (!PlatformUtils.isDesktop && padding.top > 0)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: statusBarScrimHeight,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _showUI.value ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: DecoratedBox(
+                    key: const Key('image_viewer_status_bar_scrim'),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: [0.0, statusBarMidStop, 1.0],
+                        colors: [
+                          Colors.black.withValues(alpha: 0.52),
+                          Colors.black.withValues(alpha: 0.22),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !chromeVisible,
+              child: AnimatedOpacity(
+                opacity: chromeVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: Stack(
+                  children: [
+                    // 1. 极简顶栏：多图居中玻璃页码 + 右上角单个轻量关闭按钮。
             Positioned(
               top: padding.top + 10,
               left: padding.left + 16,
@@ -3297,18 +3338,22 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                   iconSize: 18,
                                 ),
                               ],
-                            ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-          ],
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
-    );
+    ],
+  ),
+);
   }
 
   Widget _dockButton(

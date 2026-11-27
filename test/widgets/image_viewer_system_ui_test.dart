@@ -431,4 +431,38 @@ void main() {
     expect(find.byType(ImageViewerPage), findsNothing);
     expectSingleRestore();
   });
+
+  testWidgets('移动端状态栏保护渐隐随系统栏显隐和下拉淡出，不影响点击穿透', (tester) async {
+    await openViewer(tester);
+    final scrim = find.byKey(const Key('image_viewer_status_bar_scrim'));
+    expect(scrim, findsOneWidget);
+
+    final rect = tester.getRect(scrim);
+    expect(rect.top, 0);
+    expect(rect.height, closeTo(24 + 32, 0.01));
+    expect(controlsOpacity(tester, scrim), 1);
+
+    // 下拉关闭过程中随页面透明度同步淡出。
+    final slide = tester.state<ExtendedImageSlidePageState>(
+      find.byType(ExtendedImageSlidePage),
+    );
+    final image = tester.widget<GestureImageView>(
+      find.byType(GestureImageView),
+    );
+    slide.slide(const Offset(0, 80), controller: image.controller);
+    await tester.pump();
+    expect(controlsOpacity(tester, scrim), closeTo(1 - 80 / 800, 0.001));
+    slide.endSlide(ScaleEndDetails());
+    await tester.pumpAndSettle();
+    expect(controlsOpacity(tester, scrim), 1);
+
+    // 点击渐隐区内部应正常穿透触发沉浸隐藏，渐隐层同步淡出。
+    await toggleControls(tester, at: const Offset(200, 18));
+    expect(controlsOpacity(tester, scrim), 0);
+    expect(systemUiCalls.last.arguments, 'SystemUiMode.immersiveSticky');
+
+    // 再次单击恢复显示系统栏与状态栏保护渐隐。
+    await toggleControls(tester);
+    expect(controlsOpacity(tester, scrim), 1);
+  });
 }
