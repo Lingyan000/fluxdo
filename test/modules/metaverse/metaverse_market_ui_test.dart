@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
@@ -27,10 +28,12 @@ import 'package:fluxdo/services/local_notification_service.dart'
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_theme.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
 
 import '../../helpers/preview_fonts.dart';
 
 class _Catalog extends MetaverseMarketController {
+  void show(MetaverseMarketState value) => state = value;
   @override
   Future<void> refresh({bool force = false}) async {}
   @override
@@ -71,6 +74,14 @@ class _Catalog extends MetaverseMarketController {
   }
 }
 
+class _WaitingCatalog extends _Catalog {
+  final ready = Completer<void>();
+  @override
+  MetaverseMarketState build() => const MetaverseMarketState(sources: []);
+  @override
+  Future<void> refresh({bool force = false}) => ready.future;
+}
+
 class _Updates extends MetaverseUpdatesController {
   @override
   Future<MetaverseUpdateState> build() async => const MetaverseUpdateState();
@@ -90,8 +101,16 @@ class _ChannelCatalog extends _Catalog {
       MetaverseMarketEntry.parse({
         'id': base.id, 'name': base.name, 'version': '2.0.0',
         'channel': 'preview', 'apiVersion': 1, 'summary': base.summary,
+        'categories': ['测试专属'],
         'author': base.author, 'repository': base.repository,
         'packageUrl': base.packageUrl, 'sha256': base.sha256,
+      }, base.source),
+      MetaverseMarketEntry.parse({
+        'id': 'example.withdrawn', 'name': '撤回插件', 'version': '1.0.0',
+        'withdrawn': true, 'apiVersion': 1, 'summary': base.summary,
+        'author': base.author, 'repository': base.repository,
+        'packageUrl': base.packageUrl, 'sha256': base.sha256,
+        'categories': ['已撤回'],
       }, base.source),
       market.entries.last,
     ]);
@@ -126,7 +145,7 @@ void main() {
         .load();
   });
   final capture = GlobalKey();
-  Widget app({bool dark = false, double scale = 1, Widget? page, bool channels = false}) {
+  Widget app({bool dark = false, double scale = 1, Widget? page, bool channels = false, bool waiting = false}) {
     final brightness = dark ? Brightness.dark : Brightness.light;
     final theme = buildAppTheme(
       ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: brightness),
@@ -139,7 +158,7 @@ void main() {
     return ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
-        metaverseMarketProvider.overrideWith(channels ? _ChannelCatalog.new : _Catalog.new),
+        metaverseMarketProvider.overrideWith(waiting ? _WaitingCatalog.new : channels ? _ChannelCatalog.new : _Catalog.new),
         metaverseUpdatesProvider.overrideWith(_Updates.new),
         metaversePluginsProvider.overrideWith(_Plugins.new),
       ],
@@ -205,11 +224,15 @@ void main() {
     expect(find.text('LD士多'), findsOneWidget);
     expect(find.text('FluxDO 社区 · 1.0.0'), findsNWidgets(2));
     expect(find.text('FluxDO 社区 · 2.0.0'), findsNothing);
+    expect(find.text('测试专属'), findsNothing);
+    expect(find.text('已撤回'), findsNothing);
     final container = ProviderScope.containerOf(tester.element(find.byType(MetaverseMarketPage)));
     await container.read(metaverseUpdatesProvider.notifier).setPreview(true);
     await tester.pumpAndSettle();
     expect(find.text('LD士多'), findsOneWidget);
     expect(find.text('FluxDO 社区 · 2.0.0'), findsOneWidget);
+    expect(find.text('测试专属'), findsOneWidget);
+    expect(find.text('已撤回'), findsNothing);
     await container.read(metaverseUpdatesProvider.notifier).setPreview(false);
     await tester.pumpAndSettle();
     expect(find.text('LD士多'), findsOneWidget);
@@ -218,6 +241,59 @@ void main() {
   });
 
   for (final dark in [false, true]) {
+    testWidgets('市场加载、失败和目录空态互斥 $dark', (tester) async {
+      tester.view.physicalSize = const Size(320, 780);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(app(dark: dark, scale: 1.4, waiting: true));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(Skeleton), findsOneWidget);
+      expect(find.text(S.current.metaverse_marketEmpty), findsNothing);
+      expect(find.text(S.current.metaverse_marketCatalogEmpty), findsNothing);
+      await screenshot(tester, 'market-loading-$dark');
+      final container = ProviderScope.containerOf(tester.element(find.byType(MetaverseMarketPage)));
+      final controller = container.read(metaverseMarketProvider.notifier) as _WaitingCatalog;
+      controller.show(const MetaverseMarketState(sources: [], errors: {'source': 'offline'}));
+      controller.ready.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(Skeleton), findsNothing);
+      expect(find.text(S.current.metaverse_marketRefreshFailed), findsOneWidget);
+      expect(find.text(S.current.common_retry), findsOneWidget);
+      expect(find.text(S.current.metaverse_marketCatalogEmpty), findsNothing);
+      await screenshot(tester, 'market-error-$dark');
+      controller.show(const MetaverseMarketState(sources: []));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_marketCatalogEmpty), findsOneWidget);
+      expect(find.text(S.current.metaverse_marketRefreshFailed), findsNothing);
+      expect(find.text(S.current.metaverse_clearFilters), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('清除筛选同时复原关键词分类与仅看更新 $dark', (tester) async {
+      tester.view.physicalSize = const Size(320, 780);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(app(dark: dark, scale: 1.4));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('效率'));
+      await tester.tap(find.text('效率'));
+      await tester.ensureVisible(find.text(S.current.metaverse_marketUpdates));
+      await tester.tap(find.text(S.current.metaverse_marketUpdates));
+      await tester.enterText(find.byType(TextField), '找不到');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_marketEmpty), findsOneWidget);
+      await screenshot(tester, 'market-filter-empty-$dark');
+      await tester.tap(find.text(S.current.metaverse_clearFilters));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+      expect(find.text('LD士多'), findsOneWidget);
+      expect(find.text('随手记'), findsOneWidget);
+      expect(tester.widget<FilterChip>(find.byType(FilterChip)).selected, isFalse);
+      expect(tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).every((c) => !c.selected), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
     for (final scale in [1.0, 1.4]) {
       testWidgets('市场搜索对齐与详情在明暗主题正常展示 $dark $scale', (tester) async {
         tester.view.physicalSize = Size(scale > 1 ? 320 : 390, 844);

@@ -1,3 +1,4 @@
+import '../plugin/ui/metaverse_expansion_tile.dart';
 import 'dart:typed_data';
 
 import 'package:app_icons/app_icons.dart';
@@ -11,6 +12,7 @@ import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/link_launcher.dart';
 import '../../../widgets/common/image_placeholder.dart';
+import '../../../widgets/common/skeleton.dart';
 import '../plugin/providers/metaverse_plugin_providers.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_plugin_management_page.dart';
@@ -36,13 +38,20 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
   final _searchController = TextEditingController();
   String? _category;
   bool _updatesOnly = false;
+  bool _initialRefresh = true;
   @override
   bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    Future<void>.microtask(() { if (mounted) return ref.read(metaverseMarketProvider.notifier).refresh(); });
+    Future<void>.microtask(() async {
+      try {
+        if (mounted) await ref.read(metaverseMarketProvider.notifier).refresh();
+      } finally {
+        if (mounted) setState(() => _initialRefresh = false);
+      }
+    });
   }
 
   @override
@@ -74,6 +83,8 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
       if (visible[key] == null || entry.newerThan(visible[key]!.version)) visible[key] = entry;
     }
     final query = _query.trim().toLowerCase();
+    final hasFilters = query.isNotEmpty || _category != null || _updatesOnly;
+    final initialLoading = market.entries.isEmpty && (market.refreshing || _initialRefresh);
     final entries = visible.values
         .where(
           (entry) =>
@@ -85,7 +96,7 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
         )
         .toList();
     final categories = {
-      for (final entry in market.entries) ...entry.categories,
+      for (final entry in visible.values) ...entry.categories,
     }.toList()..sort();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,8 +166,8 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
             ],
           ),
         ),
-        if (market.refreshing) const LinearProgressIndicator(),
-        if (market.errors.isNotEmpty)
+        if (market.refreshing && !initialLoading) const M3eLinearProgress(),
+        if (market.errors.isNotEmpty && market.entries.isNotEmpty)
           ListTile(
             leading: const Icon(Symbols.cloud_off_rounded),
             title: Text(
@@ -178,7 +189,9 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
           child: M3eRefreshIndicator(
             onRefresh: () =>
                 ref.read(metaverseMarketProvider.notifier).refresh(force: true),
-            child: entries.isEmpty
+            child: initialLoading
+                ? _MarketLoadingList(controller: widget.scrollController)
+                : entries.isEmpty
                 ? ListView(
                     controller: widget.scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -186,8 +199,18 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 48),
                         child: AppEmptyState(
-                          icon: const Icon(Symbols.extension_rounded),
-                          title: l.metaverse_marketEmpty,
+                          icon: Icon(market.entries.isEmpty && market.errors.isNotEmpty
+                              ? Symbols.cloud_off_rounded : Symbols.extension_rounded),
+                          title: market.entries.isEmpty && market.errors.isNotEmpty
+                              ? l.metaverse_marketRefreshFailed
+                              : hasFilters ? l.metaverse_marketEmpty : l.metaverse_marketCatalogEmpty,
+                          action: market.entries.isEmpty && market.errors.isNotEmpty
+                              ? FilledButton.tonal(onPressed: () => ref.read(metaverseMarketProvider.notifier).refresh(force: true),
+                                  child: Text(l.common_retry))
+                              : hasFilters ? FilledButton.tonal(
+                                  onPressed: () { _searchController.clear(); setState(() {
+                                    _query = ''; _category = null; _updatesOnly = false;
+                                  }); }, child: Text(l.metaverse_clearFilters)) : null,
                         ),
                       ),
                     ],
@@ -243,6 +266,30 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
       ],
     );
   }
+}
+
+class _MarketLoadingList extends StatelessWidget {
+  const _MarketLoadingList({this.controller});
+  final ScrollController? controller;
+  @override
+  Widget build(BuildContext context) => Skeleton(
+    child: ListView(
+      controller: controller, physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      children: [for (var index = 0; index < 4; index++)
+        SegmentedCardItem(index: index, count: 4, gap: 3,
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          child: const Padding(padding: EdgeInsets.all(16), child: Row(children: [
+            SkeletonBox(width: 40, height: 40, borderRadius: 12), SizedBox(width: 16),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              FractionallySizedBox(widthFactor: .5, child: SkeletonBox(height: 20)),
+              SizedBox(height: 8), SkeletonBox(height: 16), SizedBox(height: 8),
+              FractionallySizedBox(widthFactor: .7, child: SkeletonBox(height: 14)),
+            ])),
+          ]))),
+      ],
+    ),
+  );
 }
 
 class MetaverseMarketDetailPage extends ConsumerStatefulWidget {
@@ -306,7 +353,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
         package: package, previous: previous,
         isUpdate: previous != null,
         confirmLabel: replace ? context.l10n.metaverse_replaceConfirm : null,
-        reviewNote: replace && previous != null
+        notice: replace && previous != null
             ? context.l10n.metaverse_replaceReview(previous.manifest.version, package.manifest.version)
             : null,
         initialBlocked: controller.reviewPermissions(package),
@@ -375,6 +422,14 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
                       '${entry.author} · ${entry.version}',
                       style: theme.textTheme.bodyMedium,
                     ),
+                    if (entry.publisherPreviewAvailable && entry.publisherKeyFingerprint != null)
+                      Padding(padding: const EdgeInsets.only(top: 6),
+                        child: Tooltip(message: l.metaverse_previewVerification,
+                          child: Row(children: [
+                            Icon(Symbols.key_rounded, size: 16, color: context.emphasis.accent),
+                            const SizedBox(width: 4),
+                            Flexible(child: Text(l.metaverse_authorSignature, style: theme.textTheme.labelMedium)),
+                          ]))),
                   ],
                 ),
               ),
@@ -402,14 +457,17 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
           const SizedBox(height: 20),
           SegmentedCardGroup(color: PageBackgroundScope.contentColor(
             context, theme.colorScheme.surfaceContainerLow), children: [
-            ExpansionTile(leading: Icon(entry.publisherKeyFingerprint == null ? Symbols.info_rounded : Symbols.verified_rounded),
-              trailing: const Icon(Symbols.expand_more_rounded),
+            MetaverseExpansionTile(leading: Icon(entry.publisherKeyFingerprint == null ? Symbols.info_rounded : Symbols.key_rounded),
               title: Text(!entry.publisherPreviewAvailable ? l.metaverse_publisherPending :
                 entry.publisherKeyFingerprint == null ? l.metaverse_publisherUnsigned : l.metaverse_publisherSigned),
               subtitle: entry.publisherKeyFingerprint == null ? null : Text('${entry.publisherKeyFingerprint!.substring(0,4)}…${entry.publisherKeyFingerprint!.substring(60)}', maxLines: 1, overflow: TextOverflow.ellipsis),
-              children: [ListTile(subtitle: SelectableText(entry.publisherKeyFingerprint ?? l.metaverse_previewVerification))],
+              children: [
+                if (entry.publisherKeyFingerprint case final fingerprint?)
+                  ListTile(subtitle: SelectableText(fingerprint)),
+                ListTile(subtitle: Text(l.metaverse_previewVerification)),
+              ],
             ),
-            ExpansionTile(title: Text(l.metaverse_permissionPreview), trailing: const Icon(Symbols.expand_more_rounded),
+            MetaverseExpansionTile(title: Text(l.metaverse_permissionPreview),
               subtitle: Text(entry.permissionsSummary == null ? l.metaverse_publisherPending :
                 l.metaverse_permissionPreviewCount(entry.permissionsSummary!.permissions.where((p) => p.manageable).length,
                   entry.permissionsSummary!.networkHosts.length)),
@@ -433,7 +491,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             children: [
               ListTile(
                 title: Text(l.metaverse_marketCompatibility),
-                subtitle: Text(entry.withdrawn ? '${l.metaverse_updateWithdrawn}\n${entry.reason}' : entry.compatible ? 'SDK ${entry.apiVersion}${entry.channel == 'preview' ? ' · ${l.metaverse_updatePreview}' : ''}' : l.metaverse_marketRequiresUpdate),
+                subtitle: Text(entry.withdrawn ? '${l.metaverse_updateWithdrawn}\n${entry.reason}' : entry.compatible ? 'API ${entry.apiVersion}${entry.channel == 'preview' ? ' · ${l.metaverse_updatePreview}' : ''}' : l.metaverse_marketRequiresUpdate),
               ),
               ListTile(
                 title: Text(l.metaverse_pluginSource),

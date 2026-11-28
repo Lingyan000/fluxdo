@@ -1,3 +1,4 @@
+import '../plugin/ui/metaverse_expansion_tile.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -453,7 +454,7 @@ class _DeveloperGuides extends StatelessWidget {
         'plugin.json',
         l.metaverse_developerManifestGuide,
       ),
-      (Symbols.code_rounded, 'main.js', l.metaverse_developerScriptGuide),
+      (Symbols.code_rounded, 'src/main.ts → main.js', l.metaverse_developerScriptGuide),
       (Symbols.storage_rounded, l.metaverse_pluginData, l.metaverse_developerStorageGuide),
       (Symbols.apps_rounded, l.metaverse_developerNavigationTitle, l.metaverse_developerNavigationGuide),
       (Symbols.widgets_rounded, 'ui.rfwtxt', l.metaverse_developerUiGuide),
@@ -474,19 +475,73 @@ class _DeveloperGuides extends StatelessWidget {
       ),
     ];
     return ListView(
+      key: const ValueKey('metaverse-developer-guides'),
       padding: const EdgeInsets.all(16),
       children: [
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [ListTile(
+            leading: Icon(Symbols.developer_mode_rounded, color: context.emphasis.accent),
+            title: Text(l.metaverse_devTitle),
+            subtitle: Text(l.metaverse_developerConnectGuide),
+            trailing: const Icon(Symbols.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push<void>(InteractionPageRoute(
+              builder: (_) => const MetaverseDevelopmentPage())),
+          )],
+        ),
+        const SizedBox(height: 24),
         Text(
           l.metaverse_developerLanguageTitle,
-          style: Theme.of(context).textTheme.titleLarge,
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 12),
         Text(l.metaverse_developerLanguageGuide),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerQuickStart, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
-        Text(
-          l.metaverse_developerTypeScriptGuide,
-          style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final step in [
+              (Symbols.create_new_folder_rounded, l.metaverse_developerCreate, l.metaverse_developerCreateGuide),
+              (Symbols.devices_rounded, l.metaverse_developerPreviewStep, l.metaverse_developerPreviewGuide),
+              (Symbols.inventory_2_rounded, l.metaverse_developerPackage, l.metaverse_developerPackageGuide),
+            ]) MetaverseExpansionTile(leading: Icon(step.$1), title: Text(step.$2),
+              children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SelectableText(step.$3))]),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.tonalIcon(icon: const Icon(Symbols.widgets_rounded),
+            label: Text(l.metaverse_developerComponents),
+            onPressed: () => DefaultTabController.of(context).animateTo(0)),
+          FilledButton.tonalIcon(icon: const Icon(Symbols.code_rounded),
+            label: Text(l.metaverse_developerApis),
+            onPressed: () => DefaultTabController.of(context).animateTo(1)),
+        ]),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerConcepts, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            MetaverseExpansionTile(title: const Text('TypeScript / JavaScript'),
+              children: [ListTile(subtitle: Text(l.metaverse_developerTypeScriptGuide))]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerVersions),
+              children: [
+                for (final item in [
+                  ('version', l.metaverse_developerVersionGuide),
+                  ('schema', l.metaverse_developerSchemaGuide),
+                  ('apiVersion', l.metaverse_developerApiVersionGuide),
+                  ('dataVersion', l.metaverse_developerDataVersionGuide),
+                ]) ListTile(title: Text(item.$1), subtitle: Text(item.$2)),
+              ]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerSurface),
+              children: [ListTile(subtitle: Text(l.metaverse_developerSurfaceGuide))]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerFeatures),
+              children: [ListTile(subtitle: Text(l.metaverse_developerFeaturesGuide))]),
+          ],
         ),
         const SizedBox(height: 24),
         Text(l.metaverse_pageChromeTitle, style: Theme.of(context).textTheme.titleMedium),
@@ -502,36 +557,50 @@ class _DeveloperGuides extends StatelessWidget {
           ),
           children: [
             for (final section in sections)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                titleAlignment: ListTileTitleAlignment.top,
+              MetaverseExpansionTile(
                 leading: Icon(section.$1, color: context.emphasis.accent),
                 title: Text(
                   section.$2,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                children: [Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Text(
                     section.$3,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                ),
+                )],
               ),
           ],
         ),
-        const SizedBox(height: 16),
-        ListTile(
-          title: Text(l.metaverse_marketRepository),
-          subtitle: const Text('Lingyan000/fluxdo-plugins'),
-          trailing: const Icon(Symbols.open_in_new_rounded),
-          onTap: () => launchExternalLink(
-            context,
-            'https://github.com/Lingyan000/fluxdo-plugins',
-          ),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerTroubleshooting, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final help in [
+              (l.metaverse_developerNetworkHelp, l.metaverse_developerNetworkAnswer),
+              (l.metaverse_developerLayoutHelp, l.metaverse_developerLayoutAnswer),
+              (l.metaverse_developerPairingHelp, l.metaverse_developerPairingAnswer),
+            ]) MetaverseExpansionTile(title: Text(help.$1),
+              children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: Text(help.$2))]),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final link in [
+              (l.metaverse_developerGuideLink, 'docs/plugins', 'https://github.com/Lingyan000/fluxdo/blob/dev/docs/plugins/README.md'),
+              (l.metaverse_developerToolsLink, 'Lingyan000/fluxdo-plugin-tools', 'https://github.com/Lingyan000/fluxdo-plugin-tools'),
+              (l.metaverse_marketRepository, 'Lingyan000/fluxdo-plugins', 'https://github.com/Lingyan000/fluxdo-plugins'),
+              (l.metaverse_developerPublishHelp, 'docs/plugins', 'https://github.com/Lingyan000/fluxdo/blob/dev/docs/plugins/publishing-and-troubleshooting.md'),
+            ]) ListTile(title: Text(link.$1),
+              subtitle: Text(link.$2, maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Symbols.open_in_new_rounded),
+              onTap: () => launchExternalLink(context, link.$3)),
+          ],
         ),
       ],
     );

@@ -1,3 +1,4 @@
+import 'metaverse_expansion_tile.dart';
 import 'package:app_icons/app_icons.dart';
 import '../metaverse_plugin_permission.dart';
 import '../metaverse_plugin_store.dart';
@@ -129,13 +130,20 @@ Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
   MetaversePluginManifest manifest, {
   required bool isUpdate,
   String? confirmLabel,
-  String? reviewNote,
+  String? notice,
   MetaversePluginPackage? package,
   InstalledMetaversePlugin? previous,
+  InstalledMetaversePlugin? restoredRelease,
   Set<MetaversePluginPermission>? initialBlocked,
 }) {
   final initial = initialBlocked ?? InstalledMetaversePlugin.reviewPermissions(manifest, null);
   final choices = <MetaversePluginPermission, bool>{};
+  final fingerprint = package != null
+      ? package.signature?.fingerprint : restoredRelease?.publisherKey;
+  final publisherChanged = previous?.publisherKey != null &&
+      (package != null || restoredRelease != null) &&
+      fingerprint != previous!.publisherKey &&
+      (package == null || package.signature?.previousFingerprint != previous.publisherKey);
   return AppBottomSheet.showDraggable<Map<MetaversePluginPermission, bool>>(
     context: context,
     title: manifest.localizedName(context.l10n.localeName),
@@ -177,15 +185,14 @@ Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
     bodyBuilder: (ctx, controller) => StatefulBuilder(
       builder: (_, update) => _InstallReview(
         manifest: manifest,
-        reviewNote: [
-          ?reviewNote,
-          if (package != null) package.signature == null ? ctx.l10n.metaverse_publisherUnsigned
-            : '${ctx.l10n.metaverse_publisherKey}\n${package.signature!.fingerprint}',
-          if (package != null && previous?.publisherKey != null && package.signature?.fingerprint != previous!.publisherKey &&
-              package.signature?.previousFingerprint != previous.publisherKey) ctx.l10n.metaverse_publisherChanged,
-          if (previous != null && manifest.expandedApprovalFrom(previous.manifest).isNotEmpty)
-            '${ctx.l10n.metaverse_updateChanges}\n${_approvalLabels(ctx, manifest.expandedApprovalFrom(previous.manifest)).join('、')}',
-        ].join('\n\n'),
+        notice: notice,
+        publisherKnown: package != null || restoredRelease != null,
+        fingerprint: fingerprint,
+        publisherWarning: publisherChanged
+            ? (restoredRelease == null ? ctx.l10n.metaverse_publisherChanged
+                : ctx.l10n.metaverse_publisherRollbackChanged) : null,
+        changes: previous == null ? const []
+            : _approvalLabels(ctx, manifest.expandedApprovalFrom(previous.manifest)),
         controller: controller,
         blocked: manifest.applyPermissionChoices(initial, choices),
         onChanged: (permission, allowed) => update(() {
@@ -207,14 +214,20 @@ class _InstallReview extends StatelessWidget {
     required this.controller,
     required this.blocked,
     required this.onChanged,
-    this.reviewNote,
+    this.notice,
+    required this.publisherKnown,
+    this.fingerprint,
+    this.publisherWarning,
+    required this.changes,
   });
   final Set<MetaversePluginPermission> blocked;
   final void Function(MetaversePluginPermission, bool) onChanged;
 
   final MetaversePluginManifest manifest;
   final ScrollController controller;
-  final String? reviewNote;
+  final String? notice, fingerprint, publisherWarning;
+  final bool publisherKnown;
+  final List<String> changes;
 
   @override
   Widget build(BuildContext context) {
@@ -251,7 +264,48 @@ class _InstallReview extends StatelessWidget {
           Text(manifest.localizedDescription(context.l10n.localeName), style: theme.textTheme.bodyMedium),
         ],
         const SizedBox(height: 24),
-        if (reviewNote != null) ...[Text(reviewNote!), const SizedBox(height: 16)],
+        if (publisherWarning case final warning?) ...[
+          _ReviewNotice(
+            title: l.metaverse_publisherChangedTitle, message: warning,
+            icon: Symbols.warning_rounded, color: theme.colorScheme.errorContainer,
+            foreground: theme.colorScheme.onErrorContainer,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (changes.isNotEmpty) ...[
+          _ReviewNotice(
+            title: l.metaverse_updateChanges, message: changes.join(' · '),
+            icon: Symbols.security_rounded, color: theme.colorScheme.secondaryContainer,
+            foreground: theme.colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (notice?.isNotEmpty == true || publisherKnown) ...[
+          SegmentedCardGroup(
+            color: PageBackgroundScope.contentColor(context, theme.colorScheme.surfaceContainerLow),
+            children: [
+              if (notice?.isNotEmpty == true)
+                ListTile(leading: const Icon(Symbols.info_rounded), title: Text(notice!)),
+              if (publisherKnown && fingerprint == null)
+                ListTile(leading: const Icon(Symbols.info_rounded),
+                  title: Text(l.metaverse_publisherUnsignedTitle),
+                  subtitle: Text(l.metaverse_publisherUnsigned)),
+              if (fingerprint case final fp?)
+                MetaverseExpansionTile(
+                  leading: const Icon(Symbols.key_rounded),
+                  title: Text(l.metaverse_publisherKey),
+                  subtitle: Text(fp.length > 8 ? '${fp.substring(0, 4)}…${fp.substring(fp.length - 4)}' : fp),
+                  children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      SelectableText(fp, style: theme.textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      Text(l.metaverse_signatureMeaning, style: theme.textTheme.bodySmall),
+                    ]))],
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
         MetaversePermissionList(manifest: manifest, blocked: blocked, onChanged: onChanged),
         const SizedBox(height: 20),
         Text(
@@ -263,6 +317,26 @@ class _InstallReview extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ReviewNotice extends StatelessWidget {
+  const _ReviewNotice({required this.title, required this.message,
+    required this.icon, required this.color, required this.foreground});
+  final String title, message;
+  final IconData icon;
+  final Color color, foreground;
+
+  @override
+  Widget build(BuildContext context) => SegmentedCardGroup(color: color, children: [
+    ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      titleAlignment: ListTileTitleAlignment.top,
+      leading: Icon(icon, color: foreground),
+      title: Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: foreground)),
+      subtitle: Padding(padding: const EdgeInsets.only(top: 4),
+        child: Text(message, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: foreground))),
+    ),
+  ]);
 }
 
 /// 索取凭证。凭证由宿主保存，脚本只能通过白名单请求间接使用。

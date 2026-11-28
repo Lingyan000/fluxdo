@@ -1,6 +1,6 @@
 # 元宇宙第三方插件
 
-开发入口见 [插件开发](plugins/README.md)。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」可调整生产组件参数、触发事件并运行 API 示例。
+如果你要开发第三方插件，请阅读 [插件开发指南](plugins/README.md)。本页面向宿主维护者，记录架构边界、安全模型与网络出口设计依据。
 
 ## 结构与职责
 
@@ -41,34 +41,7 @@ flowchart TD
 
 ## 界面描述
 
-rfw 的文本格式，只能 `import fluxdo`（宿主组件库）。数据用 `data.xxx` 读，事件用
-`event "名字" { 参数 }` 交给脚本：
-
-```
-import fluxdo;
-
-widget Card = Column(
-  crossAxisAlignment: "start",
-  children: [
-    Label(text: "当前积分", style: "labelMedium", color: "onSurfaceVariant"),
-    Gap(size: 4),
-    Label(text: data.balance, style: "headlineMedium", bold: true),
-    Button(
-      label: "刷新",
-      icon: "refresh",
-      variant: "tonal",
-      loading: data.loading,
-      onPressed: event "refresh" { },
-    ),
-  ],
-);
-```
-
-可用组件以[组件参考](plugins/components.md)和生产注册表 `createMetaverseWidgetLibrary` 为准。页面级组件提供列表、网格、详情、表单、固定操作区和自定义标题栏；基础组件提供布局、输入、图片、头像与加载占位。开发中心直接使用生产组件预览，SDK 的参数契约由同一注册表导出，避免另维护一份不完整的组件清单。
-
-颜色写主题色名（`primary`、`onSurfaceVariant`、`error`…）或 `0xAARRGGBB`；
-文字样式写主题名（`bodyMedium`、`titleMedium`、`headlineMedium`…）。
-数值参数 `16` 与 `16.0` 都接受。
+RFW 由宿主注册的原生组件渲染，资源只允许导入 `fluxdo`。语法、数据绑定、主题参数和交互示例见[组件参考](plugins/components.md)。生产注册表、SDK 参数契约与应用内开发中心示例保持一致；布局、滚动及点击归属由宿主统一处理。
 
 `Image` 默认只加载 `permissions.network` 中的 HTTPS 图片。声明
 `permissions.publicImages: true` 后，用户可在安装时授权加载其他公网域名的图片。
@@ -87,7 +60,7 @@ widget Card = Column(
 
 同一插件的多个界面共享运行实例，每个界面使用独立 `ctx.surface`。事件处理通过 `ctx.api` 关联界面和调用日志。返回页面收到 `page.resume`，脚本依据业务变化决定刷新。
 
-普通存储按插件隔离；声明论坛读取权限的插件由宿主进一步按论坛账号分区，其他服务的业务键由插件自行分隔。凭证由宿主按插件及账号安全保存。插件设置提供日志查看、导出、清空和数据重置。旧实例晚到回调通过代次检查阻止写回。API、配额和事件详情见 [API 参考](plugins/api.md)。
+普通存储按插件隔离。新插件通过 `storage.scopes` 声明 `shared` 和 `account`，默认范围由 `storage.default` 指定；账号区须获身份权限，宿主不允许指定其他账号。未声明显式作用域的旧清单按论坛、任务、通知或角标能力决定账号分区，否则使用遗留共享区。升级时不能把未归属的私有数据直接暴露到共享区；迁移契约见 [普通存储作用域](plugins/api.md#普通存储作用域)。凭证由宿主按插件及账号安全保存。插件设置提供日志查看、导出、清空和数据重置。旧实例晚到回调通过代次检查阻止写回。API、配额和事件详情见 [API 参考](plugins/api.md)。
 
 API 1 的通用网络、界面和手填 token 继续兼容。旧服务授权与订单协议的实现已删除，相关已安装插件可保留数据并更新。旧记录由通用迁移入口原样导出，服务插件负责解释和转换。
 

@@ -4,7 +4,240 @@
 
 清单默认最多声明 16 个页面。需要更多独立路由时，声明 `extendedPages` 可扩展到 32 个；总清单、脚本与界面容量限制仍适用。路由声明不会预先创建页面或发起请求。
 
-## API 2 通用能力
+| 场景 | 参考 |
+| --- | --- |
+| 先了解运行方式 | [环境与结果](#环境与结果)、[事件与上下文](#事件与上下文) |
+| 读取接口与保存数据 | [网络](#网络)、[插件数据](#插件数据)、[普通存储作用域](#普通存储作用域) |
+| 打开页面、浏览器和提示 | [页面与外部链接](#页面与外部链接)、[导航页面贡献](#导航页面贡献)、[能力发现与确认](#能力发现与确认) |
+| 权限申请、授权与付款 | [用户关闭权限时](#用户关闭权限时)、[权限、账号、凭证与支付](#权限账号凭证与支付) |
+| 论坛与后台工作 | [论坛只读接口与原生导航](#论坛只读接口与原生导航)、[定时任务、通知与角标](#定时任务通知与角标)、[SSE 实时事件](#sse-实时事件) |
+| 附件、验证和迁移 | [临时附件与私密图片](#临时附件与私密图片)、[人机验证](#人机验证)、[宿主环境、偏好与迁移](#宿主环境偏好与迁移) |
+
+## 环境与结果
+
+脚本可使用 JS 内置对象、`Promise`、`console`、`setTimeout`、`clearTimeout`、`fluxdo`。界面由 rfw 声明。模块代码需要在发布前打包进 `main.js`，运行时没有提供 Node 模块加载接口。
+
+除事件注册外，`fluxdo` 方法返回 Promise。宿主拒绝调用或发生网络错误时 Promise reject，JS 接收到 `Error`。业务 HTTP 错误通常仍返回响应对象，由插件检查 `status` 或 `ok`。当前错误信息包含中文描述和部分稳定代码，业务逻辑优先使用响应状态或明确的返回字段。
+
+以下签名使用类型说明便于阅读，运行时仍执行 JavaScript。
+
+## 事件与上下文
+
+### `fluxdo.on(name, handler)`
+
+注册 `(ctx, args) => void | Promise<void>`。同名事件再次注册会替换之前的处理函数。返回注销函数 `() => void`。处理函数抛错或返回 rejected Promise 时，运行时向日志桥报告错误。
+
+| 事件 | 触发时机 | 参数 |
+| --- | --- | --- |
+| `card.load` | 卡片实例创建 | 对象，可为空 |
+| `page.open` | 页面实例首次打开 | 对象，可为空 |
+| `page.hide` | 页面被路由覆盖、切换导航标签或应用进入后台 | `reason` 为 `route` 或 `app` |
+| `page.resume` | 页面恢复前台可见 | `reason` 为 `route` 或 `app` |
+| `card.refresh` | 用户刷新元宇宙服务页，不授予弹窗或导航的点击授权 | 空对象 |
+| `card.hide` / `card.resume` | 卡片所在标签隐藏或恢复 | 同页面的 `reason` |
+| `page.refresh` | 用户按底栏配置的刷新手势重复点击当前入口 | 空对象 |
+| `surface.close` | 界面实例关闭 | 对象，可为空 |
+| 自定义事件 | rfw 的 `event` 被用户操作触发 | rfw 中声明的参数与组件事件值 |
+
+页面初次打开只收到 `page.open`。被覆盖期间进入后台，恢复可见时 `reason` 可为 `app`。旧宿主可能缺少恢复事件或 `reason`。
+
+| `ctx` 成员 | 类型与用途 |
+| --- | --- |
+| `surface` | 本次界面实例标识，适合作为状态 Map 的键 |
+| `kind` | `card` 或 `page` |
+| `page` | 页面 ID，卡片为 `null` |
+| `params` | 页面参数对象，含导航或链接规则传入的值 |
+| `setData(key, value)` | 同步发出界面数据更新，返回 `undefined` |
+
+`setData` 的 key 长度为 1–64。数据支持 JSON 值，每次最多 20,000 个节点，最大深度 32。map 中的 null 被移除，列表中的 null 及顶层空值按空字符串处理。超限更新被忽略并报告。它只更新指定 surface。
+
+```js
+const pages = new Map();
+
+fluxdo.on('page.open', async (ctx) => {
+  const state = { revision: 0 };
+  pages.set(ctx.surface, state);
+  const revision = ++state.revision;
+  ctx.setData('loading', true);
+  try {
+    const response = await fluxdo.fetch('https://api.example.org/items');
+    if (!response.ok) throw new Error('读取失败');
+    if (pages.get(ctx.surface) === state && revision === state.revision) {
+      ctx.setData('items', response.json().items || []);
+    }
+  } finally {
+    if (pages.get(ctx.surface) === state) ctx.setData('loading', false);
+  }
+});
+
+fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
+```
+
+示例域名需要加入清单。并发搜索还应递增 revision，避免晚到的旧响应覆盖新结果。
+
+## 界面调用归属
+
+事件处理器提供 `ctx.api`，其方法与 `fluxdo` 的调用方法相同。使用 `ctx.api.fetch`、`ctx.api.storage` 等会将界面身份带入调用日志。界面关闭后其绑定调用会被拒绝。
+
+## 开发与事件释放
+
+fluxdo.on(name, handler) 返回撤销函数，只移除本次注册，不影响之后替换的同名处理器。开发运行器在模块成功替换后自动撤销旧事件和模块定时器；自建资源仍应放进 import.meta.hot.dispose。正式脚本不携带开发运行器。
+
+开发连接、热更新、模拟宿主与 CLI 命令见 [开发工具](development-tooling.md)。CLI 错误会包含 RFW/TS 文件位置；未提供模拟的外部 API 在测试中直接失败。开发协议错误 development_invalid_pairing 表示配对地址不符合回环协议，development_project_invalid 表示项目快照或容量无效，development_requires_api2 表示旧 API 版本不能作为开发实例，module_disposed 表示旧模块异步回调已失效。
+
+## 网络
+
+### `fluxdo.fetch(url, options?)`
+
+| 参数 | 类型 | 默认与说明 |
+| --- | --- | --- |
+| `url` | string | HTTPS 服务 URL，须通过清单网络范围校验 |
+| `options.method` | string | 默认 `GET`，支持 `GET`、`POST`、`PUT`、`PATCH`、`DELETE` |
+| `options.headers` | object | 默认空对象，Cookie 等受限头由宿主检查 |
+| `options.body` | JSON 值或 string | 对象自动 JSON 编码并补充 Content-Type，最大 256 KiB |
+| `options.credential` | string | 声明的具名凭证，由宿主按 origin、路径和方法注入 |
+
+返回 `{ status, headers, body, ok, json() }`。`body` 为字符串，`json()` 同步解析并可能抛出异常，`ok` 表示 HTTP 2xx。响应最大 1 MiB。重定向原样返回，插件需要对目标再次发起受检查请求。Set-Cookie 等敏感响应头被过滤。
+
+公开请求与带凭证请求都经过目标、方法和请求头检查。API 1 的普通 token 插件继续使用 `options.auth: true`。
+
+图片通过宿主 `Image` 组件加载，使用专用匿名请求。脚本 `fetch` 返回文本响应。
+
+## 插件数据
+
+| 方法 | 参数与结果 | 行为 |
+| --- | --- | --- |
+| `fluxdo.storage.get(key)` | string → Promise<JSON 值或 null> | 缺失键返回 null |
+| `fluxdo.storage.set(key, value)` | string、JSON 值 → Promise<null> | 保存普通数据，null/undefined 按删除处理 |
+| `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
+| `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
+
+键长度为 1–128，`@` 前缀保留给宿主使用。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。切换账号后旧账号实例不能读取或写入新账号。
+
+### 普通存储作用域
+
+新 API 2 插件使用 schema 12，声明 `requiredFeatures: ["storageScopes"]` 及 `storage: {"default":"account","scopes":["shared","account"]}`。账号范围同时需要 `permissions.identity: true`。所有普通存储方法接受最后一个可选参数 `{scope: "shared" | "account"}`；省略时使用清单的默认分区。只能选择声明的分区，不能指定账号 ID。账号范围在未登录或身份权限关闭时拒绝，共享范围仍可使用。
+
+```js
+await ctx.api.storage.set('draft', {quantity: 1}); // 当前账号
+await ctx.api.storage.set('categories', [{id: 1, name: '工具'}], {scope: 'shared'});
+const categories = await ctx.api.storage.get('categories', {scope: 'shared'});
+```
+
+`shared` 是同一插件跨账号共享的数据，不能放订单、私信或凭证。新增可读范围或改变默认分区需要重新审阅。旧账号分区不会自动变成共享数据；从遗留共享模式升级到同时具有账号区的插件，使用 `storage.partition` 归属旧数据。显式共享区使用独立命名空间，未归属的遗留数据不会被共享读取。已经声明显式作用域的插件不能通过普通升级删掉声明；回退使用对应版本的数据快照。
+
+未声明 `storage` 的旧清单继续兼容：声明论坛、任务、通知或底栏角标能力时使用账号分区，否则使用遗留共享区。新插件应明确声明，避免后来增加能力时意外改变数据归属。SDK 脚手架默认声明仅共享区，加入账号功能时需一起调整清单。
+
+`storage.compareAndSet(key, expected, value)` 在同一事务内比较 JSON 值、写入并返回布尔值。`null` 表示缺少键，写入 `null` 会删除键。页面和任务同时修改同一数据时，失败的一方应重新读取后再合并。需要此能力的插件声明 `atomicStorage`。
+
+用户可从插件管理重置本地数据和服务会话。重置会停止实例，拒绝旧代次排队写入，并等待正在写入的数据落盘后清理。批量修改通过 `setMany` 原子提交。
+
+### `storage.setMany(entries)`
+
+原子修改当前插件的多个键，参数为对象，值为 null 表示删除。最多 128 个键，单键长度与整体存储容量沿用 `storage.set` 的限制。返回 null，任意校验或写入失败时保留原数据。可在一次操作中保存新记录并移除旧记录。
+
+## 页面与外部链接
+
+| 方法 | 参数与结果 | 行为 |
+| --- | --- | --- |
+| `fluxdo.navigate(page, params?, options?)` | string、object → Promise<null> | 打开清单声明的页面，Promise 在发起导航后完成 |
+| `fluxdo.prepareNavigation(page, options?)` | string → Promise<function(params)> | 用户点击时预约一次目标页面，返回可用于异步完成后的导航函数 |
+| `fluxdo.openUrl(url)` | string → Promise<null> | 通过应用链接策略打开 HTTP(S) 地址 |
+| `fluxdo.browser.open(url, options?)` | string、`{mode?}` → Promise<null> | `mode` 可选 `ask`（默认）、`inApp`、`external`、`preference` |
+| `fluxdo.session.login()` | Promise<null> | 打开清单的 `webLogin` 地址 |
+| `fluxdo.session.open(path)` | string → Promise<null> | 打开 `webLogin` 同源的绝对路径，例如 `/orders` |
+| `fluxdo.toast(message, type?)` | string、string → Promise<null> | 存在可见界面时显示带插件身份的提示，默认 info |
+
+普通导航、授权和网页入口需要用户操作后的 10 秒内调用，一次点击可消耗一次普通界面操作。同一时间只允许一个正在执行的界面操作。Toast 最短间隔一秒，消息最多 200 字符，具体提示样式由宿主 delegate 决定。
+
+`options: {replace: true}` 使用 `navigationReplacement` 能力，替换当前插件的普通页面；
+返回时不再进入已经完成的表单。不能替换底栏主页、其他插件页面或弹层。目标页以普通页面展示。
+开发预览也支持替换；生产环境的替换始终受用户点击或有效预约约束。
+
+预约绑定目标页面、替换方式、原始 surface 和账号，成功使用后失效。新的插件点击、离开原页面、关闭页面或应用进入后台使预约失效。本次原生确认框可临时覆盖页面，待 `page.resume` 后调用预约函数。预约可跨越普通点击的 10 秒窗口。`prepareNavigation` 自 `8679b7ab` 提供，使用前检查方法是否存在。
+
+`browser.open` 需要用户点击触发。`inApp` 直接使用内置浏览器，`external` 使用外部浏览器，`ask` 每次展示打开方式选择，`preference` 沿用应用设置。直接打开模式仍执行链接安全检查，高风险地址保留确认，阻止地址按应用规则处理。
+
+```js
+await ctx.api.browser.open("https://example.org", {mode: "inApp"});
+```
+
+旧宿主应先检查 `ctx.api.browser?.open` 是否存在，再决定使用 `openUrl`。组件库当前提供原生 RFW 组件，网页展示通过浏览器 API 打开独立页面。
+
+网页会话在浏览器中管理。网页入口的 Promise 不携带登录结果，插件应通过服务协议确认登录状态。
+
+## 导航页面贡献
+
+schema 11 支持在普通页面中声明 `navigation: {label, icon?}`，`label` 为 1–12 字符，图标使用现有组件库图标名，省略时继承插件图标。弹层页面不能作为底栏入口。
+
+```json
+{
+  "schema": 11,
+  "apiVersion": 2,
+  "requiredFeatures": ["navigationEntries", "forumRead"],
+  "permissions": {"network": [], "identity": true, "forum": ["activity"]},
+  "pages": [{
+    "id": "activity", "title": "用户动态", "widget": "Activity", "scroll": false,
+    "navigation": {"label": "动态", "icon": "person"}
+  }]
+}
+```
+
+这是清单片段，仍需填写插件身份与资源字段。用户选择后才加入导航，脚本不能自行添加或重排。稳定标识由插件 ID 和页面 ID 组成，修改标题或图标不会改变配置。卸载、禁用、挂起、升级移除页面时，实际导航隐藏入口并回到可用页面；设置保留原位置供用户移除或日后恢复。恢复后不会强行切换当前页面。
+
+第一次选中才启动页面，切换标签保留 RFW 数据与滚动位置，返回仅发 `page.resume`。插件所有界面都不可见时，宿主冻结页面定时器；恢复后继续剩余延时。需要关闭页面后更新的插件应声明独立任务。
+
+底栏重复点击的回顶动作滚动宿主页面容器；刷新动作发 `page.refresh`，由插件注册处理器。推荐使用 `scroll:false` 配合 `PageLayout`、`ListPage` 或 `GridPage`，避免自行嵌套滚动容器。
+
+## 多服务链接接管
+
+宿主按已启用服务的静态链接规则收集候选，第三方插件不能覆盖论坛内链。单候选直接进入页面；多个候选由用户选择服务和目标页面，或选择浏览器。取消选择会终止本次点击。用户可按域名记住选择，偏好仅在多个候选时生效；选择结束时再次核对候选，脚本不能指定优先级。
+
+插件默认选择在停用、卸载、暂停、撤销链接权限或不再声明该域名时失效。浏览器偏好在该域名最后一个可用服务消失时清理，候选数量暂时减少不会清除选择；域名匹配包含通配子域，路径参数不参与偏好回收。插件管理页的更多菜单可重置全部已记住的选择，取消确认不改变偏好。保存失败恢复仍有效的选择，期间发生的停用或新选择优先，迟到写入不能覆盖重置结果。
+
+## 能力发现与确认
+
+### `host.features()`
+
+返回当前宿主支持的能力名称数组。必需能力在 schema 10 或更高版本的 `requiredFeatures` 中声明。可选功能用运行时查询决定是否展示。完整名称见[宿主能力注册表](../../packages/fluxdo_plugin_runtime/lib/src/plugin_features.dart)。
+
+### `dialogs.confirm({title, message, confirmLabel, agreement?})`
+
+显示宿主原生确认弹框，返回 boolean。需要当前页面的用户操作。`agreement` 可含 `{label, url}`，url 必须是 HTTPS；宿主提供阅读入口和默认未勾选的同意项，未勾选无法确认。取消、关闭均返回 false。宿主不会替插件保存同意状态。
+
+确认成功后只续接一次用户操作资格，可调用 Connect 或导航；账号切换、页面销毁或应用仍在后台时不续接。Connect 仍显示自己的账号授权确认，服务条款不代替账号授权。
+
+```js
+fluxdo.on('login', async ctx => {
+  if (!await ctx.api.dialogs.confirm({
+    title: '登录服务', message: '请阅读并同意服务条款。', confirmLabel: '继续',
+    agreement: {label: '服务条款', url: 'https://service.example/terms'}
+  })) return;
+  // 服务自己的初始化、PKCE、回调交换由插件实现。
+  const callback = await ctx.api.connect.authorize(authorizationUrl);
+  if (!callback) return;
+});
+```
+
+完整 TypeScript 签名见 [独立 SDK 类型声明](https://github.com/Lingyan000/fluxdo-plugin-tools/blob/main/packages/sdk/types/global.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。
+
+## 控制台与定时器
+
+| 调用 | 参数与行为 |
+| --- | --- |
+| `console.log(...values)` | 字符串或 JSON 序列化值，级别 info |
+| `console.info(...values)` | 同 log |
+| `console.debug(...values)` | 当前实现映射到 info |
+| `console.warn(...values)` | 级别 warn |
+| `console.error(...values)` | 级别 error |
+| `setTimeout(fn, ms, ...args)` | 返回本运行实例内的计时器 ID，非函数返回 0 |
+| `clearTimeout(id)` | 取消计时器，返回 undefined |
+
+插件设置可按等级、类型和来源筛选日志，并单独清空或导出。`pluginId` 标识插件，`runtimeId` 标识运行实例，`emitter` 区分宿主和插件；界面调用还带 `surfaceId`。网络核心按 `coreRequestId` 关联异步记录，未关联请求的共享连接事件只归宿主。系统任务的已脱敏日志限量暂存，下次在前台归档。每实例每分钟最多记录 120 条 console 日志。
+
+每个运行时最多 64 个计时器，延时最大 10 分钟，负值按 0 处理。计时器超额时当前桥会忽略设置请求。并发宿主调用最多 32 个，surface 最多 16 个。最后一块界面关闭后，宿主默认 30 秒释放运行实例。单条引擎指令默认 5 秒看门狗，具体资源隔离局限见架构审计。
+
+## 权限、账号、凭证与支付
 
 服务插件负责发起授权、处理回调、交换服务凭证、调用业务接口及刷新交付结果。宿主提供 Connect 账号授权、按范围注入凭证、原生 LDC 收银台。宿主结合清单和用户当前的权限选择检查每次调用。
 
@@ -94,10 +327,6 @@ const response = await ctx.api.fetch('https://api.example.org/v2/me', {
 
 对 UTF-8 文本计算 SHA-256，返回小写十六进制字符串。输入上限 1 MiB，可用于本地记录索引与数据摘要。
 
-### `storage.setMany(entries)`
-
-原子修改当前插件的多个键，参数为对象，值为 null 表示删除。最多 128 个键，单键长度与整体存储容量沿用 `storage.set` 的限制。返回 null，任意校验或写入失败时保留原数据。可在一次操作中保存新记录并移除旧记录。
-
 ### `payments.request({provider, url, reference, amount})`
 
 用户点击后打开应用原生收银台。当前 provider 为 `linuxDoCredit`，url 使用 LDC 收银台地址，reference 是服务订单号，amount 推荐传十进制金额字符串。宿主核对 LDC 返回的订单号、付款账号和金额，付款确认使用 LDC 交易 ID 校验收款账号、金额及状态。支付密码和生物识别由应用管理。
@@ -105,228 +334,6 @@ const response = await ctx.api.fetch('https://api.example.org/v2/me', {
 返回收银台结果 `{state: 'paid'}`，已提交但尚未确认时返回 `{state: 'pending'}`，提交前关闭返回 null。付款成功后，插件刷新自己的订单与交付接口。测试和应用内开发中心使用模拟桥。
 
 API 2 的 `user.get()` 返回当前账号的 `{id, username}`，需要 identity 权限。通用网络、存储、界面与导航接口沿用下文签名。API 1 仅保留普通网络、存储、界面和手填 token 兼容。服务授权及订单协议已迁入插件脚本。
-
-## 环境与结果
-
-脚本可使用 JS 内置对象、`Promise`、`console`、`setTimeout`、`clearTimeout`、`fluxdo`。界面由 rfw 声明。模块代码需要在发布前打包进 `main.js`，运行时没有提供 Node 模块加载接口。
-
-除事件注册外，`fluxdo` 方法返回 Promise。宿主拒绝调用或发生网络错误时 Promise reject，JS 接收到 `Error`。业务 HTTP 错误通常仍返回响应对象，由插件检查 `status` 或 `ok`。当前错误信息包含中文描述和部分稳定代码，业务逻辑优先使用响应状态或明确的返回字段。
-
-以下签名使用类型说明便于阅读，运行时仍执行 JavaScript。
-
-## 事件与上下文
-
-### `fluxdo.on(name, handler)`
-
-注册 `(ctx, args) => void | Promise<void>`。同名事件再次注册会替换之前的处理函数。返回注销函数 `() => void`。处理函数抛错或返回 rejected Promise 时，运行时向日志桥报告错误。
-
-| 事件 | 触发时机 | 参数 |
-| --- | --- | --- |
-| `card.load` | 卡片实例创建 | 对象，可为空 |
-| `page.open` | 页面实例首次打开 | 对象，可为空 |
-| `page.hide` | 页面被路由覆盖、切换导航标签或应用进入后台 | `reason` 为 `route` 或 `app` |
-| `page.resume` | 页面恢复前台可见 | `reason` 为 `route` 或 `app` |
-| `card.refresh` | 用户刷新元宇宙服务页，不授予弹窗或导航的点击授权 | 空对象 |
-| `card.hide` / `card.resume` | 卡片所在标签隐藏或恢复 | 同页面的 `reason` |
-| `page.refresh` | 用户按底栏配置的刷新手势重复点击当前入口 | 空对象 |
-| `surface.close` | 界面实例关闭 | 对象，可为空 |
-| 自定义事件 | rfw 的 `event` 被用户操作触发 | rfw 中声明的参数与组件事件值 |
-
-页面初次打开只收到 `page.open`。被覆盖期间进入后台，恢复可见时 `reason` 可为 `app`。旧宿主可能缺少恢复事件或 `reason`。
-
-| `ctx` 成员 | 类型与用途 |
-| --- | --- |
-| `surface` | 本次界面实例标识，适合作为状态 Map 的键 |
-| `kind` | `card` 或 `page` |
-| `page` | 页面 ID，卡片为 `null` |
-| `params` | 页面参数对象，含导航或链接规则传入的值 |
-| `setData(key, value)` | 同步发出界面数据更新，返回 `undefined` |
-
-`setData` 的 key 长度为 1–64。数据支持 JSON 值，每次最多 20,000 个节点，最大深度 32。map 中的 null 被移除，列表中的 null 及顶层空值按空字符串处理。超限更新被忽略并报告。它只更新指定 surface。
-
-```js
-const pages = new Map();
-
-fluxdo.on('page.open', async (ctx) => {
-  const state = { revision: 0 };
-  pages.set(ctx.surface, state);
-  const revision = ++state.revision;
-  ctx.setData('loading', true);
-  try {
-    const response = await fluxdo.fetch('https://api.example.org/items');
-    if (!response.ok) throw new Error('读取失败');
-    if (pages.get(ctx.surface) === state && revision === state.revision) {
-      ctx.setData('items', response.json().items || []);
-    }
-  } finally {
-    if (pages.get(ctx.surface) === state) ctx.setData('loading', false);
-  }
-});
-
-fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
-```
-
-示例域名需要加入清单。并发搜索还应递增 revision，避免晚到的旧响应覆盖新结果。
-
-## 网络
-
-### `fluxdo.fetch(url, options?)`
-
-| 参数 | 类型 | 默认与说明 |
-| --- | --- | --- |
-| `url` | string | HTTPS 服务 URL，须通过清单网络范围校验 |
-| `options.method` | string | 默认 `GET`，支持 `GET`、`POST`、`PUT`、`PATCH`、`DELETE` |
-| `options.headers` | object | 默认空对象，Cookie 等受限头由宿主检查 |
-| `options.body` | JSON 值或 string | 对象自动 JSON 编码并补充 Content-Type，最大 256 KiB |
-| `options.credential` | string | 声明的具名凭证，由宿主按 origin、路径和方法注入 |
-
-返回 `{ status, headers, body, ok, json() }`。`body` 为字符串，`json()` 同步解析并可能抛出异常，`ok` 表示 HTTP 2xx。响应最大 1 MiB。重定向原样返回，插件需要对目标再次发起受检查请求。Set-Cookie 等敏感响应头被过滤。
-
-公开请求与带凭证请求都经过目标、方法和请求头检查。API 1 的普通 token 插件继续使用 `options.auth: true`。
-
-图片通过宿主 `Image` 组件加载，使用专用匿名请求。脚本 `fetch` 返回文本响应。
-
-## 插件数据
-
-| 方法 | 参数与结果 | 行为 |
-| --- | --- | --- |
-| `fluxdo.storage.get(key)` | string → Promise<JSON 值或 null> | 缺失键返回 null |
-| `fluxdo.storage.set(key, value)` | string、JSON 值 → Promise<null> | 保存普通数据，null/undefined 按删除处理 |
-| `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
-| `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
-
-键长度为 1–128，`@` 前缀保留给宿主使用。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。切换账号后旧账号实例不能读取或写入新账号。
-
-### 普通存储作用域
-
-新 API 2 插件使用 schema 12，声明 `requiredFeatures: ["storageScopes"]` 及 `storage: {"default":"account","scopes":["shared","account"]}`。账号范围同时需要 `permissions.identity: true`。所有普通存储方法接受最后一个可选参数 `{scope: "shared" | "account"}`；省略时使用清单的默认分区。只能选择声明的分区，不能指定账号 ID。账号范围在未登录或身份权限关闭时拒绝，共享范围仍可使用。
-
-```js
-await ctx.api.storage.set('draft', {quantity: 1}); // 当前账号
-await ctx.api.storage.set('categories', [{id: 1, name: '工具'}], {scope: 'shared'});
-const categories = await ctx.api.storage.get('categories', {scope: 'shared'});
-```
-
-`shared` 是同一插件跨账号共享的数据，不能放订单、私信或凭证。新增可读范围或改变默认分区需要重新审阅。旧账号分区不会自动变成共享数据；从遗留共享模式升级到同时具有账号区的插件，使用 `storage.partition` 归属旧数据。显式共享区使用独立命名空间，未归属的遗留数据不会被共享读取。已经声明显式作用域的插件不能通过普通升级删掉声明；回退使用对应版本的数据快照。
-
-未声明 `storage` 的旧清单继续兼容：声明论坛、任务、通知或底栏角标能力时使用账号分区，否则使用遗留共享区。新插件应明确声明，避免后来增加能力时意外改变数据归属。SDK 脚手架默认声明仅共享区，加入账号功能时需一起调整清单。
-
-`storage.compareAndSet(key, expected, value)` 在同一事务内比较 JSON 值、写入并返回布尔值。`null` 表示缺少键，写入 `null` 会删除键。页面和任务同时修改同一数据时，失败的一方应重新读取后再合并。需要此能力的插件声明 `atomicStorage`。
-
-用户可从插件管理重置本地数据和服务会话。重置会停止实例，拒绝旧代次排队写入，并等待正在写入的数据落盘后清理。批量修改通过 `setMany` 原子提交。
-
-## API 1 手填凭证兼容
-
-旧插件的 token 模式仍支持 `auth.status()`、`auth.request()`、`auth.signOut()`。状态返回 `{required, authorized}`，request 仅由用户点击触发并收集手填凭证，signOut 删除本地凭证。新插件使用本页 API 2 具名凭证。
-
-旧版服务协议清单保留在已安装列表中，显示更新提示。更新时按插件导出旧记录，由插件解释和迁移。新版安装器拒绝旧服务协议，宿主桥和 SDK 已移除 `auth.query` 与 `checkout`。
-
-## 页面与外部链接
-
-| 方法 | 参数与结果 | 行为 |
-| --- | --- | --- |
-| `fluxdo.navigate(page, params?, options?)` | string、object → Promise<null> | 打开清单声明的页面，Promise 在发起导航后完成 |
-| `fluxdo.prepareNavigation(page, options?)` | string → Promise<function(params)> | 用户点击时预约一次目标页面，返回可用于异步完成后的导航函数 |
-| `fluxdo.openUrl(url)` | string → Promise<null> | 通过应用链接策略打开 HTTP(S) 地址 |
-| `fluxdo.browser.open(url, options?)` | string、`{mode?}` → Promise<null> | `mode` 可选 `ask`（默认）、`inApp`、`external`、`preference` |
-| `fluxdo.session.login()` | Promise<null> | 打开清单的 `webLogin` 地址 |
-| `fluxdo.session.open(path)` | string → Promise<null> | 打开 `webLogin` 同源的绝对路径，例如 `/orders` |
-| `fluxdo.toast(message, type?)` | string、string → Promise<null> | 存在可见界面时显示带插件身份的提示，默认 info |
-
-普通导航、授权和网页入口需要用户操作后的 10 秒内调用，一次点击可消耗一次普通界面操作。同一时间只允许一个正在执行的界面操作。Toast 最短间隔一秒，消息最多 200 字符，具体提示样式由宿主 delegate 决定。
-
-`options: {replace: true}` 使用 `navigationReplacement` 能力，替换当前插件的普通页面；
-返回时不再进入已经完成的表单。不能替换底栏主页、其他插件页面或弹层。目标页以普通页面展示。
-开发预览也支持替换；生产环境的替换始终受用户点击或有效预约约束。
-
-预约绑定目标页面、替换方式、原始 surface 和账号，成功使用后失效。新的插件点击、离开原页面、关闭页面或应用进入后台使预约失效。本次原生确认框可临时覆盖页面，待 `page.resume` 后调用预约函数。预约可跨越普通点击的 10 秒窗口。`prepareNavigation` 自 `8679b7ab` 提供，使用前检查方法是否存在。
-
-`browser.open` 需要用户点击触发。`inApp` 直接使用内置浏览器，`external` 使用外部浏览器，`ask` 每次展示打开方式选择，`preference` 沿用应用设置。直接打开模式仍执行链接安全检查，高风险地址保留确认，阻止地址按应用规则处理。
-
-```js
-await ctx.api.browser.open("https://example.org", {mode: "inApp"});
-```
-
-旧宿主应先检查 `ctx.api.browser?.open` 是否存在，再决定使用 `openUrl`。组件库当前提供原生 RFW 组件，网页展示通过浏览器 API 打开独立页面。
-
-网页会话在浏览器中管理。网页入口的 Promise 不携带登录结果，插件应通过服务协议确认登录状态。
-
-## 控制台与定时器
-
-| 调用 | 参数与行为 |
-| --- | --- |
-| `console.log(...values)` | 字符串或 JSON 序列化值，级别 info |
-| `console.info(...values)` | 同 log |
-| `console.debug(...values)` | 当前实现映射到 info |
-| `console.warn(...values)` | 级别 warn |
-| `console.error(...values)` | 级别 error |
-| `setTimeout(fn, ms, ...args)` | 返回本运行实例内的计时器 ID，非函数返回 0 |
-| `clearTimeout(id)` | 取消计时器，返回 undefined |
-
-插件设置可按等级、类型和来源筛选日志，并单独清空或导出。`pluginId` 标识插件，`runtimeId` 标识运行实例，`emitter` 区分宿主和插件；界面调用还带 `surfaceId`。网络核心按 `coreRequestId` 关联异步记录，未关联请求的共享连接事件只归宿主。系统任务的已脱敏日志限量暂存，下次在前台归档。每实例每分钟最多记录 120 条 console 日志。
-
-每个运行时最多 64 个计时器，延时最大 10 分钟，负值按 0 处理。计时器超额时当前桥会忽略设置请求。并发宿主调用最多 32 个，surface 最多 16 个。最后一块界面关闭后，宿主默认 30 秒释放运行实例。单条引擎指令默认 5 秒看门狗，具体资源隔离局限见架构审计。
-
-## 界面调用归属
-
-事件处理器提供 `ctx.api`，其方法与 `fluxdo` 的调用方法相同。使用 `ctx.api.fetch`、`ctx.api.storage` 等会将界面身份带入调用日志。界面关闭后其绑定调用会被拒绝。
-
-## 能力发现与确认
-
-### `host.features()`
-
-返回当前宿主支持的能力名称数组。必需能力在 schema 10 或更高版本的 `requiredFeatures` 中声明。可选功能用运行时查询决定是否展示。完整名称见[宿主能力注册表](../../packages/fluxdo_plugin_runtime/lib/src/plugin_features.dart)。
-
-### `dialogs.confirm({title, message, confirmLabel, agreement?})`
-
-显示宿主原生确认弹框，返回 boolean。需要当前页面的用户操作。`agreement` 可含 `{label, url}`，url 必须是 HTTPS；宿主提供阅读入口和默认未勾选的同意项，未勾选无法确认。取消、关闭均返回 false。宿主不会替插件保存同意状态。
-
-确认成功后只续接一次用户操作资格，可调用 Connect 或导航；账号切换、页面销毁或应用仍在后台时不续接。Connect 仍显示自己的账号授权确认，服务条款不代替账号授权。
-
-```js
-fluxdo.on('login', async ctx => {
-  if (!await ctx.api.dialogs.confirm({
-    title: '登录服务', message: '请阅读并同意服务条款。', confirmLabel: '继续',
-    agreement: {label: '服务条款', url: 'https://service.example/terms'}
-  })) return;
-  // 服务自己的初始化、PKCE、回调交换由插件实现。
-  const callback = await ctx.api.connect.authorize(authorizationUrl);
-  if (!callback) return;
-});
-```
-
-完整 TypeScript 签名见 [独立 SDK 类型声明](https://github.com/Lingyan000/fluxdo-plugin-tools/blob/main/packages/sdk/types/global.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。
-
-
-## 开发与事件释放
-
-fluxdo.on(name, handler) 返回撤销函数，只移除本次注册，不影响之后替换的同名处理器。开发运行器在模块成功替换后自动撤销旧事件和模块定时器；自建资源仍应放进 import.meta.hot.dispose。正式脚本不携带开发运行器。
-
-开发连接、热更新、模拟宿主与 CLI 命令见 [开发工具](development-tooling.md)。CLI 错误会包含 RFW/TS 文件位置；未提供模拟的外部 API 在测试中直接失败。开发协议错误 development_invalid_pairing 表示配对地址不符合回环协议，development_project_invalid 表示项目快照或容量无效，development_requires_api2 表示旧 API 版本不能作为开发实例，module_disposed 表示旧模块异步回调已失效。
-
-
-## 导航页面贡献
-
-schema 11 支持在普通页面中声明 `navigation: {label, icon?}`，`label` 为 1–12 字符，图标使用现有组件库图标名，省略时继承插件图标。弹层页面不能作为底栏入口。
-
-```json
-{
-  "schema": 11,
-  "apiVersion": 2,
-  "requiredFeatures": ["navigationEntries", "forumRead"],
-  "permissions": {"network": [], "identity": true, "forum": ["activity"]},
-  "pages": [{
-    "id": "activity", "title": "用户动态", "widget": "Activity", "scroll": false,
-    "navigation": {"label": "动态", "icon": "person"}
-  }]
-}
-```
-
-这是清单片段，仍需填写插件身份与资源字段。用户选择后才加入导航，脚本不能自行添加或重排。稳定标识由插件 ID 和页面 ID 组成，修改标题或图标不会改变配置。卸载、禁用、挂起、升级移除页面时，实际导航隐藏入口并回到可用页面；设置保留原位置供用户移除或日后恢复。恢复后不会强行切换当前页面。
-
-第一次选中才启动页面，切换标签保留 RFW 数据与滚动位置，返回仅发 `page.resume`。插件所有界面都不可见时，宿主冻结页面定时器；恢复后继续剩余延时。需要关闭页面后更新的插件应声明独立任务。
-
-底栏重复点击的回顶动作滚动宿主页面容器；刷新动作发 `page.refresh`，由插件注册处理器。推荐使用 `scroll:false` 配合 `PageLayout`、`ListPage` 或 `GridPage`，避免自行嵌套滚动容器。
 
 ## 论坛只读接口与原生导航
 
@@ -471,8 +478,8 @@ fluxdo.on('files.invalidated', ctx => { /* 清空已选文件和上传状态。 
 
 从公共数据切换到账号分区时，声明 `accountDataMigration` 并处理 `storage.partition`。该事件接收 `{accountId, legacy, account}`，返回新的 `{legacy, account}`，只在无网络、凭证和界面能力的隔离引擎中执行；迁移与正常页面都无法读取其他账号分区。必须保留无法归属的数据、处理冲突并移除已经消费的旧记录。执行时机、权限和并发规则同上文链接。
 
-## 多服务链接接管
+## API 1 手填凭证兼容
 
-宿主按已启用服务的静态链接规则收集候选，第三方插件不能覆盖论坛内链。单候选直接进入页面；多个候选由用户选择服务和目标页面，或选择浏览器。取消选择会终止本次点击。用户可按域名记住选择，偏好仅在多个候选时生效；选择结束时再次核对候选，脚本不能指定优先级。
+旧插件的 token 模式仍支持 `auth.status()`、`auth.request()`、`auth.signOut()`。状态返回 `{required, authorized}`，request 仅由用户点击触发并收集手填凭证，signOut 删除本地凭证。新插件使用本页 API 2 具名凭证。
 
-插件默认选择在停用、卸载、暂停、撤销链接权限或不再声明该域名时失效。浏览器偏好在该域名最后一个可用服务消失时清理，候选数量暂时减少不会清除选择；域名匹配包含通配子域，路径参数不参与偏好回收。插件管理页的更多菜单可重置全部已记住的选择，取消确认不改变偏好。保存失败恢复仍有效的选择，期间发生的停用或新选择优先，迟到写入不能覆盖重置结果。
+旧版服务协议清单保留在已安装列表中，显示更新提示。更新时按插件导出旧记录，由插件解释和迁移。新版安装器拒绝旧服务协议，宿主桥和 SDK 已移除 `auth.query` 与 `checkout`。

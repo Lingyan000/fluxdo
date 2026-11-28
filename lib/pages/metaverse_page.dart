@@ -242,6 +242,20 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                 for (final item in cardLayout.where((item) => item.visible))
                   for (final service in services.where((s) => s.isThirdParty && s.id == item.id))
                     ..._buildService(context, service, container),
+                if (!services.any((service) => service.isThirdParty)) ...[
+                  SegmentedCardGroup(
+                    color: PageBackgroundScope.contentColor(context, theme.colorScheme.surfaceContainerLow),
+                    children: [ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: Icon(Symbols.explore_rounded, color: context.emphasis.accent),
+                      title: Text(context.l10n.metaverse_discoverPlugins),
+                      subtitle: Text(context.l10n.metaverse_discoverPluginsNote),
+                      trailing: const Icon(Symbols.chevron_right_rounded),
+                      onTap: () => tabs.animateTo(1),
+                    )],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _buildAddServiceItem(theme),
                 SizedBox(height: 24 + MediaQuery.paddingOf(context).bottom),
               ]),

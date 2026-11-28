@@ -80,7 +80,7 @@ class _RestoreState extends ConsumerState<MetaverseRestorePage> {
           publisherKey: item['publisherKey'] as String?,
         ),
         isUpdate: controller.byId(package.manifest.id) != null,
-        reviewNote: context.l10n.metaverse_restoreNote,
+        notice: context.l10n.metaverse_restoreNote,
       );
       if (choices == null) return;
       await controller.restoreBackup(package, item, choices);

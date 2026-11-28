@@ -38,6 +38,10 @@ import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_provi
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_card_layout_page.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_development_page.dart';
+import 'package:fluxdo/modules/metaverse/developer/metaverse_developer_page.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_package_signature.dart';
 import 'package:fluxdo/modules/metaverse/developer/session/development_session.dart';
 
 import '../../helpers/preview_fonts.dart';
@@ -236,6 +240,96 @@ void main() {
   }
 
   for (final dark in [false, true]) {
+    testWidgets('安装审阅分层并展开指纹，窄屏大字背景 $dark', (tester) async {
+      tester.view.physicalSize = const Size(320, 780);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final old = InstalledMetaversePlugin(
+        manifest: MetaversePluginManifest.parse({..._target.manifest.raw,
+          'permissions': {'network': [], 'identity': true}, 'links': []}),
+        source: installed.source, publisherKey: 'b' * 64,
+      );
+      await tester.pumpWidget(app(Scaffold(body: Builder(builder: (context) => TextButton(
+        onPressed: () => showMetaversePluginInstallSheet(context, _target.manifest,
+          isUpdate: true, previous: old, package: _target, notice: S.current.metaverse_restoreNote),
+        child: const Text('review'),
+      ))), dark: dark, scale: 1.4, background: true));
+      await tester.tap(find.text('review'));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_publisherChangedTitle), findsOneWidget);
+      expect(find.text(S.current.metaverse_updateChanges), findsOneWidget);
+      expect(find.text(_target.signature!.fingerprint), findsNothing);
+      await capture(tester, 'install-risk-${dark ? 'dark' : 'light'}');
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_publisherKey), 220,
+        scrollable: find.byType(Scrollable).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_publisherKey));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(_target.signature!.fingerprint));
+      await tester.pumpAndSettle();
+      expect(find.text(_target.signature!.fingerprint), findsOneWidget);
+      await capture(tester, 'install-fingerprint-${dark ? 'dark' : 'light'}');
+      expect(find.text(S.current.metaverse_pluginUpdate).hitTestable(), findsOneWidget);
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('指南文字入口、版本说明与工具链接 $dark', (tester) async {
+      tester.view.physicalSize = const Size(320, 780);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(app(const MetaverseDeveloperPage(), dark: dark, scale: 1.4, background: true));
+      await tester.tap(find.text(S.current.metaverse_developerGuides));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_devTitle).hitTestable(), findsOneWidget);
+      await capture(tester, 'guides-entry-${dark ? 'dark' : 'light'}');
+      final guides = find.byKey(const ValueKey('metaverse-developer-guides'));
+      final scrollable = find.descendant(of: guides, matching: find.byType(Scrollable)).first;
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_developerComponents).last,
+        150, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: guides,
+        matching: find.text(S.current.metaverse_developerComponents)));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_developerSearch), findsOneWidget);
+      await tester.tap(find.text(S.current.metaverse_developerGuides));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_devTitle), -250, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_devTitle));
+      await tester.pumpAndSettle();
+      expect(find.byType(MetaverseDevelopmentPage), findsOneWidget);
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_developerVersions), 250, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_developerVersions));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('dataVersion'), 150, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(find.text('schema'), findsOneWidget);
+      expect(find.text('apiVersion'), findsOneWidget);
+      await capture(tester, 'guides-versions-${dark ? 'dark' : 'light'}');
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_developerNetworkHelp), 300, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_developerNetworkHelp));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_developerNetworkAnswer), findsOneWidget);
+      await tester.scrollUntilVisible(find.text(S.current.metaverse_developerNetworkAnswer), 150, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await capture(tester, 'guides-help-${dark ? 'dark' : 'light'}');
+      await tester.scrollUntilVisible(find.text('Lingyan000/fluxdo-plugin-tools'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('Lingyan000/fluxdo-plugins'), 120, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(find.text('Lingyan000/fluxdo-plugin-tools'), findsOneWidget);
+      await capture(tester, 'guides-links-${dark ? 'dark' : 'light'}');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      container.invalidate(metaverseDevelopmentSessionProvider);
+      await tester.pump();
+    });
+
     testWidgets('重置链接偏好菜单与确认框，小屏大字 $dark', (tester) async {
       tester.view.physicalSize = const Size(320, 780);
       tester.view.devicePixelRatio = 1;
@@ -305,6 +399,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text(S.current.metaverse_publisherSigned), findsOneWidget);
+      expect(find.text(S.current.metaverse_authorSignature).hitTestable(), findsOneWidget);
       await capture(tester, 'market-${dark ? 'dark' : 'light'}');
       await tester.tap(find.byType(SwipeDismissiblePopupMenuButton<String>));
       await tester.pumpAndSettle();
@@ -366,9 +461,11 @@ void main() {
   }
 
   testWidgets('同源无签名已安装插件隐藏版本替换入口', (tester) async {
-    final controller = container.read(metaversePluginsProvider.notifier);
     await tester.runAsync(() async {
-      await controller.remove(installed.id);
+      // 此用例验证市场入口，直接准备安装索引，不触发平台缓存清理。
+      await container.read(metaversePluginStoreProvider).saveIndex([]);
+      container.invalidate(metaversePluginsProvider);
+      final controller = container.read(metaversePluginsProvider.notifier);
       final unsigned = await controller.install(MetaversePluginPackage(
         manifest: _target.manifest, source: updateSource.id, code: _target.code,
       ));
@@ -416,6 +513,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(S.current.metaverse_publisherSigned), findsNothing);
+      expect(find.text(S.current.metaverse_authorSignature), findsNothing);
     });
   }
   testWidgets('首页隐藏卡片且管理角标按插件去重', (tester) async {
@@ -429,6 +527,7 @@ void main() {
         .setVisible(installed.id, false);
     await tester.pumpAndSettle();
     expect(find.text('card:${installed.id}'), findsNothing);
+    expect(find.text(S.current.metaverse_discoverPlugins), findsNothing);
     expect(container.read(metaversePluginsProvider).single.enabled, isTrue);
     (container.read(metaverseUpdatesProvider.notifier) as _Updates).report(
       installed.id,
@@ -443,7 +542,56 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(container.read(metaverseAttentionProvider).length, 1);
+    expect(find.text(S.current.metaverse_discoverPlugins), findsNothing);
   });
+
+  testWidgets('未安装时可从我的服务进入市场', (tester) async {
+    await container.read(metaversePluginStoreProvider).saveIndex([]);
+    container.invalidate(metaversePluginsProvider);
+    await tester.pumpWidget(app(const MetaversePage()));
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.metaverse_discoverPlugins), findsOneWidget);
+    expect(find.text(S.current.metaverse_addService), findsOneWidget);
+    await capture(tester, 'services-empty');
+    await tester.tap(find.text(S.current.metaverse_discoverPlugins));
+    await tester.pumpAndSettle();
+    expect(find.byType(MetaverseMarketPage).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final mode in ['rollback', 'unsigned', 'rotation']) {
+    testWidgets('审阅 $mode 保留正确提示与签名语义', (tester) async {
+      final restored = installed.copyWith();
+      final old = InstalledMetaversePlugin(manifest: installed.manifest,
+        source: installed.source, publisherKey: 'b' * 64);
+      await tester.pumpWidget(app(Scaffold(body: Builder(builder: (context) => TextButton(
+        onPressed: () => showMetaversePluginInstallSheet(context, _target.manifest,
+          isUpdate: true, previous: old,
+          restoredRelease: mode == 'rollback' ? restored : null,
+          notice: mode == 'rollback' ? S.current.metaverse_rollbackNote : null,
+          package: mode == 'rollback' ? null : MetaversePluginPackage(
+            manifest: _target.manifest, source: _target.source, code: _target.code,
+            signature: mode == 'rotation' ? MetaversePackageSignature(
+              _target.signature!.fingerprint, previousFingerprint: 'b' * 64) : null)),
+        child: const Text('review'),
+      )))));
+      await tester.tap(find.text('review'));
+      await tester.pumpAndSettle();
+      if (mode == 'rollback') {
+        expect(find.text(S.current.metaverse_publisherRollbackChanged), findsOneWidget);
+        expect(find.text(S.current.metaverse_publisherChanged), findsNothing);
+        expect(find.text(S.current.metaverse_rollbackNote), findsOneWidget);
+      } else if (mode == 'unsigned') {
+        expect(find.text(S.current.metaverse_publisherUnsignedTitle), findsOneWidget);
+        expect(find.text(S.current.metaverse_publisherKey), findsNothing);
+      } else {
+        expect(find.text(S.current.metaverse_publisherChangedTitle), findsNothing);
+      }
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('卡片隐藏不关闭插件，暂停状态与更新状态可识别', (tester) async {
     tester.view.physicalSize = const Size(390, 844);

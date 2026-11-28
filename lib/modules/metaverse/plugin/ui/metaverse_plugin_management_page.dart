@@ -282,7 +282,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                         if (!previous.manifest.canUpdateWithoutApproval(plugin.manifest) || previous.publisherKey != plugin.publisherKey) {
                           final selected = await showMetaversePluginInstallSheet(context, previous.manifest,
                             isUpdate: true, previous: plugin, confirmLabel: l.metaverse_rollback,
-                            reviewNote: previous.publisherKey == null ? l.metaverse_publisherUnsigned : '${l.metaverse_publisherKey}\n${previous.publisherKey}',
+                            restoredRelease: previous, notice: l.metaverse_rollbackNote,
                             initialBlocked: {...previous.blockedPermissions, ...plugin.blockedPermissions,
                               ...previous.manifest.declaredPermissions.where((p) => p.manageable)});
                           if (selected == null || !mounted) return;

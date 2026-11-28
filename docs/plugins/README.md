@@ -1,107 +1,166 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。新插件使用 schema 12、apiVersion 2，宿主兼容 schema 9–11，并为 API 1 保留通用网络、界面和手填 token 能力。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+用 TypeScript / JavaScript 编写逻辑，用 `ui.rfwtxt` 描述 Flutter 原生界面，通过受控的 `fluxdo` API 调用应用能力。插件作者只需 Node 24.11+，无需安装 Flutter；CLI、脚手架与 SDK 位于[独立工具仓](https://github.com/Lingyan000/fluxdo-plugin-tools)。
 
-开发工具的选型、热更新验证及当前接入范围见 [开发工具与热更新](development-tooling.md)。
+## 快速上手
 
-## 开发语言与运行方式
-
-插件业务使用 JavaScript，通过 `fluxdo` API 调用宿主能力。插件的 JS 引擎执行 `main.js`，`ui.rfwtxt` 将数据与事件绑定到 Flutter 原生组件。Dart 实现 Flutter 宿主、权限检查和能力桥接。仓库中的 Dart 打包命令负责读取文件并生成安装包。
-
-TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 `main.js` 打包。[独立工具仓库](https://github.com/Lingyan000/fluxdo-plugin-tools)提供 CLI、脚手架和 SDK；新项目不需要 Flutter 或本仓库的相对路径。运行环境提供的全局对象与接口见 API 参考，构建产物需要自行打包依赖并避免依赖浏览器 DOM、Node.js 内置模块或运行时模块加载。
-
-## 常驻导航与论坛功能
-
-元宇宙首页及插件声明的普通页面都可由用户添加到底栏，宽屏沿用同一配置显示在侧栏。清单的 `pages[].navigation` 声明候选入口，不会自动改动用户布局。开发实例与正式安装仍隔离，开发会话不会注册底栏入口。
-
-[论坛动态示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/forum-activity)展示声明入口、读取用户动态和点击打开原生话题。安装、启用后，在「设置 → 外观 → 底栏」中添加页面。宿主提供导航、生命周期、只读数据与权限；名单管理、聚合、轮询策略和缓存由插件维护。详情见 [API 参考](api.md#论坛只读接口与原生导航)。
-
-## 文档导航
-
-- [定时更新、备份与发布者信任](automatic-updates.md)说明恢复、数据迁移、发布渠道和签名连续性。
-
-- [API 参考](api.md)覆盖脚本环境、事件、网络、存储、账号、导航和应用支付接口。
-- [组件参考](components.md)覆盖当前注册的宿主组件及 rfw 布局组件。
-- [清单、权限与现有协议](../metaverse-plugin.md)介绍安装格式、网络限制和授权协议。
-- [最小示例](../examples/metaverse-plugin/)可用于首次安装与事件联调。
-- [LD士多实现](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)展示多页面商城接入。
-
-## 创建与安装
-
-一个插件目录包含三个文件。
-
-```text
-my-plugin/
-  plugin.json
-  main.js
-  ui.rfwtxt
-```
-
-`plugin.json` 声明身份、版本、资源文件、页面、网络和账号权限。`main.js` 处理服务协议和页面状态。`ui.rfwtxt` 声明通过宿主组件渲染的界面。
-
-从最小示例复制后，修改唯一的 `id`、名称、版本、服务地址和页面。插件脚本在独立 JS 环境运行，通过 `fluxdo` 调用宿主。
-
-新 TypeScript 项目由脚手架生成后执行 npm run pack:plugin。已有纯 JS 示例仍可在应用仓库根目录使用下列兼容命令。
+工具首发候选为 **1.0.0，目前仍是草稿**。下列固定 URL 在 Release 公开后才可匿名下载；发行前维护者使用同批本地 tgz 验证，不要把草稿地址配置到在线市场。可用版本以[工具发行页](https://github.com/Lingyan000/fluxdo-plugin-tools/releases)为准，npm registry 尚未发布。
 
 ```sh
-dart run tool/pack_metaverse_plugin.dart path/to/my-plugin build/my-plugin.fluxplugin
+npx --yes --package=https://github.com/Lingyan000/fluxdo-plugin-tools/releases/download/v1.0.0/create-fluxdo-plugin-1.0.0.tgz create-fluxdo-plugin my-plugin --id example.myplugin --template basic
+cd my-plugin
+npm install
+npm run check
+npm test
+npm run dev -- --lan 192.168.1.10
 ```
 
-在应用的「元宇宙 → 添加第三方服务 → 从文件安装」选择产物，查看权限后安装并启用。也可把三个文件部署在同一 HTTPS 目录，从应用输入 `plugin.json` 的文件地址安装。
+将 `192.168.1.10` 替换为开发机的局域网 IPv4。手机与电脑在同一网络，打开「元宇宙 → 插件管理 → 更多 → 开发中心 → 教程 → 连接开发工具」，扫码或粘贴配对地址，连接并审阅权限。Windows/Linux 使用粘贴；同机桌面和 Android USB 可用回环连接，见[开发工具与热更新](development-tooling.md#使用与边界)。
 
-安装新宿主后，也可从系统文件管理器打开 `.fluxplugin`，选择 FluxDO。应用就绪后显示同一权限确认页，多个文件逐个确认，取消后可再次打开。Android 文件管理器须提供文件读取授权和真实显示名称。Apple 平台在导入结束后释放文件访问授权。Windows 便携版首次启动后登记「打开方式」，Linux 安装包提供 MIME 描述和 desktop 入口。
+修改 `src/main.ts` 或 `ui.rfwtxt`，在应用里观察更新。组件页可调整参数和触发事件，API 页可修改请求参数并运行模拟结果，演示不使用真实账号执行交易。需要四语模板时将 `--template basic` 改为 `--template localized`。
 
-当前 `.fluxplugin` 的内容是 UTF-8 JSON，包含 `manifest` 和 `files`。打包工具检查资源路径，客户端负责清单、资源大小和 rfw 校验。安装失败时先核对 JSON、资源名称、页面引用与实际组件定义。
+```sh
+npm run pack:plugin
+```
 
-## 一次交互
+从 `dist` 导入 `.fluxplugin`，审阅后安装、启用。系统打开方式见[文件安装](#文件安装)；上架流程见[发布与排错](publishing-and-troubleshooting.md)。
+
+### 最小页面与事件
+
+在脚手架项目中替换下面三个文件，保留生成的 `fluxdo.config.json`、TypeScript 配置与依赖。这是仅含页面的示例，不依赖网络或账号。
+
+`plugin.json`：
+
+```json
+{
+  "schema": 12, "apiVersion": 2,
+  "id": "example.myplugin", "name": "计数", "version": "1.0.0", "author": "示例作者",
+  "script": "main.js", "ui": "ui.rfwtxt", "permissions": {"network": []},
+  "pages": [{"id": "main", "title": "计数", "widget": "Page"}]
+}
+```
+
+`src/main.ts`：
+
+```ts
+const counts = new Map<string, number>();
+fluxdo.on('page.open', ctx => {
+  counts.set(ctx.surface, 0);
+  ctx.setData('count', 0);
+});
+fluxdo.on('increment', ctx => {
+  const count = (counts.get(ctx.surface) ?? 0) + 1;
+  counts.set(ctx.surface, count);
+  ctx.setData('count', count);
+});
+fluxdo.on('surface.close', ctx => { counts.delete(ctx.surface); });
+if (import.meta.hot) import.meta.hot.accept();
+```
+
+`ui.rfwtxt`：
+
+```text
+import fluxdo;
+widget Page = Column(crossAxisAlignment: "stretch", children: [
+  Label(text: data.count, style: "headlineMedium"), Gap(size: 12),
+  Button(label: "增加计数", onPressed: event "increment" {}),
+]);
+```
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
     participant H as FluxDO 原生界面
     participant P as 插件脚本
-    participant A as 服务接口
-    U->>H: 打开插件页面
+    U->>H: 打开页面
     H->>P: page.open(ctx)
-    P->>H: fluxdo.fetch(url)
-    H->>H: 校验声明与请求范围
-    H->>A: 网络请求
-    A-->>P: 经宿主返回响应
-    P->>H: ctx.setData(key, value)
-    H-->>U: 更新原生组件
+    P->>H: ctx.setData(count, 0)
+    H-->>U: 显示计数
+    U->>H: 点击按钮
+    H->>P: increment(ctx)
+    P->>H: ctx.setData(count, count + 1)
+    H-->>U: 更新当前页面
 ```
 
-同一插件的卡片和页面共用脚本运行实例。页面状态应按 `ctx.surface` 存放，避免两个详情页互相覆盖。`surface.close` 时删除页面状态。普通返回和应用恢复会收到 `page.resume`，可根据业务变化决定是否刷新。
+示例状态只存在当前脚本实例。持久计数应使用 `storage`；热替换需主动保留的模块数据使用 `import.meta.hot.data`，资源在 `dispose` 释放。正式脚本没有 Node、DOM 或运行时外部模块加载能力，依赖须打包进 `main.js`。
 
-## 兼容与调试
+## 核心概念速查
 
-- `schema` 校验清单结构，`apiVersion` 声明脚本 API 版本。支持 1、2，不支持的版本会在安装时拒绝。
-- 网络、凭证和跳转检查由 Dart 宿主执行。使用公开 SDK 即可获得一致的检查行为。
-- 插件权限分为基础能力和可管理权限。界面、插件私有存储、声明域名内的普通联网和声明的前台任务按用途展示。账号、登录、支付、论坛读取、后台、通知、链接接管和跨域图片可由用户分别开关。开发预览使用同一分类，选择仅在开发会话内生效。详见[用户关闭权限时](api.md#用户关闭权限时)。
-- `console` 写入结构化日志，包含插件 ID、版本和运行实例。插件管理中的日志入口支持查看、导出与仅清空当前插件。事件处理中使用 `ctx.api` 可以附带 surfaceId。
-- 核心请求日志通过 `coreRequestId` 关联同一插件，保留版本、运行实例、页面、`traceId` 和 `attemptId`。`emitter` 区分脚本与框架，`tag: core` 标识原生网络核心。共享连接维护等无请求归属的日志保留在应用网络日志中。
-- 插件日志独立缓冲和轮转，每插件最多保留两代各 512 KiB 文件。内存缓冲上限为 128 KiB 或 256 条，超额时丢弃该插件最旧记录并写入汇总。应用总日志可汇总查看所有分区，单插件清空同时覆盖旧共享文件与当前独立文件，清空期间新产生的记录继续保留。
-- `storage` 保存插件普通 JSON 数据，新插件通过 `storage.scopes` 显式声明共享或当前账号分区。公开分类可放共享区，订单草稿和订阅放账号区；账号会话仍使用宿主管理的安全存储。没有显式声明的旧插件保持原兼容规则，详见[普通存储作用域](api.md#普通存储作用域)。
-- API 2 使用 `credentials`、`connect` 和 `payments` 能力。API 1 仅兼容通用网络、界面与手填 token。旧服务授权和订单接口已删除，相关已安装插件更新后恢复使用。
+| 版本字段 | 含义 |
+| --- | --- |
+| `version` | 插件发行版本，用语义版本比较更新，例如 `1.0.0` |
+| `schema` | 清单结构版本，新插件使用 `12`；不会随产品版本重编号 |
+| `apiVersion` | 脚本接口代次，新插件使用 `2` |
+| `dataVersion` | 普通数据迁移版本，默认 `1`；显式声明须同时要求 `dataMigrations`，结构变化时递增并实现迁移 |
 
-## 文档入口
+| 概念 | 职责 |
+| --- | --- |
+| 卡片、普通页面、弹层 | `card.widget` / `pages[].widget` 指向 RFW 组件。弹层是页面呈现方式，不是新的脚本上下文类型 |
+| `ctx.surface` | 当前界面实例标识。卡片和多个页面共享脚本实例，状态须按 surface 分隔；关闭时释放资源 |
+| `ctx.setData` | 只更新当前界面的瞬态 JSON 数据，不写磁盘 |
+| `storage` | 普通 JSON 持久化，范围由 `storage.scopes` 与 `storage.default` 声明 |
+| `credentials` | 由宿主保管登录凭据，仅按声明范围注入请求，不向脚本返回原文 |
+| `requiredFeatures` | 必需能力协商；可选能力用 `ctx.api.host.features()` 探测。能力存在不等于已获权限 |
 
-仓库入口为根 README 的「插件开发文档」。现有 `docs/metaverse-plugin.md` 保留为协议说明，并链接本目录。
+页面首次收到 `page.open`，普通返回和应用恢复收到 `page.resume`。是否刷新由业务变化决定，不要每次恢复就清空界面。`surface.close` 用于释放该页面状态。
 
-应用内入口位于「元宇宙 → 插件管理」的更多菜单。组件示例使用生产组件库，API 示例通过隔离的演示桥运行。插件管理提供来源、权限、空间占用、日志和数据重置入口。
+## 文档导航
 
-开发中心覆盖全部宿主组件与公共异步 API；注册表与示例集合由自动化守卫保持一致。页面级组件包含列表、详情、表单及操作区，支持加载状态、事件回传和输入校验，参数说明见组件参考。
+| 需要做什么 | 参考 |
+| --- | --- |
+| 查事件、网络、数据、授权和支付 | [脚本 API](api.md) |
+| 选组件、配置参数、滚动和标题栏 | [原生组件](components.md)及应用内「组件」交互预览 |
+| 连接设备、HMR、模拟宿主与诊断 | [开发工具与热更新](development-tooling.md) |
+| 配置更新、备份、签名连续性与回退 | [定时更新与发布者信任](automatic-updates.md) |
+| 签名、上架市场与定位常见错误 | [发布与排错](publishing-and-troubleshooting.md) |
+| 修改 Flutter 宿主实现 | [宿主架构与安全边界](../metaverse-plugin.md) |
+| 阅读纯 JS 与业务插件 | [最小 JS 示例](../examples/metaverse-plugin/)、[士多源码](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store) |
 
-## GitHub 市场
+## 常驻导航、权限与市场发布概览
 
-默认源为 [Lingyan000/fluxdo-plugins](https://github.com/Lingyan000/fluxdo-plugins)。客户端支持多个源、搜索分类、更新筛选、缓存与 ETag、下载摘要校验及跨来源确认。发布格式及校验命令见目录仓库。
+元宇宙首页和清单 `pages[].navigation` 声明的普通页面可由用户加入「设置 → 外观 → 底栏」，宽屏沿用配置显示在侧栏。声明不会自动改变布局。开发会话只预览，不注册正式导航。论坛动态示例见[工具仓](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/forum-activity)，只读数据与原生导航见 [API](api.md#论坛只读接口与原生导航)；名单、聚合、轮询和缓存属于插件。
+
+界面、插件私有存储、声明域名内的普通联网和声明的前台任务属于基础能力。账号、服务登录、支付、论坛读取、后台、通知、链接接管和外部图片由用户分别管理。安装时审阅、使用时按需申请、以后随时关闭，详见[用户关闭权限时](api.md#用户关闭权限时)。开发预览使用同样分类，选择只在开发会话内生效。
+
+公开分类可放共享区，订单草稿和订阅应放账号区。普通 `storage` 不保存登录凭据；显式分区及旧清单兼容规则见[普通存储作用域](api.md#普通存储作用域)。
+
+默认目录为 [fluxdo-plugins](https://github.com/Lingyan000/fluxdo-plugins)。支持多个源、搜索分类、更新筛选、缓存和 ETag。市场摘要、作者签名和包内权限在下载后再次核对；作者签名不代表平台认证。跨来源安装单独确认数据影响。具体发布步骤见[发布与排错](publishing-and-troubleshooting.md)。
 
 ## 必需能力与资源边界
 
-schema 10 可声明 `requiredFeatures`，市场索引必须同步声明同一集合。缺少必需能力时宿主拒绝安装/运行；可选特性用 `await ctx.api.host.features()` 探测并提供降级。能力列表由运行时注册表维护。
+schema 10 起支持 `requiredFeatures`，市场索引必须与包内集合一致。宿主缺少必需能力时拒绝安装和运行，可选能力须探测后降级。能力集合由[运行时注册表](../../packages/fluxdo_plugin_runtime/lib/src/plugin_features.dart)维护。
 
-插件使用每实例独立的 QuickJS isolate。每次同步执行及其 Promise 微任务有 5 秒原生截止时间，JS 堆上限 64 MiB，JS 栈 512 KiB。停止运行会中断正在执行的原生代码并释放上下文。JS 堆上限不包括宿主 Flutter 图片、插件普通存储或 Dart 堆；这些分别有自己的限额。原生引擎不提供网络、文件系统、Node 或 DOM。
+| 资源 | 限制 |
+| --- | --- |
+| 清单 / UI / JS / 整包 | 32 KiB / 256 KiB / 512 KiB / 2 MiB |
+| 每实例同步执行及其 Promise 微任务 | 5 秒原生截止时间 |
+| JS 堆 / 栈 | 64 MiB / 512 KiB |
+| 页面 | 默认最多 16 个，声明 `extendedPages` 后最多 32 个 |
 
-长商品墙使用 `GridPage`，仅构建可见区域及预取范围；少量嵌套内容使用 `TileGrid`。二者提供 natural、equalHeight、masonry 三种布局。
+每插件使用独立 QuickJS isolate，停止时中断原生执行并释放上下文。JS 堆限制不含 Flutter 图片、Dart 堆或普通存储，后者各有独立配额。引擎本身不提供网络、文件系统、Node 或 DOM；网络和凭证检查始终由宿主执行。
 
-插件的宿主更新计划、同源校验、权限审阅和跨平台执行边界见 [插件定时更新](automatic-updates.md)。
+长列表使用 `ListPage`，长商品墙使用 `GridPage`，消息历史使用 `TimelinePage`；这些组件只构建可见和预取内容。少量嵌套卡片可用 `TileGrid`。`GridPage` / `TileGrid` 支持 natural、equalHeight、masonry，页面级滚动与 `scroll:false` 配置见[组件参考](components.md)。
+
+### 日志与数据诊断
+
+`console` 日志包含插件 ID、版本和运行实例；`ctx.api` 另关联 surfaceId。网络 `coreRequestId` 对应版本、实例、页面、traceId 和 attemptId。`emitter` 区分脚本与框架，`tag: core` 标识网络核心；共享连接维护等无请求归属日志留在应用网络日志。
+
+每插件日志独立缓冲与轮转，最多两代各 512 KiB 文件；内存上限 128 KiB 或 256 条。超额丢弃该插件最旧记录并写汇总。插件管理支持查看、导出、仅清空当前插件日志和数据重置；日志清空覆盖旧共享文件与独立文件，清空期间新增记录保留。应用总日志可汇总所有分区。
+
+## 历史兼容与手动打包
+
+宿主兼容 schema 9–11；API 1 保留普通网络、界面与手填 token。旧服务专用授权和订单接口已移除，业务转入插件；旧记录通过迁移入口交由插件解释，详见 [API 1](api.md#api-1-手填凭证兼容)。
+
+纯 JS 插件目录可直接放 `plugin.json`、`main.js`、`ui.rfwtxt` 三个文件。在应用仓根目录运行：
+
+```sh
+dart run tool/pack_metaverse_plugin.dart path/to/my-plugin build/my-plugin.fluxplugin
+```
+
+也可将三个文件部署到同一 HTTPS 目录，从应用导入 `plugin.json` 地址。`.fluxplugin` 是包含 `manifest` 和 `files` 的 UTF-8 JSON；客户端检查资源路径、大小、清单及 RFW 引用。新 TypeScript 项目优先使用独立 CLI。
+
+### 文件安装
+
+在「元宇宙 → 添加第三方服务 → 从文件安装」选择包，或从系统文件管理器打开 `.fluxplugin` 并选择 FluxDO。应用就绪后逐个显示权限审阅，取消后可再次打开，不会自动启用。
+
+Android 文件管理器须提供读取授权和真实显示名称；Apple 平台导入结束后释放文件访问授权。Windows 便携版首次启动登记“打开方式”，Linux 安装包提供 MIME 描述和 desktop 入口。文件关联还取决于系统及文件管理器；无法直接打开时可使用应用内文件安装入口。
