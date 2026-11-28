@@ -15,6 +15,7 @@ import '../../../widgets/cdk_balance_card.dart';
 import '../../../widgets/ldc_balance_card.dart';
 import '../core/metaverse_service.dart';
 import '../core/metaverse_link_rule.dart';
+import '../metaverse_registry.dart';
 import '../../cdk/ui/cdk_project_page.dart';
 
 /// LDC 与 CDK 的共同实现：linux.do Connect 授权 + 余额卡片。
@@ -248,4 +249,5 @@ Future<void> setMetaverseServiceEnabled(
   // 与服务自身缓存的是同一个 SharedPreferences 实例，测试里可被覆盖。
   final prefs = container.read(sharedPreferencesProvider);
   await prefs.setBool(key, value);
+  container.invalidate(metaverseServicesProvider);
 }

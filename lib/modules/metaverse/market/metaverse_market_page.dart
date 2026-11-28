@@ -346,7 +346,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(entry.localized('name', context.l10n.localeName)), actions: [
-        if (current && entry.compatible && !entry.withdrawn)
+        if (current && installed.publisherKey != null && entry.compatible && !entry.withdrawn)
           SwipeDismissiblePopupMenuButton<String>(
             enabled: !_installing,
             onSelected: (_) => _install(replace: true),
@@ -400,7 +400,8 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             SelectableText(entry.localized('description', context.l10n.localeName)),
           ],
           const SizedBox(height: 20),
-          SegmentedCardGroup(children: [
+          SegmentedCardGroup(color: PageBackgroundScope.contentColor(
+            context, theme.colorScheme.surfaceContainerLow), children: [
             ExpansionTile(leading: Icon(entry.publisherKeyFingerprint == null ? Symbols.info_rounded : Symbols.verified_rounded),
               trailing: const Icon(Symbols.expand_more_rounded),
               title: Text(!entry.publisherPreviewAvailable ? l.metaverse_publisherPending :

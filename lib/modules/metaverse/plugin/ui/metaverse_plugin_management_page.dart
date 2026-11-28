@@ -1,5 +1,6 @@
 import '../../core/metaverse_link_rule.dart';
 import '../../metaverse_registry.dart';
+import '../../metaverse_link_router.dart';
 import 'metaverse_plugin_page.dart';
 import 'metaverse_plugin_status.dart';
 import 'metaverse_card_layout_page.dart';
@@ -31,11 +32,44 @@ import '../../../../widgets/common/app_bottom_sheet.dart';
 class MetaversePluginManagementPage extends ConsumerWidget {
   const MetaversePluginManagementPage({super.key});
 
+  Future<void> _resetLinkDefaults(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(dialogContext.l10n.metaverse_resetLinkDefaults),
+        content: Text(dialogContext.l10n.metaverse_resetLinkDefaultsConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(dialogContext.l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(dialogContext.l10n.common_reset),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref.read(metaverseLinkDefaultsProvider.notifier).clearAll();
+      if (context.mounted) {
+        ToastService.showSuccess(context.l10n.metaverse_linkDefaultsReset);
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ToastService.showError(context.l10n.metaverse_linkDefaultsResetFailed);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final installed = ref.watch(metaversePluginsProvider);
     final pendingRestore = ref.watch(metaversePendingRestoreProvider).value ?? const [];
     final reports = ref.watch(metaverseUpdatesProvider).value?.reports ?? const {};
+    final hasLinkDefaults = ref.watch(metaverseLinkDefaultsProvider).isNotEmpty;
+    void resetLinkDefaults() => _resetLinkDefaults(context, ref);
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.metaverse_pluginManage),
@@ -51,6 +85,11 @@ class MetaversePluginManagementPage extends ConsumerWidget {
                 child: Text(context.l10n.metaverse_arrangeCards)),
               PopupMenuItem(value: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseUpdatePage())),
                 child: Text(context.l10n.metaverse_autoUpdates)),
+              if (hasLinkDefaults)
+                PopupMenuItem(
+                  value: resetLinkDefaults,
+                  child: Text(context.l10n.metaverse_resetLinkDefaults),
+                ),
               PopupMenuItem(
                 value: () => Navigator.of(context).push(
                   InteractionPageRoute(

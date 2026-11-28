@@ -1,6 +1,7 @@
 import 'package:fluxdo/pages/metaverse_page.dart';
 import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
+import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -174,7 +175,8 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  Widget app(Widget page, {bool dark = false, double scale = 1}) {
+  Widget app(Widget page, {bool dark = false, double scale = 1,
+      bool background = false}) {
     final brightness = dark ? Brightness.dark : Brightness.light;
     var theme = buildAppTheme(
       ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: brightness),
@@ -182,7 +184,7 @@ void main() {
       UiShapes.standard,
       const ThemeState(mode: ThemeMode.system, seedColor: Colors.indigo),
       fullscreenSwipeBack: false,
-      pageBackground: false,
+      pageBackground: background,
     );
     if (snapshots) {
       theme = theme.copyWith(
@@ -198,12 +200,20 @@ void main() {
             navigatorKey: navigatorKey,
             theme: theme,
             debugShowCheckedModeBanner: false,
-            builder: (ctx, child) => MediaQuery(
-              data: MediaQuery.of(ctx)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
-              child: child!,
+            builder: (ctx, child) => PageBackgroundScope(
+              backgroundBuilder: background ? (_) => DecoratedBox(
+                decoration: BoxDecoration(gradient: LinearGradient(
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  colors: [theme.colorScheme.surface, theme.colorScheme.secondaryContainer],
+                )),
+              ) : null,
+              child: MediaQuery(
+                data: MediaQuery.of(ctx)
+                    .copyWith(textScaler: TextScaler.linear(scale)),
+                child: child!,
+              ),
             ),
-            home: page,
+            home: RoutePageBackground(child: page),
           ),
         ),
       ),
@@ -226,6 +236,66 @@ void main() {
   }
 
   for (final dark in [false, true]) {
+    testWidgets('重置链接偏好菜单与确认框，小屏大字 $dark', (tester) async {
+      tester.view.physicalSize = const Size(320, 780);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = container.read(metaversePluginsProvider.notifier);
+      await controller.setPermission(installed.id, MetaversePluginPermission.links, true);
+      final defaults = container.read(metaverseLinkDefaultsProvider.notifier);
+      final host = _target.manifest.linkHosts.first;
+      await defaults.remember(host, MetaverseLinkDefaults.browser);
+      await tester.pumpWidget(app(const MetaversePluginManagementPage(),
+        dark: dark, scale: 1.4));
+      await tester.pumpAndSettle();
+      final menu = find.byType(SwipeDismissiblePopupMenuButton<VoidCallback>);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_resetLinkDefaults), findsOneWidget);
+      await capture(tester, 'link-reset-menu-${dark ? 'dark' : 'light'}');
+      await tester.tap(find.text(S.current.metaverse_resetLinkDefaults));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_resetLinkDefaultsConfirm), findsOneWidget);
+      await capture(tester, 'link-reset-dialog-${dark ? 'dark' : 'light'}');
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
+      expect(container.read(metaverseLinkDefaultsProvider), {
+        host: MetaverseLinkDefaults.browser,
+      });
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_resetLinkDefaults));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.common_reset));
+      await tester.pumpAndSettle();
+      expect(container.read(metaverseLinkDefaultsProvider), isEmpty);
+      expect(prefs.getString(MetaverseLinkDefaults.preferenceKey), '{}');
+      expect(find.text(S.current.metaverse_linkDefaultsReset), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.metaverse_resetLinkDefaults), findsNothing);
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final background in [false, true]) {
+      testWidgets('市场详情卡片背景一致，dark=$dark background=$background', (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(app(MetaverseMarketDetailPage(entry: _entry),
+          dark: dark, background: background));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text(S.current.metaverse_marketCompatibility));
+        await tester.pumpAndSettle();
+        await capture(tester, 'market-background-$background-${dark ? 'dark' : 'light'}');
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('版本替换审阅与权限预览，小屏大字 $dark', (tester) async {
       tester.view.physicalSize = const Size(320, 780);
       tester.view.devicePixelRatio = 1;
@@ -294,6 +364,22 @@ void main() {
       await tester.pumpAndSettle();
     });
   }
+
+  testWidgets('同源无签名已安装插件隐藏版本替换入口', (tester) async {
+    final controller = container.read(metaversePluginsProvider.notifier);
+    await tester.runAsync(() async {
+      await controller.remove(installed.id);
+      final unsigned = await controller.install(MetaversePluginPackage(
+        manifest: _target.manifest, source: updateSource.id, code: _target.code,
+      ));
+      expect(unsigned.publisherKey, isNull);
+    });
+    await tester.pumpWidget(app(MetaverseMarketDetailPage(entry: _entry)));
+    await tester.pumpAndSettle();
+    expect(find.byType(SwipeDismissiblePopupMenuButton<String>), findsNothing);
+    expect(find.text(S.current.metaverse_pluginManage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final reason in ['withdrawn', 'incompatible']) {
     testWidgets('$reason 市场条目不允许版本替换', (tester) async {

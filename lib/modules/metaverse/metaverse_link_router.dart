@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:app_icons/app_icons.dart';
@@ -9,11 +10,11 @@ import '../../l10n/s.dart';
 import '../../providers/theme_provider.dart';
 import '../../utils/link_launcher.dart' show isInternalUrl, launchExternalLink;
 import '../../widgets/common/app_bottom_sheet.dart';
+import 'core/metaverse_link_rule.dart';
 import 'core/metaverse_service.dart';
 import 'metaverse_registry.dart';
-import 'plugin/metaverse_plugin_service.dart';
 
-/// 偏好只存域名与服务 ID；停用或撤销链接权限即清理，重新启用不恢复旧选择。
+/// 偏好只存域名与服务 ID；服务失效时清理，浏览器偏好保留至该域名无可用服务。
 final metaverseLinkDefaultsProvider =
     NotifierProvider<MetaverseLinkDefaults, Map<String, String>>(
       MetaverseLinkDefaults.new,
@@ -22,6 +23,36 @@ final metaverseLinkDefaultsProvider =
 class MetaverseLinkDefaults extends Notifier<Map<String, String>> {
   static const preferenceKey = 'metaverse_link_defaults_v1';
   static const browser = '@browser';
+  Future<void> _writes = Future.value();
+
+  Map<String, String> _prune(Map<String, String> values) {
+    final services = ref.read(metaverseServicesProvider);
+    return {
+      for (final e in values.entries)
+        if (services.any(
+          (service) =>
+              (e.value == browser || service.id == e.value) &&
+              service.isEnabled(ref.container) &&
+              service.linkRules.any(
+                (rule) => MetaverseHostPattern.matches(rule.host, e.key),
+              ),
+        ))
+          e.key: e.value,
+    };
+  }
+
+  Future<void> _persist(Map<String, String> values) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final encoded = jsonEncode(values);
+    // 按调用次序落盘，旧保存不能在重置或停用清理之后覆盖新结果。
+    final write = _writes.then((_) async {
+      if (!await prefs.setString(preferenceKey, encoded)) {
+        throw StateError('link_preference_save_failed');
+      }
+    });
+    _writes = write.catchError((Object _) {});
+    return write;
+  }
 
   @override
   Map<String, String> build() {
@@ -37,51 +68,52 @@ class MetaverseLinkDefaults extends Notifier<Map<String, String>> {
         };
       }
     } catch (_) {}
-    Map<String, String> prune(Map<String, String> old) => {
-      for (final e in old.entries)
-        if (e.value == browser ||
-            ref
-                .read(metaverseServicesProvider)
-                .any(
-                  (s) =>
-                      s.id == e.value &&
-                      s.linkRules.isNotEmpty &&
-                      (s is! MetaversePluginService || s.plugin.enabled),
-                ))
-          e.key: e.value,
-    };
     ref.listen(metaverseServicesProvider, (_, _) {
-      final next = prune(state);
+      final next = _prune(state);
       if (next.length != state.length) {
         state = next;
-        prefs.setString(preferenceKey, jsonEncode(next));
+        // 失效选择不因落盘失败恢复；下次载入仍会按有效规则过滤。
+        unawaited(_persist(next).catchError((Object _) {}));
       }
     });
-    final next = prune(values);
+    final next = _prune(values);
     if (next.length != values.length) {
-      prefs.setString(preferenceKey, jsonEncode(next));
+      unawaited(_persist(next).catchError((Object _) {}));
     }
     return next;
   }
 
   Future<void> remember(String host, String? service) async {
-    final previous = state;
     final next = {...state}..remove(host.toLowerCase());
     if (service != null) next[host.toLowerCase()] = service;
     while (next.length > 128) {
       next.remove(next.keys.first);
     }
+    await _save(_prune(next));
+  }
+
+  Future<void> clearAll() => _save({});
+
+  Future<void> _save(Map<String, String> next) async {
+    var previous = state;
+    final changes = ref.listen(metaverseServicesProvider, (_, _) {
+      // 失效一旦发生就从回滚快照移除，期间重新启用也不恢复旧选择。
+      previous = _prune(previous);
+    });
     // 先发布当前选择；保存期间撤权或停用产生的清理不能被旧异步结果覆盖。
     state = next;
     try {
-      if (!await ref
-          .read(sharedPreferencesProvider)
-          .setString(preferenceKey, jsonEncode(next))) {
-        throw StateError('link_preference_save_failed');
-      }
+      await _persist(next);
     } catch (_) {
-      if (ref.mounted && identical(state, next)) state = previous;
+      if (ref.mounted && identical(state, next)) {
+        // 重置期间可能停用服务；回滚也不能重新带回失效的选择。
+        state = _prune(previous);
+        // SharedPreferences 会先更新内存缓存，同步纠正缓存与持久化值。
+        await _persist(state).catchError((Object _) {});
+      }
       rethrow;
+    } finally {
+      changes.close();
     }
   }
 }
