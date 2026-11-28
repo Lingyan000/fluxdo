@@ -19,6 +19,7 @@ import '../../../../l10n/s.dart';
 import '../../../../pages/image_viewer_page.dart';
 import '../../../../utils/svg_utils.dart';
 import '../../../../widgets/common/image_placeholder.dart';
+import '../../../../widgets/common/fading_edge_scroll_view.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
 import '../../../../widgets/common/skeleton.dart';
 import '../../../../utils/time_utils.dart';
@@ -33,6 +34,7 @@ part 'metaverse_tile_grid.dart';
 part 'metaverse_grid_page.dart';
 part 'metaverse_content_components.dart';
 part 'metaverse_timeline_page.dart';
+part 'metaverse_row_metadata.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -122,6 +124,7 @@ const metaverseIcons = <String, IconData>{
   'error': Symbols.error_rounded,
   'extension': Symbols.extension_rounded,
   'favorite': Symbols.favorite_rounded,
+  'filter_list': Symbols.filter_list_rounded,
   'flag': Symbols.flag_rounded,
   'gift': Symbols.redeem_rounded,
   'group': Symbols.group_rounded,
@@ -134,6 +137,7 @@ const metaverseIcons = <String, IconData>{
   'link': Symbols.link_rounded,
   'lock': Symbols.lock_rounded,
   'mail': Symbols.mail_rounded,
+  'more_horiz': Symbols.more_horiz_rounded,
   'notifications': Symbols.notifications_rounded,
   'open_in_new': Symbols.open_in_new_rounded,
   'payments': Symbols.payments_rounded,
@@ -153,6 +157,7 @@ const metaverseIcons = <String, IconData>{
   'thumb_down': Symbols.thumb_down_rounded,
   'token': Symbols.token_rounded,
   'trending_up': Symbols.trending_up_rounded,
+  'tune': Symbols.tune_rounded,
   'verified': Symbols.verified_rounded,
   'visibility': Symbols.visibility_rounded,
   'wallet': Symbols.wallet_rounded,
@@ -260,13 +265,23 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   'QuantityInput': _buildQuantityInput,
   'CopyButton': (context, source) {
     final text = _text(source, ['text']);
+    final label = source.v<String>(['label']) ?? context.l10n.common_copy;
+    final VoidCallback? copy = text.isEmpty ? null : () async {
+        try {
+          await Clipboard.setData(ClipboardData(text: text));
+          if (context.mounted) ToastService.showSuccess(context.l10n.common_copiedToClipboard);
+        } on PlatformException {
+          if (context.mounted) ToastService.showError(context.l10n.common_failed);
+        }
+      };
+    if (source.v<bool>(['iconOnly']) == true) {
+      return IconButton(onPressed: copy, tooltip: label,
+        icon: const Icon(Symbols.content_copy_rounded, size: 18));
+    }
     return TextButton.icon(
-      onPressed: text.isEmpty ? null : () async {
-        await Clipboard.setData(ClipboardData(text: text));
-        if (context.mounted) ToastService.showSuccess(context.l10n.common_copiedToClipboard);
-      },
+      onPressed: copy,
       icon: const Icon(Symbols.content_copy_rounded, size: 18),
-      label: Text(source.v<String>(['label']) ?? context.l10n.common_copy),
+      label: Text(label),
     );
   },
   'Markdown': (context, source) => _PluginMarkdown(
@@ -297,23 +312,40 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     final summary = _text(source, ['summary']);
     final leading = source.optionalChild(['leading']);
     final detail = source.optionalChild(['detail']);
-    return InkWell(onTap: source.voidHandler(['onTap']), child: Padding(
+    final emphasized = source.v<bool>(['emphasized']) == true;
+    return Semantics(label: emphasized ? context.l10n.metaverse_contentEmphasized : null, child: InkWell(onTap: source.voidHandler(['onTap']), child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (leading != null) ...[leading, const SizedBox(width: 12)],
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (meta.isNotEmpty || detail != null) Padding(padding: const EdgeInsets.only(bottom: 4),
-            child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              if (meta.isNotEmpty) Text(meta, style: theme.textTheme.labelMedium?.copyWith(color: context.emphasis.accent)), ?detail,
-            ])),
-          Text(_text(source, ['title']), maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall),
-          if (summary.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(summary,
+          if (meta.isNotEmpty || detail != null) Padding(padding: const EdgeInsets.only(bottom: 6),
+            child: _PluginRowMetadata(meta: meta, detail: detail)),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (emphasized) Padding(padding: const EdgeInsetsDirectional.only(end: 6, top: 6),
+              child: SizedBox(width: 6, height: 6, child: DecoratedBox(
+                decoration: BoxDecoration(shape: BoxShape.circle, color: context.emphasis.accent)))),
+            Expanded(child: Text(_text(source, ['title']), maxLines: 2,
+              overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface))),
+          ]),
+          if (summary.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(summary,
             maxLines: (source.v<int>(['summaryLines']) ?? 2).clamp(1, 6), overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
         ])),
       ]),
-    ));
+    )));
   },
+  'HorizontalScroll': (context, source) => FadingEdgeScrollView(
+    fadeLeft: source.v<bool>(['edgeFade']) != false,
+    fadeRight: source.v<bool>(['edgeFade']) != false,
+    fadeExtent: .06,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      primary: false,
+      reverse: source.v<bool>(['reverse']) == true,
+      child: source.child(['child']),
+    ),
+  ),
   'Avatar': (context, source) {
     final name = _text(source, ['label']).trim();
     final size = _gridDimension(source, 'size', 36).clamp(16.0, 96.0).toDouble();
@@ -795,6 +827,8 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             PageBackdrop(
               child: _PluginOptionalPadding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
+                topBorder: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .45), width: .5),
+                surface: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
                 onVisibility: widget.onFooterVisibility,
                 child: Center(heightFactor: 1, child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 928),
@@ -810,23 +844,43 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
 
 /// 声明式插槽可能在运行时变成空组件，不能为它保留操作栏或标题间距。
 class _PluginOptionalPadding extends SingleChildRenderObjectWidget {
-  const _PluginOptionalPadding({required this.padding, this.onVisibility, super.child});
+  const _PluginOptionalPadding({required this.padding, this.onVisibility, this.topBorder = BorderSide.none, this.surface, super.child});
   final EdgeInsets padding;
   final ValueChanged<bool>? onVisibility;
+  final BorderSide topBorder;
+  final Color? surface;
   @override
-  RenderObject createRenderObject(BuildContext context) => _OptionalPaddingRender(padding, onVisibility);
+  RenderObject createRenderObject(BuildContext context) => _OptionalPaddingRender(padding, onVisibility, topBorder, surface);
   @override
   void updateRenderObject(BuildContext context, _OptionalPaddingRender renderObject) {
     renderObject.padding = padding;
     renderObject.onVisibility = onVisibility;
+    renderObject.decoration = (topBorder, surface);
   }
 }
 
 class _OptionalPaddingRender extends RenderShiftedBox {
-  _OptionalPaddingRender(this._padding, this.onVisibility) : super(null);
+  _OptionalPaddingRender(this._padding, this.onVisibility, BorderSide border, Color? surface) : _decoration = (border, surface), super(null);
   EdgeInsets _padding;
   ValueChanged<bool>? onVisibility;
   bool? _lastVisible;
+  (BorderSide, Color?) _decoration;
+  set decoration((BorderSide, Color?) value) {
+    if (value == _decoration) return;
+    _decoration = value;
+    markNeedsPaint();
+  }
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (size.height == 0) return;
+    final (border, surface) = _decoration;
+    if (surface != null) context.canvas.drawRect(offset & size, Paint()..color = surface);
+    super.paint(context, offset);
+    if (border.style != BorderStyle.none) {
+      context.canvas.drawLine(offset + Offset(0, border.width / 2),
+        offset + Offset(size.width, border.width / 2), border.toPaint());
+    }
+  }
   set padding(EdgeInsets value) {
     if (_padding == value) return;
     _padding = value;

@@ -281,7 +281,8 @@
     "storageScopes",
     "extendedPages",
     "timelinePages",
-    "inputOptions"
+    "inputOptions",
+    "timelineAlignment"
   ],
   "tasks": [
     {

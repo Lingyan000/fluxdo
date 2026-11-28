@@ -2146,7 +2146,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
             expect(tester.takeException(), isNull);
           }
           if (name == 'Product') {
-            final buy = find.widgetWithText(FilledButton, '立即兑换');
+            final buy = find.widgetWithText(FilledButton, '登录后兑换');
             expect(tester.getRect(buy).center.dx, greaterThan(width / 2));
             expect(tester.getRect(buy).right, closeTo(width - 16, 1));
             for (final failed in [false, true]) {

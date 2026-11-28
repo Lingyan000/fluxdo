@@ -12,6 +12,7 @@ class _PluginTimelinePage extends StatefulWidget {
     required this.hasMore,
     required this.error,
     required this.endRevision,
+    this.shortContentAtStart = false,
     this.header,
     this.footer,
     this.loadingPlaceholder,
@@ -26,6 +27,7 @@ class _PluginTimelinePage extends StatefulWidget {
   final bool loading, loadingMore, hasMore;
   final String error;
   final int endRevision;
+  final bool shortContentAtStart;
   final Widget? header, footer, loadingPlaceholder;
   final String? emptyTitle, moreLabel;
   final VoidCallback? onLoadMore, onRetry;
@@ -46,6 +48,8 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
   int _generation = 0;
   double _bottomPadding = 16;
   bool _footerVisible = false;
+  void _jumpToLatest() => _scroll.jumpTo(widget.shortContentAtStart
+    ? _scroll.position.minScrollExtent : -_bottomPadding);
 
   @override
   void initState() {
@@ -70,7 +74,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
     _bottomPadding = padding;
     if (!_scroll.hasClients || _scroll.position.extentBefore <= 80) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scroll.hasClients) _scroll.jumpTo(-_bottomPadding);
+        if (mounted && _scroll.hasClients) _jumpToLatest();
       });
     }
   }
@@ -122,7 +126,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
       _away = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scroll.hasClients) _scroll.jumpTo(-_bottomPadding);
+      if (mounted && _scroll.hasClients) _jumpToLatest();
     });
   }
 
@@ -158,7 +162,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
     _origin = widget.itemKeys.firstOrNull;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _generation || !_scroll.hasClients) return;
-      _scroll.jumpTo(-_bottomPadding);
+      _jumpToLatest();
     });
   }
 
@@ -235,7 +239,8 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
                       )
                     : NotificationListener<ScrollNotification>(
                         onNotification: _onScroll,
-                        child: CustomScrollView(
+                        child: _TimelineScrollView(
+                          shortContentAtStart: widget.shortContentAtStart,
                           controller: _scroll,
                           reverse: true,
                           center: _center,
@@ -352,5 +357,59 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
       ),
       children: const [],
     );
+  }
+}
+
+class _TimelineScrollView extends CustomScrollView {
+  const _TimelineScrollView({required this.shortContentAtStart,
+    super.controller, super.reverse, super.center, super.physics,
+    super.keyboardDismissBehavior, super.slivers});
+  final bool shortContentAtStart;
+
+  @override
+  Widget buildViewport(BuildContext context, ViewportOffset offset,
+    AxisDirection axisDirection, List<Widget> slivers) {
+    if (!shortContentAtStart) return super.buildViewport(context, offset, axisDirection, slivers);
+    return _TimelineViewport(axisDirection: axisDirection, offset: offset,
+      center: center, slivers: slivers);
+  }
+}
+
+class _TimelineViewport extends Viewport {
+  _TimelineViewport({required super.axisDirection, required super.offset,
+    super.center, super.slivers});
+
+  @override
+  RenderViewport createRenderObject(BuildContext context) => _TimelineRenderViewport(
+    axisDirection: axisDirection,
+    crossAxisDirection: Viewport.getDefaultCrossAxisDirection(context, axisDirection),
+    offset: offset);
+}
+
+/// 先让普通视口布局可见条目；只有总高度不足一屏时移动原点。
+/// 不用 shrinkWrap 展开历史，也不凭条数估计行高。
+class _TimelineRenderViewport extends RenderViewport {
+  _TimelineRenderViewport({required super.axisDirection,
+    required super.crossAxisDirection, required super.offset});
+  double _layoutAnchor = 0;
+  @override
+  double get anchor => _layoutAnchor;
+
+  @override
+  void performLayout() {
+    _layoutAnchor = 0;
+    super.performLayout();
+    var extent = 0.0;
+    var forward = 0.0;
+    var afterCenter = false;
+    for (var sliver = firstChild; sliver != null; sliver = childAfter(sliver)) {
+      extent += sliver.geometry?.scrollExtent ?? 0;
+      afterCenter = afterCenter || sliver == center;
+      if (afterCenter) forward += sliver.geometry?.scrollExtent ?? 0;
+    }
+    if (size.height > extent && extent > 0) {
+      _layoutAnchor = (size.height - forward) / size.height;
+      super.performLayout();
+    }
   }
 }

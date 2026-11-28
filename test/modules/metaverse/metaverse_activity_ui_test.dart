@@ -203,7 +203,7 @@ void main() {
         'manual': false,
         'needsActivity': false,
         'error': '',
-        'scheduleError': '',
+        'scheduleError': '', 'historyError':'', 'progress':'',
         'items': [
           for (var i = 0; i < headlines.length; i++)
             {
@@ -211,12 +211,12 @@ void main() {
               'avatar': '',
               'title': headlines[i],
               'summary': excerpts[i],
-              'meta': '${people[1 + i % 3]} · ${i.isEven ? '发帖 · 未读' : '回复'}',
+              'meta': '${people[1 + i % 3]} · ${i.isEven ? '发帖' : '回复'}',
               'time': DateTime.now()
                   .toUtc()
                   .subtract(Duration(minutes: i * 15 + 2))
                   .toIso8601String(),
-              'id': '$i',
+              'id': '$i', 'unread': i.isEven,
               'owner': 1,
               'topic': i + 1,
               'post': 1,
@@ -228,7 +228,7 @@ void main() {
         ProviderScope(
           child: app(
             Scaffold(
-              appBar: AppBar(title: const Text('动态订阅')),
+              appBar: AppBar(title: const Text('动态订阅'), actions:[RemoteWidget(runtime:runtime, widget: const FullyQualifiedWidgetName(metaversePluginLibraryName,'FeedActions'), data:data, onEvent:(name,_)=>events.add(name))]),
               body: RemoteWidget(
                 runtime: runtime,
                 widget: const FullyQualifiedWidgetName(
@@ -388,7 +388,9 @@ void main() {
     await until(find.text('添加用户'));
     expect(find.text(S.current.metaverse_thirdParty),findsNothing);
     expect(find.byType(AppBar),findsOneWidget);
-    expect(tester.widget<AppBar>(find.byType(AppBar)).actions,isEmpty);
+    await until(find.byWidgetPredicate((w)=>w is IconButton && w.tooltip=='添加订阅'));
+    await until(find.byWidgetPredicate((w)=>w is IconButton && w.tooltip=='订阅管理'));
+    await tester.pumpAndSettle();
     navigatorKey.currentState!.pop();await tester.pumpAndSettle();
     await until(find.text('订阅用户'));
     await tester.tap(find.text('动态订阅'));

@@ -306,6 +306,7 @@ const metaverseComponentContract = {
   "ContentRow": {
     "parameters": [
       "detail",
+      "emphasized",
       "leading",
       "meta",
       "onTap",
@@ -316,6 +317,9 @@ const metaverseComponentContract = {
     "types": {
       "detail": [
         "widget"
+      ],
+      "emphasized": [
+        "boolean"
       ],
       "leading": [
         "widget"
@@ -357,10 +361,14 @@ const metaverseComponentContract = {
   },
   "CopyButton": {
     "parameters": [
+      "iconOnly",
       "label",
       "text"
     ],
     "types": {
+      "iconOnly": [
+        "boolean"
+      ],
       "label": [
         "string"
       ],
@@ -801,6 +809,24 @@ const metaverseComponentContract = {
         "integer"
       ],
       "shrinkWrap": [
+        "boolean"
+      ]
+    }
+  },
+  "HorizontalScroll": {
+    "parameters": [
+      "child",
+      "edgeFade",
+      "reverse"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "edgeFade": [
+        "boolean"
+      ],
+      "reverse": [
         "boolean"
       ]
     }
@@ -1782,7 +1808,8 @@ const metaverseComponentContract = {
       "loadingPlaceholder",
       "moreLabel",
       "onLoadMore",
-      "onRetry"
+      "onRetry",
+      "shortContentAlignment"
     ],
     "types": {
       "emptyTitle": [
@@ -1832,6 +1859,9 @@ const metaverseComponentContract = {
       ],
       "onRetry": [
         "event"
+      ],
+      "shortContentAlignment": [
+        "string"
       ]
     }
   },

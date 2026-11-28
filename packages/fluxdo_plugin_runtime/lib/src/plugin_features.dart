@@ -35,6 +35,9 @@ enum PluginFeature {
   extendedPages,
   timelinePages,
   inputOptions,
+  horizontalScroll,
+  timelineAlignment,
+  contentEmphasis,
 }
 
 class PluginFeatures {

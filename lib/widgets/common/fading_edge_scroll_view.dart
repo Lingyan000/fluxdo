@@ -30,11 +30,15 @@ class FadingEdgeScrollView extends StatefulWidget {
 
 class _FadingEdgeScrollViewState extends State<FadingEdgeScrollView> {
   bool _showLeftFade = false;
-  bool _showRightFade = true;
+  bool _showRightFade = false;
 
   void _updateFadeState(ScrollMetrics metrics) {
-    final newShowLeft = metrics.pixels > 1;
-    final newShowRight = metrics.pixels < metrics.maxScrollExtent - 1;
+    if (metrics.axis != Axis.horizontal) return;
+    final before = metrics.extentBefore > 1;
+    final after = metrics.extentAfter > 1;
+    final reversed = metrics.axisDirection == AxisDirection.left;
+    final newShowLeft = reversed ? after : before;
+    final newShowRight = reversed ? before : after;
     if (newShowLeft != _showLeftFade || newShowRight != _showRightFade) {
       setState(() {
         _showLeftFade = newShowLeft;
@@ -50,12 +54,12 @@ class _FadingEdgeScrollViewState extends State<FadingEdgeScrollView> {
 
     return NotificationListener<ScrollMetricsNotification>(
       onNotification: (notification) {
-        _updateFadeState(notification.metrics);
+        if (notification.depth == 0) _updateFadeState(notification.metrics);
         return false;
       },
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
-          _updateFadeState(notification.metrics);
+          if (notification.depth == 0) _updateFadeState(notification.metrics);
           return false;
         },
         child: ShaderMask(
@@ -76,8 +80,8 @@ class _FadingEdgeScrollViewState extends State<FadingEdgeScrollView> {
               ],
               stops: [
                 if (showLeft) 0.0,
-                showLeft ? widget.fadeExtent : 0.0,
-                showRight ? 1.0 - widget.fadeExtent : 1.0,
+                showLeft ? widget.fadeExtent.clamp(0, .5) : 0.0,
+                showRight ? 1.0 - widget.fadeExtent.clamp(0, .5) : 1.0,
                 if (showRight) 1.0,
               ],
             ).createShader(bounds);

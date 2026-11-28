@@ -12,6 +12,7 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     hasMore: source.v<bool>(['hasMore']) == true,
     error: source.v<String>(['error']) ?? '',
     endRevision: source.v<int>(['endRevision']) ?? 0,
+    shortContentAtStart: source.v<String>(['shortContentAlignment']) == 'start',
     header: source.optionalChild(['header']),
     footer: source.optionalChild(['footer']),
     loadingPlaceholder: source.optionalChild(['loadingPlaceholder']),

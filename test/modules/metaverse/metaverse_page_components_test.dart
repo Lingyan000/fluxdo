@@ -162,7 +162,7 @@ void main() {
     data.updateAll({'identity': 'one', 'items': rows, 'more': true});
     await show(tester, timeline);
     await tester.pumpAndSettle();
-    final list = find.byType(CustomScrollView);
+    final list = find.byWidgetPredicate((w) => w is CustomScrollView);
     final controller = tester.widget<CustomScrollView>(list).controller!;
     expect(controller.offset, closeTo(-16, 1));
     expect(find.text('记录 40').hitTestable(), findsOneWidget);
@@ -199,12 +199,64 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('短时间线可选顶对齐，尺寸变化和转为长列表保持最新与历史锚点', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    var rows = [for (var i = 2; i > 0; i--) {'id': '记录 $i'}];
+    data.updateAll({'identity':'one', 'items': rows, 'alignment': 'start'});
+    await show(tester, timeline.replaceFirst('TimelinePage(', 'TimelinePage(shortContentAlignment: data.alignment, '), scale: 1.5);
+    await tester.pumpAndSettle();
+    final list = find.byWidgetPredicate((w) => w is CustomScrollView);
+    final top = tester.getTopLeft(list).dy;
+    expect(tester.getTopLeft(find.text('记录 1')).dy, closeTo(top + 16, 1));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('记录 1')).dy, closeTo(top + 16, 1));
+    rows = [for (var i = 40; i > 0; i--) {'id': '记录 $i'}];
+    data.update('items', rows);
+    await tester.pumpAndSettle();
+    final scroll = tester.widget<CustomScrollView>(list).controller!;
+    expect(find.text('记录 40').hitTestable(), findsOneWidget);
+    scroll.jumpTo(600); await tester.pumpAndSettle();
+    final before = tester.getTopLeft(find.text('记录 30')).dy;
+    data.update('items', [for (var i=100;i>40;i--) {'id':'记录 $i'}, ...rows, {'id':'记录 0'}]);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('记录 30')).dy, closeTo(before, 1));
+    expect(find.text('记录 100'), findsNothing);
+    data.update('items', [{'id':'只剩一条'}]);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('只剩一条')).dy, closeTo(top + 16, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('短时间线按条目真实尺寸重排，跨过一屏后保持懒加载', (tester) async {
+    data.updateAll({'height':60.0,'items':[for(var i=2;i>0;i--) {'id':'动态尺寸 $i'}]});
+    await show(tester, '''TimelinePage(shortContentAlignment:"start", identity:"sizes",
+      itemKeys:[...for row in data.items:row.id],
+      items:[...for row in data.items:SizedBox(height:data.height,child:Label(text:row.id))])''');
+    await tester.pumpAndSettle();
+    final list=find.byWidgetPredicate((w)=>w is CustomScrollView);
+    final top=tester.getTopLeft(list).dy;
+    expect(tester.getTopLeft(find.text('动态尺寸 1')).dy,closeTo(top+16,1));
+    data.update('height',130.0);await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('动态尺寸 1')).dy,closeTo(top+16,1));
+    data.update('height',400.0);await tester.pumpAndSettle();
+    expect(find.text('动态尺寸 2').hitTestable(),findsOneWidget);
+    data.update('items',[for(var i=1000;i>0;i--) {'id':'动态尺寸 $i'}]);await tester.pumpAndSettle();
+    expect(find.text('动态尺寸 1000').hitTestable(),findsOneWidget);
+    expect(find.byType(KeyedSubtree).evaluate().length,lessThan(40));
+    expect(tester.takeException(),isNull);
+  });
+
   testWidgets('时间线短内容上滑历史分页只触发一次，错误可重试', (tester) async {
     data.updateAll({'items': [{'id': '一条记录'}], 'more': true});
     await show(tester, timeline);
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
+    await tester.drag(find.byWidgetPredicate((w) => w is CustomScrollView), const Offset(0, 240));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
+    await tester.drag(find.byWidgetPredicate((w) => w is CustomScrollView), const Offset(0, 240));
     await tester.pumpAndSettle();
     expect(events.where((e) => e.name == 'more'), hasLength(1));
     data.update('error', '历史加载失败');
@@ -216,7 +268,7 @@ void main() {
     await tester.pump();
     data.update('loadingMore', false);
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
+    await tester.drag(find.byWidgetPredicate((w) => w is CustomScrollView), const Offset(0, 240));
     await tester.pumpAndSettle();
     expect(events.where((e) => e.name == 'more'), hasLength(2));
     expect(tester.takeException(), isNull);
@@ -262,7 +314,7 @@ void main() {
       items: [SizedBox(height: 60.0, child: Label(text: "记录"))],
       footer: switch data.footer {true: Button(label: "发送"), default: SizedBoxShrink()})''');
     await tester.pumpAndSettle();
-    final scroll = tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!;
+    final scroll = tester.widget<CustomScrollView>(find.byWidgetPredicate((w) => w is CustomScrollView)).controller!;
     expect(scroll.position.minScrollExtent, -50);
     expect(scroll.offset, -50);
     expect(tester.getRect(find.text('记录')).bottom, lessThanOrEqualTo(794));

@@ -29,8 +29,8 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
   final label = {'label': text};
   final title = {'title': text, 'message': l.metaverse_developerPreview};
   return [
-    MetaverseComponentExample('CopyButton', 'CopyButton(text: data.text, label: data.label)',
-      {'text':text, 'label':l.common_copy}, description: l.metaverse_componentCopyButton),
+    MetaverseComponentExample('CopyButton', 'CopyButton(text: data.text, label: data.label, iconOnly: data.iconOnly)',
+      {'text':text, 'label':l.common_copy, 'iconOnly':false}, description: l.metaverse_componentCopyButton),
     MetaverseComponentExample('Statistics', 'Statistics(loading: data.loading, items: [{value: data.value, label: data.label}, {value: "8", label: data.title}])',
       {...title, ...label, 'value': '24', 'loading': false}, description: l.metaverse_componentStatistics),
     MetaverseComponentExample('Amount', 'Amount(value: data.value, unit: data.unit, original: data.original, style: data.style)',
@@ -42,8 +42,11 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample('Markdown', 'Markdown(text: data.text, onLink: event "link" {})',
       {'text':'## $text\n\n**$text** · [Linux DO](https://linux.do)\n\n- $text\n- $text'}, description: l.metaverse_componentMarkdown, previewHeight: 320),
     MetaverseComponentExample('ContentRow',
-      'ContentRow(title: data.title, meta: data.label, summary: data.message, summaryLines: data.lines, leading: Avatar(label: data.label), detail: Symbol(name: "bookmark"), onTap: event "open" {})',
-      {...title, ...label, 'lines': 2}, description: l.metaverse_componentContentRow),
+      'ContentRow(emphasized: data.emphasized, title: data.title, meta: data.label, summary: data.message, summaryLines: data.lines, leading: Avatar(label: data.label), detail: Symbol(name: "bookmark"), onTap: event "open" {})',
+      {...title, ...label, 'lines': 2, 'emphasized': true}, description: l.metaverse_componentContentRow),
+    MetaverseComponentExample('HorizontalScroll',
+      'HorizontalScroll(reverse: data.reverse, edgeFade: data.edgeFade, child: Row(children: [Choice(label: data.label, selected: data.selected, onSelected: event "select" {}), Gap(size: 8), Choice(label: data.message), Gap(size: 8), Choice(label: data.title), Gap(size: 8), Choice(label: data.label)]))',
+      {...title, ...label, 'reverse':false, 'edgeFade':true, 'selected':true}, description: l.metaverse_componentHorizontalScroll),
     MetaverseComponentExample('AdaptivePane',
       'AdaptivePane(masterWidth: data.masterWidth, minDetailWidth: data.minDetailWidth, compactHeader: Chip(label: data.title), sidebar: ListItem(title: data.title), body: Center(child: Label(text: data.message)))',
       {...title, 'masterWidth': 240, 'minDetailWidth': 400}, description: l.metaverse_componentAdaptivePane),
@@ -67,7 +70,7 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'TimelinePage',
       description: l.metaverse_componentTimelinePage,
-      'TimelinePage(identity: "preview", itemKeys: ["new", "old"], items: [Surface(child: Label(text: data.title)), Padding(padding: [0.0, 0.0, 0.0, 12.0], child: Surface(child: Label(text: data.message)))], hasMore: data.hasMore, loadingMore: data.loadingMore, endRevision: data.endRevision, onLoadMore: event "loadMore" {}, footer: TextInput(value: data.value, hint: data.title, variant: "filled", minLines: 1, maxLines: 4, onChanged: event "change" {}))',
+      'TimelinePage(shortContentAlignment: data.shortContentAlignment, identity: "preview", itemKeys: ["new", "old"], items: [Surface(child: Label(text: data.title)), Padding(padding: [0.0, 0.0, 0.0, 12.0], child: Surface(child: Label(text: data.message)))], hasMore: data.hasMore, loadingMore: data.loadingMore, endRevision: data.endRevision, onLoadMore: event "loadMore" {}, footer: TextInput(value: data.value, hint: data.title, variant: "filled", minLines: 1, maxLines: 4, onChanged: event "change" {}))',
       {...title, 'value': '', 'hasMore': true, 'loadingMore': false, 'endRevision': 0},
       ranges: {'endRevision': (0, 10)},
       previewHeight: 400,

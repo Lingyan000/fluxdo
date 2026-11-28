@@ -1048,11 +1048,11 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
             ),
           ),
         );
-        await settle(tester, () => find.text(stock == -1 ? '立即兑换' : '已售罄').evaluate().isNotEmpty);
+        await settle(tester, () => find.text(stock == -1 ? '登录后兑换' : '已售罄').evaluate().isNotEmpty);
         expect(
           tester
                   .widget<FilledButton>(
-                    find.widgetWithText(FilledButton, stock == -1 ? '立即兑换' : '已售罄'),
+                    find.widgetWithText(FilledButton, stock == -1 ? '登录后兑换' : '已售罄'),
                   )
                   .onPressed !=
               null,
@@ -1678,7 +1678,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         await tester.tap(find.text('帖子链接'));
         await settle(tester, () => find.byType(content.FluxdoRender).evaluate().isNotEmpty);
         expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
-        expect(find.text('立即兑换'), findsOneWidget);
+        expect(find.text('登录后兑换'), findsOneWidget);
         final shell = find.byType(AppSheetScaffold);
         expect(
           tester.widget<AppSheetScaffold>(shell).showDragHandle,

@@ -483,6 +483,22 @@ void main() {
     expect(clipboard.single.arguments, {'text': 'fixture-code'});
   });
 
+  testWidgets('紧凑复制保留触区与提示，复制当前值且失败不泄漏异常', (tester) async {
+    String? copied;
+    var fail=false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,(call) async {
+      if(call.method=='Clipboard.setData') {if(fail) throw PlatformException(code:'unavailable');copied=call.arguments['text'] as String;}
+      return null;
+    });
+    addTearDown(()=>TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,null));
+    data.update('value','first');await show(tester,'CopyButton(text:data.value,label:"复制订单号",iconOnly:true)');
+    data.update('value','latest');await tester.pumpAndSettle();
+    final button=find.byWidgetPredicate((w)=>w is IconButton&&w.tooltip=='复制订单号');
+    expect(tester.getSize(button).width,greaterThanOrEqualTo(48));
+    await tester.tap(button);await tester.pumpAndSettle();expect(copied,'latest');
+    fail=true;await tester.tap(button);await tester.pumpAndSettle();expect(tester.takeException(),isNull);
+  });
+
   testWidgets('固定工具区保持可见，正文和底部操作可独立访问', (tester) async {
     await show(
       tester,

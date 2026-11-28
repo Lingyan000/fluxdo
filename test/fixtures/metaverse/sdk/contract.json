@@ -43,7 +43,10 @@
     "storageScopes",
     "extendedPages",
     "timelinePages",
-    "inputOptions"
+    "inputOptions",
+    "horizontalScroll",
+    "timelineAlignment",
+    "contentEmphasis"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -55,5 +58,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "9834ca293ccbc9fa9ab5fdf89f70d57472fddb7c"
   },
-  "typesSha256": "0206778ac0add72e000fe29cca1d904562c0753dc31daf1e6ec57afc40f8d8d2"
+  "typesSha256": "6d07c1312204b2ab962c048a8b9bb3eb9395069849169f7b79dae01acf5ffb79"
 }

@@ -305,6 +305,7 @@
   "ContentRow": {
     "parameters": [
       "detail",
+      "emphasized",
       "leading",
       "meta",
       "onTap",
@@ -315,6 +316,9 @@
     "types": {
       "detail": [
         "widget"
+      ],
+      "emphasized": [
+        "boolean"
       ],
       "leading": [
         "widget"
@@ -356,10 +360,14 @@
   },
   "CopyButton": {
     "parameters": [
+      "iconOnly",
       "label",
       "text"
     ],
     "types": {
+      "iconOnly": [
+        "boolean"
+      ],
       "label": [
         "string"
       ],
@@ -800,6 +808,24 @@
         "integer"
       ],
       "shrinkWrap": [
+        "boolean"
+      ]
+    }
+  },
+  "HorizontalScroll": {
+    "parameters": [
+      "child",
+      "edgeFade",
+      "reverse"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "edgeFade": [
+        "boolean"
+      ],
+      "reverse": [
         "boolean"
       ]
     }
@@ -1781,7 +1807,8 @@
       "loadingPlaceholder",
       "moreLabel",
       "onLoadMore",
-      "onRetry"
+      "onRetry",
+      "shortContentAlignment"
     ],
     "types": {
       "emptyTitle": [
@@ -1831,6 +1858,9 @@
       ],
       "onRetry": [
         "event"
+      ],
+      "shortContentAlignment": [
+        "string"
       ]
     }
   },

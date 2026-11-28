@@ -41,12 +41,13 @@ widget SearchPage = PageLayout(
 | 组件 | 参数与默认值 | 事件及行为 |
 | --- | --- | --- |
 | `PageLayout` | `children`、可选 `toolbar`、`footer`、`loading: false`、`hasMore: false`、`loadingMore: false`、`loadMoreError: ""` | `onRefresh`、`onLoadMore`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
-| `TimelinePage` | `identity`、`items`、`itemKeys`、`header`、`footer`、`loadingPlaceholder`、`loading`、`loadingMore`、`hasMore`、`error`、`emptyTitle`、`moreLabel`、`endRevision` | `onLoadMore`、`onRetry`。需要 `timelinePages`，使用下方时间线顺序与定位约定 |
+| `TimelinePage` | `identity`、`items`、`itemKeys`、`header`、`footer`、`loadingPlaceholder`、`loading`、`loadingMore`、`hasMore`、`error`、`emptyTitle`、`moreLabel`、`endRevision`、`shortContentAlignment: end / start` | `onLoadMore`、`onRetry`。需要 `timelinePages`，使用下方时间线顺序与定位约定 |
 | `ListPage` | `items`、可选 `toolbar`、`search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，上滑接近底部时加载下一页，也保留手动加载入口，刷新保留已有条目 |
 | `DetailPage` | `sections`、可选 `toolbar`、`header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
 | `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
 | `ActionBar` | `actions` 组件列表 | 操作靠右排列，窄屏自动换为纵向；事件由内部按钮声明 |
 | `TileGrid` | `children`、`layout: natural`、`columns: 0`、`minTileWidth: 0`、`spacing: 12`、`runSpacing: 12` | 自然高度、同排等高、瀑布流，详见下方网格布局 |
+| `HorizontalScroll` | `child`、`reverse: false`、`edgeFade: true` | 需要 `horizontalScroll`。水平滚动，按实际溢出显示两侧渐隐，支持 RTL、键盘焦点与尺寸变化；不要再嵌套横向滚动容器 |
 | `Choice` | `label`、`selected: false`、`leading`、`layout: inline / stacked` | `onSelected`，值由脚本管理。`stacked` 将头像或图标放在标签上方，适合横向名单 |
 | `EmptyState` | `title`、可选 `message`、`icon`、`action` | 空内容或错误状态，默认购物袋图标，通用场景建议指定 icon |
 | `SelectableLabel` | `text` | 可选择复制的 bodyMedium 文本 |
@@ -60,7 +61,7 @@ widget SearchPage = PageLayout(
 | `Amount` | `value`、`unit`、`original`、`style: titleLarge`、`color` | 主题金额，原值删除线，空间不足时换行；值由插件格式化 |
 | `QuantityInput` | `value`、`min: 1`、`max: 9999`、`enabled: true` | `onChanged` 回传 `{value: number}`，边界禁用增减；脚本回写 value |
 | `Markdown` | `text`，最多 131072 字符 | 标题、列表、表格、代码、强调与链接，原始 HTML 作为文本。图片通过插件图片出口；`onLink` 仅在点击时回传 `{url}` |
-| `CopyButton` | `text`、`label` | 点击后复制并显示应用提示；空文本禁用，不读取剪贴板 |
+| `CopyButton` | `text`、`label`、`iconOnly: false` | 点击后复制并显示应用提示；空文本禁用，不读取剪贴板 |
 | `ListItem` | `title`、`subtitle`、`leading`、`trailing` | `onTap`，空 subtitle 隐藏 |
 | `Divider` | 无参数 | 高度 1 的分隔组件 |
 | `Skeleton` | `child` | 原生骨架容器，禁用子树交互与重复朗读，跟随减少动画设置；声明 `loadingPlaceholders` |
@@ -79,7 +80,7 @@ widget SearchPage = PageLayout(
 
 颜色也接受 `0xAARRGGBB` 字符串；优先使用主题 token，让明暗主题和自定义背景保持一致。
 
-图标名支持 add、arrow_forward、bolt、bookmark、calendar、chart、check、check_circle、chevron_right、close、cloud、code、copy、credit_card、delete、done_all、download、edit、error、extension、favorite、flag、gift、group、history、home、hub、image、info、key、link、lock、mail、notifications、open_in_new、payments、person、public、refresh、schedule、search、settings、share、shopping_cart、star、storefront、sync、tag、thumb_up、thumb_down、token、trending_up、verified、visibility、wallet、warning。
+图标名支持 add、arrow_forward、bolt、bookmark、calendar、chart、check、check_circle、chevron_right、close、cloud、code、copy、credit_card、delete、done_all、download、edit、error、extension、favorite、filter_list、flag、gift、group、history、home、hub、image、info、key、link、lock、mail、more_horiz、notifications、open_in_new、payments、person、public、refresh、schedule、search、settings、share、shopping_cart、star、storefront、sync、tag、thumb_up、thumb_down、token、trending_up、tune、verified、visibility、wallet、warning。
 
 ## 页面标题栏
 
@@ -227,11 +228,13 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 
 声明 `adaptiveCollections` 后，可用 `AdaptivePane` 布置名单与内容。页面设置 `scroll: false`，用 `compactHeader` 放窄屏筛选栏，`sidebar` 放宽屏名单，`body` 放 `ListPage`。`masterWidth` 和 `minDetailWidth` 按当前可用空间决定何时并排。`ListPage.empty` 可放带操作按钮的空态，首次打开就能引导用户添加内容。
 
+`ContentRow` 的 `emphasized: true` 使用主题强调标记与辅助语义，须声明 `contentEmphasis`。状态由插件显式提供，不推断文案含义。元信息与详情插槽在有限宽度内排版，窄屏或大字时分行。
+
 `ContentRow` 可组合 `leading`、`meta`、`title`、`summary` 和 `detail`。`Avatar` 按宿主图片权限加载，加载失败显示名称首字。传入正整数 `count` 会显示角标，零会隐藏角标。`RelativeTime` 接受 UTC 时间并跟随应用的相对时间显示，`Choice.leading` 可放头像或图标。
 
 ## 固定工具区与卡片入口
 
-`PageLayout`、`ListPage`、`DetailPage`、`GridPage` 的 `toolbar` 固定在内容区上方，适合搜索和分类。普通 `header` 随列表滚动。工具区最高占页面 45%，大字下内部可滚动；`footer` / `actions` 放主要操作。
+`PageLayout`、`ListPage`、`DetailPage`、`GridPage` 的 `toolbar` 固定在内容区上方，适合搜索和分类。普通 `header` 随列表滚动。工具区最高占页面 45%，大字下内部可滚动；`footer` / `actions` 放主要操作。有界页面中底栏使用主题表面与轻量顶边，实际高度为零时不留线或额外空白；页面背景和键盘安全区由宿主管理。
 
 `Image(preview: true)` 和 Markdown 图片点击后使用应用公共图片查看器，支持双击缩放、拖动关闭、保存及平台支持的分享操作。首次预览复用图片现有的加载请求，重试仍通过插件的图片权限与网络出口；查看器和导出操作只消费图片字节，不另行按 URL 下载或附带论坛凭据。SVG 以静态位图预览和导出，不执行脚本或加载外链子资源。上述展示能力需要声明 `requiredFeatures: ["contentPresentation"]`。
 
@@ -251,7 +254,7 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 
 ### 时间线
 
-`TimelinePage` 接收从新到旧排列的 `items`，并以相同顺序传入唯一、稳定的字符串 `itemKeys`。最新项位于屏幕底部，追加历史放在数组末尾。组件只负责显示、定位与分页触发；网络协议、消息身份和发送资格均由插件负责。清单页面使用 `scroll: false`，不要再套滚动容器。
+`TimelinePage` 接收从新到旧排列的 `items`，并以相同顺序传入唯一、稳定的字符串 `itemKeys`。默认最新项位于屏幕底部，追加历史放在数组末尾。声明 `timelineAlignment` 后可传 `shortContentAlignment: "start"`：内容不足一屏时按实际布局高度贴顶，铺满一屏后仍使用最新项贴底和历史锚点。默认 `end` 保持贴底。条目保持懒加载，图片增高、字体和键盘尺寸变化会重新计算可用空间。组件只负责显示、定位与分页触发；网络协议、消息身份和发送资格均由插件负责。清单页面使用 `scroll: false`，不要再套滚动容器。
 
 更换会话或查询时修改 `identity`，以重置定位。位于最新位置时自动跟随内容与键盘高度变化；正在查看历史时保留阅读位置，显示“回到最新”按钮。新内容与历史分别在原生滚动锚点两侧生长，一次补回多屏内容也不需要测量离屏条目。主动发送成功等操作可递增 `endRevision` 回到末尾，轮询、加载历史和只读刷新不应修改它。若插件裁剪数据并移除了当前滚动锚点，组件重置到最新内容；不保证被删除记录的位置。
 

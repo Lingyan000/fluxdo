@@ -29,7 +29,7 @@ widget Card = Column(mainAxisSize: "min", crossAxisAlignment: "stretch", childre
 ]);
 
 widget MarketActions = Row(mainAxisSize: "min", children: [
-  IconButton(icon: "settings", tooltip: data.i18n.s1209094cb006abd9, onPressed: event "filters" {}),
+  IconButton(icon: "tune", tooltip: data.i18n.s1209094cb006abd9, onPressed: event "filters" {}),
   IconButton(icon: "person", tooltip: data.i18n.se4422147cb5f43ab, onPressed: event "account" {},
     child: switch data.authorized {true: Avatar(label: data.accountName, url: data.accountAvatar, size: 28), default: Symbol(name: "person")}),
 ]);
@@ -70,14 +70,13 @@ widget Market = GridPage(loadingPlaceholder: GridSkeleton(), layout: "equalHeigh
 
 widget ProductTile = switch args.item.hiddenItem {true: Surface(padding: [0.0], child: Column(crossAxisAlignment: "stretch", children: [TileContent(item: args.item), Button(label: data.i18n.s142d98f2cd299938, variant: "text", onPressed: event "restoreProduct" {id: args.item.id})])), default: Surface(padding: [0.0], onTap: event "product" {id: args.item.id}, child: TileContent(item: args.item))};
 widget TileContent = Column(crossAxisAlignment: "stretch", children: [
-  AspectRatio(aspectRatio: 1.4, child: switch args.item.image {"": Center(child: Symbol(name: args.item.typeIcon, size: 32, color: "onSurfaceVariant")), default: Image(url: args.item.image, fit: "cover")}),
+  AspectRatio(aspectRatio: 1.4, child: Surface(padding: [0.0], radius: 0.0, color: "surfaceContainerHighest", child: switch args.item.image {"": Center(child: Symbol(name: args.item.typeIcon, size: 32, color: "onSurfaceVariant")), default: Image(url: args.item.image, fit: "cover")})),
   Padding(padding: [10.0], child: Column(crossAxisAlignment: "stretch", children: [
     switch args.item.listingNote {"": SizedBoxShrink(), default: Label(text: args.item.listingNote, style: "labelSmall", color: "primary")},
     Label(text: args.item.title, style: "titleSmall", maxLines: 2), Gap(size: 6),
-    Amount(value: args.item.value, unit: "LDC", style: "titleMedium"),
+    Amount(value: args.item.value, unit: "LDC", original: args.item.original, style: "titleMedium"),
     switch args.item.discount {"": SizedBoxShrink(), default: Padding(padding: [0.0, 2.0, 0.0, 0.0], child: Wrap(spacing: 8.0, runSpacing: 2.0, children: [
       Label(text: args.item.discount, style: "labelSmall", color: "primary"),
-      Label(text: args.item.originalLabel, style: "labelSmall", color: "onSurfaceVariant"),
     ]))},
     Gap(size: 6), Wrap(spacing: 8.0, runSpacing: 2.0, children: [
       Label(text: args.item.stock, style: "labelSmall", color: "onSurfaceVariant"),
@@ -112,12 +111,13 @@ widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
   hasMore: data.commentsMore, loadingMore: data.commentsLoading, loadMoreError: data.commentsError, onLoadMore: event "commentsMore" {},
   footer: switch data.ready {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
     ExternalFeedback(),
+    switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.loginError, color: "error"))},
     switch data.restockAvailable {true: Button(label: data.restockLabel, icon: "notifications", enabled: switch data.restockSubscribed {true: false, default: true}, loading: data.restockLoading, variant: "tonal", onPressed: event "subscribeRestock" {}), default: SizedBoxShrink()},
     switch data.restockError {"": SizedBoxShrink(), default: ListItem(title: data.restockError, trailing: Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "restockRetry" {}))},
     Row(children: [Expanded(child: Amount(value: data.value, unit: "LDC")), Gap(size: 12),
       Expanded(flex: 2, child: switch data.linkProduct {
         true: Button(fullWidth: true, label: data.buyLabel, icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
-        default: Button(fullWidth: true, label: data.buyLabel, enabled: data.buy, onPressed: event "review" {}),
+        default: switch data.authorized {true: Button(fullWidth: true, label: data.buyLabel, enabled: data.buy, onPressed: event "review" {}), default: Button(fullWidth: true, label: switch data.buy {true: data.i18n.sf25d787df4bff6d2, default: data.buyLabel}, enabled: data.buy, loading: data.loggingIn, onPressed: event "login" {})},
       }),
     ]),
   ]), default: SizedBoxShrink()},
@@ -134,7 +134,7 @@ widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
       Gap(size: 20), Surface(child: Statistics(items: data.metrics)),
       Gap(size: 12), Surface(padding: [0.0], child: ListItem(title: data.sellerName, subtitle: data.i18n.s3d43be34e14fae36,
         leading: Avatar(label: data.sellerName, url: data.sellerAvatar, size: 40), trailing: switch data.sellerProfileAvailable {true: IconButton(icon: "person", tooltip: data.i18n.sf5e765cb4d828b14, onPressed: event "sellerProfile" {}), default: Symbol(name: "chevron_right")}, onTap: event "seller" {})),
-      Gap(size: 12), Label(text: data.listedAt, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(), LoginButton(),
+      Gap(size: 12), Label(text: data.listedAt, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(),
       ...for rule in data.rules: Padding(padding: [0.0, 4.0, 0.0, 4.0], child: Row(crossAxisAlignment: "start", children: [Symbol(name: "info", size: 18.0, color: "onSurfaceVariant"), Gap(size: 8), Expanded(child: Label(text: rule, color: "onSurfaceVariant"))])),
       Gap(size: 24), SectionTitle(title: data.i18n.s64717955bcfdb7ca), Gap(size: 12), Markdown(text: data.description, onLink: event "contentLink" {}),
       Gap(size: 28), ProductComments(),
@@ -260,7 +260,7 @@ widget BuyerOrder = PageLayout(loading: data.loading, onRefresh: event "ordersRe
     Label(text: data.state, style: "headlineSmall", bold: true, color: "primary"), Gap(size: 8),
     Label(text: data.statusNote, color: "onSurfaceVariant"), Gap(size: 24),
     Surface(child: Column(crossAxisAlignment: "stretch", children: [
-      ProductSummary(image: data.orderImage, loading: data.orderImageLoading, title: data.orderTitle, subtitle: data.quantity), Gap(size: 20),
+      ProductSummary(image: data.orderImage, loading: data.orderImageLoading, title: data.orderTitle, subtitle: ""), Gap(size: 20),
       ...for row in data.fields: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
     ])),
     switch data.hasDelivery {true: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
@@ -270,15 +270,15 @@ widget BuyerOrder = PageLayout(loading: data.loading, onRefresh: event "ordersRe
     switch data.usage {"": SizedBoxShrink(), default: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [SectionTitle(title: data.i18n.scb4ba40bf823511d), Gap(size: 12), Markdown(text: data.usage, onLink: event "contentLink" {})]))},
     Gap(size: 24), SectionTitle(title: data.i18n.sea747b67dc72a371), Gap(size: 12),
     Surface(child: Column(crossAxisAlignment: "stretch", children: [
-      DetailRow(label: data.i18n.s93191de5ef4c9d51, value: data.delivery), Gap(size: 12), Label(text: data.i18n.s977f0f7e3be0f674, style: "labelMedium", color: "onSurfaceVariant"),
-      Row(children: [Expanded(child: SelectableLabel(text: data.orderNo)), CopyButton(text: data.orderNo)]),
+      DetailRow(label: data.i18n.s93191de5ef4c9d51, value: data.delivery), Gap(size: 12),
+      Row(crossAxisAlignment: "center", children: [Expanded(child: Label(text: data.i18n.s977f0f7e3be0f674, color: "onSurfaceVariant")), Gap(size: 16), Expanded(flex: 2, child: Row(crossAxisAlignment: "center", children: [Expanded(child: Align(alignment: {x: 1.0, y: 0.0}, child: SelectableLabel(text: data.orderNo))), CopyButton(text: data.orderNo, iconOnly: true)]))]),
       switch data.tradeNo {"": SizedBoxShrink(), default: Column(crossAxisAlignment: "stretch", children: [Label(text: data.i18n.sf64372f7124dd37a, style: "labelMedium", color: "onSurfaceVariant"), SelectableLabel(text: data.tradeNo), Gap(size: 12)])},
       ...for row in data.times: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
     ])),
     Gap(size: 24), SectionTitle(title: data.i18n.s58ab796c884b3be6), Gap(size: 12),
     ...for entry in data.orderEvents: TimelineEntry(entry: entry),
     Label(text: data.paymentNote, color: "error"),
-    switch data.canCheck {true: Button(label: data.i18n.scf47f68aa081cd42, loading: data.paymentBusy, icon: "sync", variant: "tonal", onPressed: event "checkPayment" {}), default: SizedBoxShrink()},
+    switch data.canCheck {true: Button(label: data.i18n.scf47f68aa081cd42, loading: data.paymentBusy, icon: "sync", variant: "text", onPressed: event "checkPayment" {}), default: SizedBoxShrink()},
   ]), default: SizedBoxShrink()}, OrderFeedback(),
 ]);
 widget TimelineEntry = Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Row(crossAxisAlignment: "start", children: [
@@ -459,7 +459,7 @@ widget ChatSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", chil
   Align(alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(width: 220, height: 72, radius: 16)), Gap(size: 16),
   Align(alignment: {x: 1.0, y: 0.0}, child: SkeletonBox(width: 160, height: 56, radius: 16)),
 ]));
-widget Chat = TimelinePage(identity: data.chatIdentity, itemKeys: data.chatKeys,
+widget Chat = TimelinePage(shortContentAlignment: "start", identity: data.chatIdentity, itemKeys: data.chatKeys,
   loading: data.loading, loadingPlaceholder: ChatSkeleton(), emptyTitle: data.i18n.se29432d115e1ae1a, error: data.chatError,
   onRetry: event "chatRefresh" {}, hasMore: data.chatMore, loadingMore: data.loadingMore,
   moreLabel: data.i18n.s5bf3f2d2f4f7ad09, onLoadMore: event "chatOlder" {}, endRevision: data.chatEndRevision,
