@@ -286,11 +286,14 @@ void main() {
       await capture(tester, 'guides-entry-${dark ? 'dark' : 'light'}');
       final guides = find.byKey(const ValueKey('metaverse-developer-guides'));
       final scrollable = find.descendant(of: guides, matching: find.byType(Scrollable)).first;
-      await tester.scrollUntilVisible(find.text(S.current.metaverse_developerComponents).last,
+      // 同名页签始终可见；只查教程内的按钮，等待惰性列表实际构建该项。
+      final componentsShortcut = find.descendant(of: guides,
+        matching: find.text(S.current.metaverse_developerComponents));
+      await tester.scrollUntilVisible(componentsShortcut,
         150, scrollable: scrollable);
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: guides,
-        matching: find.text(S.current.metaverse_developerComponents)));
+      expect(componentsShortcut.hitTestable(), findsOneWidget);
+      await tester.tap(componentsShortcut);
       await tester.pumpAndSettle();
       expect(find.text(S.current.metaverse_developerSearch), findsOneWidget);
       await tester.tap(find.text(S.current.metaverse_developerGuides));

@@ -298,10 +298,13 @@ jobs:
           PLUGIN_GOLDENS: '1'
         run: |
           New-Item -ItemType Directory -Force assets/certs | Out-Null
-          flutter test --reporter expanded test/modules/metaverse/metaverse_visual_baseline_test.dart
+          flutter test --verbose --reporter expanded test/modules/metaverse/metaverse_visual_baseline_test.dart 2>&1 | Tee-Object -FilePath plugin-visual-build.log
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: plugin-visual-diffs
-          path: test/modules/metaverse/failures/**
+          name: plugin-visual-diagnostics
+          path: |
+            plugin-visual-build.log
+            test/modules/metaverse/failures/**
+          if-no-files-found: ignore
