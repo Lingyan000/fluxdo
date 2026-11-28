@@ -78,4 +78,60 @@ void main() {
     await tester.scrollUntilVisible(recorded, 250, scrollable: find.byType(Scrollable).first);
     expect(recorded, findsOneWidget);
   });
+
+  testWidgets('时间线示例可切换短内容对齐并恢复默认位置', (tester) async {
+    tester.view.physicalSize = const Size(360, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(navigatorKey: navigatorKey, home: const Scaffold()),
+      ),
+    );
+    final example = metaverseComponentExamples(S.current)
+        .firstWhere((e) => e.name == 'TimelinePage');
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: MetaverseComponentPreviewPage(example: example),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final viewport = find.byWidgetPredicate(
+      (widget) => widget is CustomScrollView,
+    );
+    final message = find.descendant(
+      of: viewport,
+      matching: find.text(example.parameters['message']! as String),
+    );
+    double messageOffset() =>
+        tester.getTopLeft(message).dy - tester.getTopLeft(viewport).dy;
+    final endOffset = messageOffset();
+    final start = find.widgetWithText(ChoiceChip, 'start');
+    await tester.tap(start);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(start).selected, isTrue);
+    expect(messageOffset(), lessThan(endOffset));
+    expect(
+      tester
+              .getTopLeft(find.descendant(
+                of: viewport,
+                matching: find.byType(TextButton),
+              ))
+              .dy -
+          tester.getTopLeft(viewport).dy,
+      closeTo(16, 1),
+    );
+    await tester.tap(find.byTooltip(S.current.metaverse_developerReset));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'end')).selected,
+      isTrue,
+    );
+    expect(messageOffset(), closeTo(endOffset, 1));
+    expect(tester.takeException(), isNull);
+  });
 }
