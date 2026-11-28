@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: eb4edb4d5b67bbf8ecf8fcae1032ecd2d16d75d2
+          ref: 304ac06de9c3343b87dc6eb7cf85dc4e12922ab1
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -214,6 +214,7 @@ jobs:
           test/modules/metaverse/metaverse_image_cache_test.dart
           test/modules/metaverse/metaverse_content_components_test.dart
           test/modules/metaverse/metaverse_page_components_test.dart
+          test/modules/metaverse/metaverse_inner_ui_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart
           test/modules/metaverse/ld_store_api2_login_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
