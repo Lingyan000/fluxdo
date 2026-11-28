@@ -268,6 +268,12 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: dart tool/project_prep.dart test
+      # 先串行生成转换器快照，避免资源批量转换时争抢冷启动编译。
+      - name: Prepare SVG transformer before parallel asset compilation
+        timeout-minutes: 2
+        run: |
+          mkdir -p build/plugin-ci
+          dart run jovial_svg_transformer --input=assets/logo.svg --output=build/plugin-ci/logo.si
       - name: Test real engine, storage and native component layout
         run: |
           mkdir -p assets/certs
@@ -293,6 +299,12 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: dart tool/project_prep.dart test
+      - name: Prepare SVG transformer before parallel asset compilation
+        timeout-minutes: 2
+        run: |
+          New-Item -ItemType Directory -Force build/plugin-ci | Out-Null
+          dart run jovial_svg_transformer --input=assets/logo.svg --output=build/plugin-ci/logo.si
+          exit $LASTEXITCODE
       - name: Compare fixed component baselines
         env:
           PLUGIN_GOLDENS: '1'

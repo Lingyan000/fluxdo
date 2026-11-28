@@ -6,6 +6,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -74,6 +75,17 @@ class _Account extends CurrentUserNotifier {
   Future<User?> build() async => null;
 }
 
+class _ObservedPlugins extends MetaversePluginsController {
+  Future<InstalledMetaversePlugin>? replacement;
+
+  @override
+  Future<InstalledMetaversePlugin> replaceReviewed(
+    MetaversePluginPackage package,
+    InstalledMetaversePlugin expected,
+    Map<MetaversePluginPermission, bool> choices,
+  ) => replacement = super.replaceReviewed(package, expected, choices);
+}
+
 class _Updates extends MetaverseUpdatesController {
   @override
   Future<MetaverseUpdateState> build() async => const MetaverseUpdateState();
@@ -118,6 +130,7 @@ void main() {
         secretStoreProvider.overrideWithValue(InMemorySecretStore()),
         currentUserProvider.overrideWith(_Account.new),
         metaversePluginDirectoryProvider.overrideWith((_) async => root),
+        metaversePluginsProvider.overrideWith(_ObservedPlugins.new),
         metaverseMarketProvider.overrideWith(_Catalog.new),
         metaverseUpdatesProvider.overrideWith(_Updates.new),
         metaverseTaskDriverProvider.overrideWithValue(null),
@@ -422,27 +435,33 @@ void main() {
       );
       await capture(tester, 'review-${dark ? 'dark' : 'light'}');
       await tester.tap(find.text(S.current.metaverse_replaceConfirm));
-      await tester.runAsync(() async {
-        for (
-          var i = 0;
-          i < 100 &&
-              container
-                      .read(metaversePluginsProvider.notifier)
-                      .byId(installed.id)!
-                      .manifest
-                      .version !=
-                  '1.0.0';
-          i++
-        ) {
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-        }
-      });
-      for (var i = 0; i < 20; i++) {
+      await tester.pump();
+      final operation =
+          (container.read(metaversePluginsProvider.notifier) as _ObservedPlugins)
+              .replacement;
+      expect(operation, isNotNull);
+      var completed = false;
+      Object? failure;
+      unawaited(
+        operation!.then<void>(
+          (_) => completed = true,
+          onError: (Object error, StackTrace _) {
+            failure = error;
+            completed = true;
+          },
+        ),
+      );
+      // 等真实写盘和安装收尾完成，同时推进路由的虚拟帧；不假定 CI 磁盘
+      // 能在固定 1.2 秒内完成，也不在仅发布索引后提前销毁依赖。
+      final elapsed = Stopwatch()..start();
+      while (!completed && elapsed.elapsed < const Duration(seconds: 15)) {
         await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
         await tester.pump(const Duration(milliseconds: 100));
       }
+      expect(completed, isTrue, reason: '真实版本替换未在限时内完成');
+      expect(failure, isNull, reason: '真实版本替换返回错误');
       final next = container
           .read(metaversePluginsProvider.notifier)
           .byId(installed.id)!;
