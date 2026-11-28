@@ -222,9 +222,27 @@ Future<_StubOcrService> _openViewer(
         sourceContext,
       );
     }
-    await precacheImage(MemoryImage(png), sourceContext);
   });
   await tester.tap(find.text('打开图片'));
+  // 等待实际显示的图片完成原生解码，避免依赖查看器内部的缓存键。
+  for (var attempt = 0; attempt < 50; attempt++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (find.byType(GestureImageView).evaluate().isNotEmpty) break;
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    });
+  }
+  final views = tester.widgetList<GestureImageView>(
+    find.byType(GestureImageView),
+  );
+  expect(views, isNotEmpty);
+  await tester.runAsync(() async {
+    for (final view in views) {
+      await precacheImage(view.image, sourceContext).timeout(
+        const Duration(seconds: 5),
+      );
+    }
+  });
   await tester.pumpAndSettle();
   return service;
 }

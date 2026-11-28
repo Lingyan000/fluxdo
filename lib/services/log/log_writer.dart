@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'log_policy.dart';
+import 'plugin_log_store.dart';
 
 import 'package:flutter/widgets.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// 统一日志写入器，所有日志通过此类写入同一个 JSONL 文件
+/// 统一日志写入器，应用和各插件分别使用独立 JSONL 轮转文件。
 ///
 /// 性能设计：
 /// - init() 时解析一次目录并常驻 IOSink，写入路径上没有 platform channel、
@@ -77,8 +79,14 @@ class LogWriter {
   Future<void>? _flushPending;
   static const _maxBufferBytes = 512 * 1024;
   final Map<String, Map<String, dynamic>> _repeats = {};
+  final _plugins = PluginLogStore();
+  bool get _hasPending => _buffer.isNotEmpty || _plugins.pendingLines > 0;
 
   void _append(Map<String, dynamic> entry) {
+    if (entry['pluginId'] case final String id when id.isNotEmpty) {
+      _plugins.append(entry);
+      return;
+    }
     final line = '${jsonEncode(entry)}\n';
     final bytes = utf8.encode(line).length;
     while (_buffer.isNotEmpty &&
@@ -160,6 +168,7 @@ class LogWriter {
     instance._repeats.clear();
     await instance._io.catchError((_) {});
     await instance._closeSink();
+    instance._plugins.reset();
     _file = null;
     _rotatedFile = null;
     _appVersion = null;
@@ -174,7 +183,7 @@ class LogWriter {
     await _setupFiles();
     _initialized = true;
     // 落盘 init 之前缓冲的早期日志
-    if (_buffer.isNotEmpty) {
+    if (_hasPending) {
       await _enqueueFlush();
     }
 
@@ -195,6 +204,11 @@ class LogWriter {
     final file = _file;
     final rotatedFile = _rotatedFile;
     if (file == null || rotatedFile == null) return;
+    try {
+      await _plugins.initialize(file.parent);
+    } on FileSystemException {
+      // 插件目录不可用时，应用日志仍可继续初始化。
+    }
 
     final now = DateTime.now();
 
@@ -261,15 +275,21 @@ class LogWriter {
 
   /// 写入一条日志条目，自动注入 appVersion。
   /// 同步 fire-and-forget：只追加内存缓冲，落盘由 flush 策略决定。
-  void write(Map<String, dynamic> entry) {
+  final _entries = StreamController<Map<String, dynamic>>.broadcast();
+  /// 只订阅经过同一脱敏边界的记录；开发连接还需按运行实例筛选。
+  Stream<Map<String, dynamic>> get entries => _entries.stream;
+
+  void write(Map<String, dynamic> entry, {bool inheritPluginContext = true}) {
     final level = entry['level'];
     // debug 级日志仅在开发者模式下落盘
     if (level == 'debug' && !verboseEnabled) return;
 
     entry = LogPolicy.normalize({
       ...entry,
+      if (inheritPluginContext) ...?PluginExecutionContext.current?.fields,
       if (_appVersion != null) 'appVersion': _appVersion,
     });
+    if (_entries.hasListener) _entries.add(Map.unmodifiable(entry));
     // 仅合并没有请求身份的完全相同事件；请求/重试记录始终保留。
     if (entry['traceId'] == null &&
         entry['coreRequestId'] == null &&
@@ -287,6 +307,7 @@ class LogWriter {
       }
       if (_repeats.length >= 128) _flushRepeats();
       _repeats[key] = {
+        ...entry,
         'event': 'repeat_summary',
         'type': entry['type'],
         'level': entry['level'],
@@ -307,7 +328,8 @@ class LogWriter {
       return;
     }
 
-    if (level == 'error' || _buffer.length >= _maxBufferedLines) {
+    if (level == 'error' ||
+        _buffer.length + _plugins.pendingLines >= _maxBufferedLines) {
       flushNow();
     } else {
       _flushTimer ??= Timer(_flushInterval, () {
@@ -323,7 +345,7 @@ class LogWriter {
     _flushTimer?.cancel();
     _flushTimer = null;
     await _enqueueFlush();
-    if (_buffer.isNotEmpty) await _enqueueFlush();
+    if (_hasPending) await _enqueueFlush();
   }
 
   Future<void> _enqueueFlush() {
@@ -331,7 +353,7 @@ class LogWriter {
     _io = _io.then((_) => _flush()).catchError((_) {});
     return _flushPending = _io.whenComplete(() {
       _flushPending = null;
-      if (_buffer.isNotEmpty && _initialized) {
+      if (_hasPending && _initialized) {
         _flushTimer ??= Timer(_flushInterval, () {
           _flushTimer = null;
           unawaited(_enqueueFlush());
@@ -342,6 +364,7 @@ class LogWriter {
 
   Future<void> _flush() async {
     _flushRepeats();
+    await _plugins.flush();
     if (_buffer.isEmpty) return;
 
     if (_sink == null) _openSink();
@@ -397,30 +420,59 @@ class LogWriter {
     }
   }
 
-  /// 清空全部日志（当前代 + 轮换代）
-  Future<void> clearAll() {
-    _repeats.clear();
-    _dropped = 0;
-    _buffer.clear();
-    _bufferBytes = 0;
-    _io = _io
-        .then((_) async {
-          await _closeSink();
-          try {
-            final file = _file;
-            if (file != null && file.existsSync()) {
-              await file.writeAsString('');
-            }
-            final rotatedFile = _rotatedFile;
-            if (rotatedFile != null && rotatedFile.existsSync()) {
-              await rotatedFile.delete();
-            }
-          } catch (_) {}
-          _currentSize = 0;
-          _openSink();
-        })
-        .catchError((_) {});
-    return _io;
+  /// 清空调用时刻之前的全部日志，包含应用与插件的所有轮转文件。
+  Future<void> clearAll() => _clear();
+
+  /// 清理插件在调用时刻之前的记录，新产生的记录仍可正常落盘。
+  Future<void> clearPlugin(String pluginId) => _clear(pluginId: pluginId);
+
+  Future<void> _clear({String? pluginId}) {
+    final cutoff = LogPolicy.sequence;
+    bool belongsToClearedScope(Map<dynamic, dynamic> row) =>
+        (pluginId == null || row['pluginId'] == pluginId) &&
+        (row['sessionId'] != LogPolicy.sessionId ||
+            (row['seq'] is int && (row['seq'] as int) <= cutoff));
+    bool keep(String line) {
+      try {
+        final row = jsonDecode(line);
+        return row is Map
+            ? !belongsToClearedScope(row)
+            : pluginId != null;
+      } on FormatException {
+        return pluginId != null;
+      }
+    }
+
+    if (pluginId == null) _dropped = 0;
+    _repeats.removeWhere((_, row) => belongsToClearedScope(row));
+    _plugins.discardPending(pluginId: pluginId);
+    _buffer.removeWhere((line) => !keep(line));
+    _bufferBytes = _buffer.fold(0, (size, line) => size + utf8.encode(line).length);
+    final operation = _io.then((_) async {
+      await _closeSink();
+      try {
+        await _plugins.clearFiles(pluginId: pluginId, keep: keep);
+        for (final file in [_rotatedFile, _file]) {
+          if (file == null || !await file.exists()) continue;
+          final content = await readContentSafely(file);
+          final lines = const LineSplitter().convert(content).where(keep);
+          final retained = lines.isEmpty ? '' : '${lines.join('\n')}\n';
+          final temporary = File('${file.path}.clear');
+          await temporary.writeAsString(retained, flush: true);
+          await temporary.rename(file.path);
+        }
+      } finally {
+        final file = _file;
+        _currentSize = file != null && await file.exists() ? await file.length() : 0;
+        _openSink();
+      }
+    });
+    _io = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  static Future<String> readPluginContent(String pluginId) async {
+    return _readContent(pluginId: pluginId);
   }
 
   /// 获取当前代日志文件（读取前请先 flushNow）
@@ -435,21 +487,54 @@ class LogWriter {
     return _rotatedFile!;
   }
 
-  /// 读取全部日志原文（轮换代在前、当前代在后，按时间正序），读取前自动落盘缓冲
-  static Future<String> readAllContent() async {
+  /// 汇总应用和插件日志，读取与轮转、清理使用同一 IO 队列。
+  static Future<String> readAllContent() => _readContent();
+
+  static Future<String> _readContent({String? pluginId}) async {
     await instance.flushNow();
-    final buf = StringBuffer();
-    try {
-      final rotatedFile = await getRotatedLogFile();
-      if (rotatedFile.existsSync()) {
-        buf.write(await readContentSafely(rotatedFile));
+    await _ensureFiles();
+    final operation = instance._io.then((_) async {
+      final content = StringBuffer();
+      for (final file in [_rotatedFile, _file]) {
+        try {
+          if (file != null && await file.exists()) {
+            content.write(await readContentSafely(file));
+          }
+        } on FileSystemException {
+          // 某一代文件不可读时，继续读取其他分区。
+        }
       }
-      final file = await getLogFile();
-      if (file.existsSync()) {
-        buf.write(await readContentSafely(file));
+      content.write(await instance._plugins.read(pluginId: pluginId));
+      final rows = <({String line, Map row, int index})>[];
+      for (final line in const LineSplitter().convert(content.toString())) {
+        if (line.isEmpty) continue;
+        Map row = const {};
+        try {
+          final value = jsonDecode(line);
+          if (value is Map) row = value;
+        } on FormatException {
+          // 应用总日志保留损坏行，插件视图只保留归属可确认的记录。
+        }
+        if (pluginId == null || row['pluginId'] == pluginId) {
+          rows.add((line: line, row: row, index: rows.length));
+        }
       }
-    } catch (_) {}
-    return buf.toString();
+      rows.sort((a, b) {
+        var order = '${a.row['timestamp'] ?? ''}'.compareTo('${b.row['timestamp'] ?? ''}');
+        if (order == 0) {
+          order = '${a.row['sessionId'] ?? ''}'.compareTo('${b.row['sessionId'] ?? ''}');
+        }
+        if (order == 0) {
+          final aSeq = a.row['seq'] is int ? a.row['seq'] as int : 0;
+          final bSeq = b.row['seq'] is int ? b.row['seq'] as int : 0;
+          order = aSeq.compareTo(bSeq);
+        }
+        return order == 0 ? a.index.compareTo(b.index) : order;
+      });
+      return rows.isEmpty ? '' : '${rows.map((row) => row.line).join('\n')}\n';
+    });
+    instance._io = operation.then<void>((_) {}).catchError((Object _) {});
+    return operation;
   }
 
   /// 容错读取日志文件：非法 utf-8 字节替换为 U+FFFD，避免一个坏字节让整个页面打不开

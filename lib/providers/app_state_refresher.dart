@@ -16,6 +16,7 @@ import 'message_bus/session_channel_providers.dart';
 import 'message_bus/topic_tracking_providers.dart';
 import 'ldc_providers.dart';
 import 'cdk_providers.dart';
+import '../modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 
 class AppStateRefresher {
   AppStateRefresher._();
@@ -71,6 +72,7 @@ class AppStateRefresher {
     container.read(activeCategorySlugsProvider.notifier).reset();
     await container.read(ldcUserInfoProvider.notifier).disable();
     await container.read(cdkUserInfoProvider.notifier).disable();
+    await container.read(metaversePluginsProvider.notifier).signOutAll();
   }
 
   /// 刷新话题列表各 tab

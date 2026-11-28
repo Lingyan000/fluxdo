@@ -3,6 +3,15 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  override func application(_ sender: NSApplication, open urls: [URL]) {
+    let remaining = urls.filter { !PluginFileHandler.shared.open($0) }
+    if remaining.count < urls.count {
+      mainFlutterWindow?.makeKeyAndOrderFront(self)
+      sender.activate(ignoringOtherApps: true)
+    }
+    if !remaining.isEmpty { super.application(sender, open: remaining) }
+  }
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return false  // 关闭窗口时不退出，保持 MessageBus 运行
   }

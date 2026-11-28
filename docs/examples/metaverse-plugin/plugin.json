@@ -1,0 +1,50 @@
+{
+  "schema": 9,
+  "id": "com.example.points",
+  "name": "示例积分",
+  "version": "1.0.0",
+  "author": "example",
+  "description": "演示卡片、独立页面、链接接管与凭证授权的示例插件",
+  "homepage": "https://example.com/points",
+  "icon": "wallet",
+  "ui": "ui.rfwtxt",
+  "script": "main.js",
+  "permissions": {
+    "network": [
+      "api.example.com"
+    ],
+    "identity": true,
+    "credentials": {
+      "account": {
+        "label": "API Key",
+        "requests": [
+          {
+            "origin": "https://api.example.com",
+            "pathPrefix": "/v1",
+            "methods": [
+              "GET"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "card": {
+    "widget": "Card"
+  },
+  "pages": [
+    {
+      "id": "order",
+      "widget": "OrderPage",
+      "title": "订单详情"
+    }
+  ],
+  "links": [
+    {
+      "host": "example.com",
+      "path": "/orders/:id",
+      "page": "order"
+    }
+  ],
+  "apiVersion": 2
+}

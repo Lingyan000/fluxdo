@@ -4,7 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/cdk_providers.dart';
-import '../pages/webview_page.dart';
+import '../modules/cdk/ui/cdk_home_page.dart';
 import '../services/network/exceptions/oauth_exception.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
@@ -14,8 +14,6 @@ import 'common/balance_card_action_button.dart';
 import 'common/balance_card_cf_action.dart';
 
 class CdkBalanceCard extends ConsumerWidget {
-  static const String _dashboardUrl = 'https://cdk.linux.do/dashboard';
-
   final bool compact;
   final bool inline;
   final bool isProcessing;
@@ -65,8 +63,7 @@ class CdkBalanceCard extends ConsumerWidget {
       return Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () =>
-              WebViewPage.open(context, _dashboardUrl, title: 'LINUX DO CDK'),
+          onTap: () => CdkHomePage.open(context),
           child: Column(
             children: [
               Padding(
@@ -131,8 +128,7 @@ class CdkBalanceCard extends ConsumerWidget {
 
     if (compact) {
       return GestureDetector(
-        onTap: () =>
-            WebViewPage.open(context, _dashboardUrl, title: 'LINUX DO CDK'),
+        onTap: () => CdkHomePage.open(context),
         child: Card(
           elevation: 0,
           color: theme.colorScheme.surfaceContainerLow,
@@ -190,8 +186,7 @@ class CdkBalanceCard extends ConsumerWidget {
     }
 
     return GestureDetector(
-      onTap: () =>
-          WebViewPage.open(context, _dashboardUrl, title: 'LINUX DO CDK'),
+      onTap: () => CdkHomePage.open(context),
       child: Card(
         elevation: 8,
         shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),

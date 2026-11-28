@@ -1,0 +1,17 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+import org.gradle.util.GradleVersion
+
+// Gradle 9 移除了 Project.exec；已发布的 CargoKit 仍通过动态方法调用它。
+// 为旧脚本转接到正式的 ExecOperations 服务，避免修改用户的 pub 缓存。
+abstract class LegacyProcessOperations {
+    @Inject
+    abstract ExecOperations getExecOperations()
+}
+
+if (GradleVersion.current() >= GradleVersion.version('9.0')) {
+    def operations = objects.newInstance(LegacyProcessOperations)
+    extensions.extraProperties.set('exec', { Closure configure ->
+        operations.execOperations.exec(configure)
+    })
+}

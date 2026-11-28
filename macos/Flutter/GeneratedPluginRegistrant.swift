@@ -22,6 +22,7 @@ import flutter_timezone
 import gal
 import irondash_engine_context
 import just_audio
+import local_auth_darwin
 import macos_window_utils
 import mobile_scanner
 import native_animated_image_macos
@@ -59,6 +60,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   GalPlugin.register(with: registry.registrar(forPlugin: "GalPlugin"))
   IrondashEngineContextPlugin.register(with: registry.registrar(forPlugin: "IrondashEngineContextPlugin"))
   JustAudioPlugin.register(with: registry.registrar(forPlugin: "JustAudioPlugin"))
+  LocalAuthPlugin.register(with: registry.registrar(forPlugin: "LocalAuthPlugin"))
   MacOSWindowUtilsPlugin.register(with: registry.registrar(forPlugin: "MacOSWindowUtilsPlugin"))
   MobileScannerPlugin.register(with: registry.registrar(forPlugin: "MobileScannerPlugin"))
   NativeAnimatedImageMacosPlugin.register(with: registry.registrar(forPlugin: "NativeAnimatedImageMacosPlugin"))

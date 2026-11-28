@@ -14,5 +14,6 @@
   "followingFeed_migrationContinue": "Start browsing",
   "followingFeed_viewLegacyUsers": "View previous watch list",
   "followingFeed_legacyUsers": "Previous watch list",
+  "followingFeed_copyLegacyUsers": "Copy list for plugin import",
   "followingFeed_legacyHint": "This list was saved on this device and may include people added while using another account. Open each person's profile to choose whether to follow them."
 }

@@ -1,0 +1,62 @@
+{
+  "contractVersion": 1,
+  "sdkVersion": "1.0.0",
+  "apiVersion": 2,
+  "manifestSchemas": [
+    9,
+    10,
+    11,
+    12
+  ],
+  "features": [
+    "browserModes",
+    "automaticPagination",
+    "gridLayouts",
+    "virtualGrid",
+    "confirmationDialog",
+    "nativeExecutionLimits",
+    "navigationEntries",
+    "forumRead",
+    "scheduledTasks",
+    "localNotifications",
+    "navigationBadge",
+    "atomicStorage",
+    "runtimePermissions",
+    "adaptiveCollections",
+    "modalDismiss",
+    "cardNavigation",
+    "contentPresentation",
+    "eventStreams",
+    "dataMigrations",
+    "hostEnvironment",
+    "pluginPreferences",
+    "pageChrome",
+    "loadingPlaceholders",
+    "navigationReplacement",
+    "credentialClaims",
+    "iconButtonContent",
+    "notificationStatus",
+    "fileAttachments",
+    "captchaChallenge",
+    "manifestLocalization",
+    "accountDataMigration",
+    "storageScopes",
+    "extendedPages",
+    "timelinePages",
+    "inputOptions",
+    "horizontalScroll",
+    "timelineAlignment",
+    "contentEmphasis"
+  ],
+  "limits": {
+    "manifestBytes": 32768,
+    "uiBytes": 262144,
+    "scriptBytes": 524288,
+    "bundleBytes": 2097152
+  },
+  "hostReference": {
+    "repository": "Lingyan000/fluxdo",
+    "commit": "8d5212050c81fdb99c8bf3f50bc7bb3784e92448"
+  },
+  "typesSha256": "6d07c1312204b2ab962c048a8b9bb3eb9395069849169f7b79dae01acf5ffb79"
+}

@@ -68,6 +68,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
+import 'modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import 'services/windows_protocol_registrar_stub.dart'
     if (dart.library.ffi) 'services/windows_protocol_registrar_io.dart';
 import 'services/background/background_notification_service.dart';
@@ -141,6 +142,11 @@ import 'pages/webview_page.dart';
 import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
 import 'navigation/nav_entry_registry.dart';
+import 'navigation/nav_entries_provider.dart';
+import 'modules/metaverse/plugin/providers/metaverse_plugin_providers.dart' show metaverseTaskDriverProvider;
+import 'modules/metaverse/metaverse_link_router.dart' show metaverseLinkDefaultsProvider;
+import 'modules/metaverse/market/metaverse_update_provider.dart';
+import 'navigation/navigation_activity_scope.dart';
 import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
@@ -184,13 +190,18 @@ Future<void> androidMiniAppWindowMain() async {
   await miniAppWindowMain();
 }
 
-Future<void> main() async {
+// 桌面窗口恢复仍与 WindowStateService 共用 window_manager 的兼容接口。
+// ignore: deprecated_member_use
+final _desktopWindowManager = windowManager;
+
+Future<void> main(List<String> arguments) async {
   // 自定义 binding:接管标准图片解码入口,全局限制解码并发(= 限制
   // Impeller 纹理上传并发,图密话题快滚 raster 尖峰的对症闸门,
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
   // 子引擎只启动完整的微应用运行页，不重复启动消息总线、通知和网络核心。
   if (await startMiniAppWindow()) return;
+  MetaversePluginFileService.instance.initialize(arguments);
 
   // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
   // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
@@ -314,7 +325,7 @@ Future<void> main() async {
   ];
   // 桌面平台初始化 window_manager 和 flutter_acrylic
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-    futures.add(windowManager.ensureInitialized());
+    futures.add(_desktopWindowManager.ensureInitialized());
     futures.add(acrylic.Window.initialize());
   }
   final results = await Future.wait(futures);
@@ -349,8 +360,8 @@ Future<void> main() async {
           ? acrylic.WindowEffect.mica
           : acrylic.WindowEffect.disabled,
     );
-    final isVisible = await windowManager.isVisible();
-    await windowManager.setPreventClose(true);
+    final isVisible = await _desktopWindowManager.isVisible();
+    await _desktopWindowManager.setPreventClose(true);
     // 立即开始监听窗口事件，确保在 OnboardingPage/PreheatGate 等
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
@@ -365,7 +376,7 @@ Future<void> main() async {
         await WindowStateService.instance.attach(prefs);
       }
       if (Platform.isLinux) {
-        await windowManager.focus();
+        await _desktopWindowManager.focus();
       }
     } else {
       // 冷启动：窗口保持隐藏，推迟到 Flutter 首帧光栅化后再恢复位置并显示，
@@ -376,10 +387,10 @@ Future<void> main() async {
           WidgetsBinding.instance.waitUntilFirstFrameRasterized,
           Future.delayed(const Duration(seconds: 3)),
         ]);
-        await windowManager.waitUntilReadyToShow(null, () async {
+        await _desktopWindowManager.waitUntilReadyToShow(null, () async {
           await WindowStateService.instance.restore(prefs);
           if (Platform.isLinux) {
-            await windowManager.focus();
+            await _desktopWindowManager.focus();
           }
         });
       }());
@@ -1049,6 +1060,8 @@ class _MainPageState extends ConsumerState<MainPage>
       unawaited(
         _runStartupUiTasks().catchError((Object e, StackTrace s) {
           debugPrint('[MainPage] 启动 UI 任务失败: $e\n$s');
+        }).whenComplete(() {
+          if (mounted) MetaversePluginFileService.instance.attach(context);
         }),
       );
     });
@@ -1419,6 +1432,7 @@ class _MainPageState extends ConsumerState<MainPage>
 
   @override
   void dispose() {
+    MetaversePluginFileService.instance.detach(context);
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       WindowStateService.instance.stopListening();
     }
@@ -1682,11 +1696,15 @@ class _MainPageState extends ConsumerState<MainPage>
     final currentUserAsync = ref.watch(currentUserProvider);
     final user = currentUserAsync.value;
 
+    ref.watch(metaverseTaskDriverProvider);
+    ref.watch(metaverseLinkDefaultsProvider);
+    ref.watch(metaverseUpdateDriverProvider);
+
     // 从偏好读取底栏布局，按注册表解析为 entry 列表（含所有 kind）
     final bottomNavIds = ref.watch(
       preferencesProvider.select((p) => p.bottomNavIds),
     );
-    final entries = _resolveEntries(bottomNavIds, user);
+    final entries = _resolveEntries(bottomNavIds, user, ref.watch(navEntriesProvider));
     _lastResolvedEntries = entries;
 
     // page kind 的子集用于 IndexedStack
@@ -1697,7 +1715,10 @@ class _MainPageState extends ConsumerState<MainPage>
     // 按稳定 id 定位当前页；当前页被过滤（如退出登录后 requiresLogin
     // entry 消失）时回退到第一个 page，下标绝不残留旧语义
     var safePageIndex = pageEntries.indexWhere((e) => e.id == _currentEntryId);
-    if (safePageIndex < 0) safePageIndex = 0;
+    if (safePageIndex < 0) {
+      safePageIndex = 0;
+      _currentEntryId = pageEntries.first.id;
+    }
 
     // 底栏 selectedIndex 是当前激活 page 在 entries（含 panel/action）中的位置
     final selectedBottomIndex = pageEntries.isEmpty
@@ -1823,9 +1844,15 @@ class _MainPageState extends ConsumerState<MainPage>
                             excluding: safePageIndex != i,
                             child: KeyboardInsetIsolation(
                               active: safePageIndex == i,
-                              child: pageEntries[i].pageBuilder!(
-                                context,
-                                safePageIndex == i,
+                              child: NavigationActivityScope(
+                                active: safePageIndex == i,
+                                action: ref.watch(navActionBusProvider),
+                                child: pageEntries[i].lazy
+                                    ? LazyNavigationPage(
+                                        active: safePageIndex == i,
+                                        builder: (context) => pageEntries[i].pageBuilder!(context, safePageIndex == i),
+                                      )
+                                    : pageEntries[i].pageBuilder!(context, safePageIndex == i),
                               ),
                             ),
                           ),
@@ -1852,31 +1879,8 @@ class _MainPageState extends ConsumerState<MainPage>
   /// - 未登录时过滤掉 requiresLogin 的 entry
   /// - 去重
   /// - 补齐 locked entry（防御；正常情况编辑器已保证包含）
-  List<NavEntry> _resolveEntries(List<String> ids, User? user) {
-    final all = NavEntryRegistry.buildAll();
-    final byId = {for (final e in all) e.id: e};
-    final resolved = <NavEntry>[];
-    final seen = <String>{};
-
-    for (final id in ids) {
-      final e = byId[id];
-      if (e == null) continue;
-      if (e.requiresLogin && user == null) continue;
-      if (seen.contains(id)) continue;
-      resolved.add(e);
-      seen.add(id);
-    }
-
-    // 补 locked（防御偏好被外部写坏）
-    for (final id in NavEntryRegistry.lockedIds()) {
-      if (seen.contains(id)) continue;
-      final e = byId[id];
-      if (e == null) continue;
-      if (e.requiresLogin && user == null) continue;
-      resolved.add(e);
-      seen.add(id);
-    }
-
+  List<NavEntry> _resolveEntries(List<String> ids, User? user, List<NavEntry> all) {
+    final resolved = resolveNavigationEntries(all, ids, loggedIn: user != null);
     return PlatformUtils.isDesktop
         ? NavEntryRegistry.desktopEntries(resolved)
         : resolved;

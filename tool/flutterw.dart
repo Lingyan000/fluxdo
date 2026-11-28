@@ -44,6 +44,13 @@ Future<void> runFlutterWrapper(
   var requireAndroidJava = false;
   if (command != null && _commandsRequiringAppPrep.contains(command)) {
     _addReleaseVersion(args);
+    // rfw 的核心组件注册会保留动态图标解码，AOT 图标裁剪无法分析该入口。
+    // 在统一构建入口关闭裁剪，命令行显式指定的选项仍由调用方决定。
+    if (_detectBuildMode(command, args) != '--debug' &&
+        !args.contains('--tree-shake-icons') &&
+        !args.contains('--no-tree-shake-icons')) {
+      args.add('--no-tree-shake-icons');
+    }
     if (onProjectPrep != null) {
       await onProjectPrep('app');
     } else {

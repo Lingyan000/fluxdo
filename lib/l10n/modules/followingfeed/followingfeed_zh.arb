@@ -14,5 +14,6 @@
   "followingFeed_migrationContinue": "开始浏览",
   "followingFeed_viewLegacyUsers": "查看旧名单",
   "followingFeed_legacyUsers": "旧追觅名单",
+  "followingFeed_copyLegacyUsers": "复制名单以导入插件",
   "followingFeed_legacyHint": "这是本机保存的旧名单，可能包含其他账号添加的用户。打开用户主页后，可逐个选择关注。"
 }

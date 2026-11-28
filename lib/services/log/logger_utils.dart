@@ -24,7 +24,10 @@ class LoggerUtils {
   static Future<File> getLogFile() => LogWriter.getLogFile();
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
-  static Future<String> getShareFilePath({bool fullHistory = true}) async {
+  static Future<String> getShareFilePath({
+    bool fullHistory = true,
+    String? pluginId,
+  }) async {
     var stage = 'flushLogs';
     String? sharePath;
     try {
@@ -36,14 +39,17 @@ class LoggerUtils {
       stage = 'buildHeader';
       final header = await _buildShareHeader();
       stage = 'readLogs';
-      final logContent = await LogWriter.readAllContent();
+      final logContent = await readLogContent(pluginId: pluginId);
 
       stage = 'resolveLogDirectory';
       final logFile = await getLogFile();
       final dir = logFile.parent;
-      // 不同范围使用不同文件，避免后一次导出覆盖系统分享面板仍在读取的文件。
+      // 插件和导出范围分别命名，保留系统分享面板正在读取的文件。
       final scope = fullHistory ? 'all' : 'session';
-      final shareFile = File('${dir.path}/app_log_${scope}_share.jsonl');
+      final name = pluginId == null
+          ? 'app_log'
+          : 'plugin_log_${Uri.encodeComponent(pluginId)}';
+      final shareFile = File('${dir.path}/${name}_${scope}_share.jsonl');
       sharePath = shareFile.path;
       stage = 'writeExportFile';
       await shareFile.writeAsString(
@@ -278,8 +284,8 @@ class LoggerUtils {
   /// 读取并解析 JSONL，逆序返回（最新在前）。
   /// 解析放 isolate，避免数 MB JSONL 在主线程 jsonDecode 造成掉帧。
   /// 对旧格式条目（无 level/type 字段）默认当作 error + general
-  static Future<List<Map<String, dynamic>>> readLogEntries() async {
-    final content = await LogWriter.readAllContent();
+  static Future<List<Map<String, dynamic>>> readLogEntries({String? pluginId}) async {
+    final content = await readLogContent(pluginId: pluginId);
     if (content.trim().isEmpty) return [];
     return compute(_parseLogEntries, content);
   }
@@ -315,8 +321,12 @@ class LoggerUtils {
   }
 
   /// 读取原始文本（用于复制/分享）
-  static Future<String> readLogContent() => LogWriter.readAllContent();
+  static Future<String> readLogContent({String? pluginId}) => pluginId == null
+      ? LogWriter.readAllContent()
+      : LogWriter.readPluginContent(pluginId);
 
   /// 清空日志
-  static Future<void> clearLogs() => LogWriter.instance.clearAll();
+  static Future<void> clearLogs({String? pluginId}) => pluginId == null
+      ? LogWriter.instance.clearAll()
+      : LogWriter.instance.clearPlugin(pluginId);
 }

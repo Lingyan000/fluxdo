@@ -1,0 +1,1810 @@
+[
+  {
+    "locale": "zh",
+    "widget": "Settings",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未开启。可再次点开关申请，并检查系统是否允许 FluxDO 发送通知。",
+        "sbc63a7c1c9be3b27": "请先添加订阅用户",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已添加 {0} 位订阅",
+        "sc635e79e9b58810a": "最多订阅 50 人，请减少选择",
+        "se61422d7bac5e99f": "已订阅 {0}",
+        "s9036f7a90822785f": "该用户已在名单中，或已达 50 人上限",
+        "s6648820f4718cc24": "请输入有效的论坛用户名",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位订阅",
+        "s2a9010137d7ba142": "已导入 ",
+        "sc55916f90438e6a5": "没有找到这个用户",
+        "sa4a20e9ac255258a": "最多订阅 50 人，请减少名单",
+        "s082aaa7aa9d2be98": "请输入用户名，每行一位，也可用空格或逗号分隔",
+        "s98a2753a54b815ab": "更新未完成，将自动重试",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未读",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "添加所选（{0}）",
+        "sb5046209970d3db3": "暂无动态",
+        "see30635962bf9c82": "没有这类动态",
+        "s74572450882f687f": "没有未读动态",
+        "s146790885b1d568f": "还没有订阅",
+        "sd6bc651b67117e14": "{0} 位订阅 · {1} 条未读",
+        "s8cf8b8fb828a03de": "未读动态",
+        "s8739378e59b2c938": "订阅用户",
+        "s6170ff9554cef64c": "请先登录 FluxDO 论坛账号，再添加订阅。",
+        "sa76199f40aa9c334": "{0} 条未读动态",
+        "sdfa2ffad55077d69": "有新的订阅动态",
+        "sa1359137557c53eb": "无标题话题",
+        "s267e481ec1af6a70": "未允许{0}。再次点击此功能可重新申请。",
+        "sf31a9f3f1073da6e": "请安装插件后使用系统任务和通知",
+        "s495bc79da6bbc69f": "网络连接失败，请重试",
+        "sb349e315c004ef8c": "当前账号无法读取这些动态",
+        "sc231b1a2549a8a81": "请先登录论坛",
+        "s2ff77baa08e96609": "论坛请求较多，请稍后再试",
+        "sc0783c4f312aa20b": "页面已离开，更新已暂停",
+        "s8bd2f5a49f5cfbb0": "另一轮更新正在进行，请稍后查看",
+        "s45727a2cc1b1a3dd": "「{0}」权限已关闭，可在插件管理的权限设置中开启。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "后台刷新",
+        "s1f6ae9c8f8a4013d": "读取当前账号",
+        "s8e6ea6044ea558a2": "读取关注列表",
+        "s00ab785558830e10": "读取用户资料",
+        "sd0224e6a29f1e9bb": "读取动态",
+        "s5cdc64f233f60dee": "订阅刚刚发生变化，请重试",
+        "s9b51d9f4064fb64f": "回应",
+        "s9c0d90f768909594": "赞",
+        "scf945e21ddefbb46": "回复",
+        "s6549258dde9de9a1": "发帖",
+        "s79aad303b15f3ed3": "我的订阅",
+        "sfa669a1e79f7db60": "从关注中选择",
+        "sfa9d1a2012dc7f61": "添加订阅",
+        "s3725212d2092c70a": "订阅管理",
+        "s4d0680f9efaef147": "未读",
+        "s748ae6920776e7c8": "全部标为已读",
+        "sf959b11c48af2cac": "动态读取权限未开启",
+        "s02d786f1a036854d": "仍可查看已保存的动态",
+        "sa4d43e65c3f14473": "允许更新",
+        "s657d9cbf45ec9e6a": "清除筛选",
+        "sd50376b775b81ef6": "更新动态",
+        "s5891162dfd7b0df0": "订阅第一位用户",
+        "seeb00343a5a2c958": "关注的用户有新动态时，会出现在这里。",
+        "s40e8c231c87f5ad8": "添加用户",
+        "s6c8879b735bc2f97": "返回最近动态",
+        "sb42e32d04aae9a48": "继续浏览较早动态",
+        "sb8784c8dd5636ff2": "重试",
+        "s105835b30cf363b4": "导入名单",
+        "s736cff237d7d9255": "自动更新",
+        "s27e0cb22379330f2": "按批次检查名单，受限时从上次位置继续",
+        "s996d5a26af0fea4e": "由系统安排更新",
+        "s80733323a1111e63": "新动态通知",
+        "s8219de42a4b88abe": "系统通知已关闭",
+        "s89193ebd15971d26": "订阅仍会更新，开启系统通知后才能收到提醒",
+        "s68ea5dd4d7af20e6": "系统设置",
+        "s01eda9df8e0d7635": "系统未提供通知状态，请在系统设置中确认 FluxDO 通知已开启。",
+        "s1b3040a24c036cea": "移除订阅",
+        "sde365d163cd8e3dd": "论坛用户名",
+        "sfd6bde53aaf4edea": "订阅此人",
+        "sbd62a91c027770fb": "从旧名单复制用户名并粘贴到这里，每行一位，也可用空格或逗号分隔。仅加入本插件订阅，不改变网站关注关系。",
+        "s19a6fac4e33156a5": "用户名名单",
+        "s1d44dd136cbbe908": "检查并导入",
+        "s10dde5f6ba4e7531": "筛选已加载的关注",
+        "s66fe2bf52b5748b5": "没有匹配的关注",
+        "s7e7af41bb778403b": "加载下一页",
+        "s5ac3c3737429b384": "已订阅",
+        "s29d49a8440f8df87": "动态订阅",
+        "s923b88607a265c9d": "批量导入订阅"
+      },
+      "pageTitle": "订阅管理",
+      "stats": [
+        {
+          "label": "订阅用户",
+          "value": "2"
+        },
+        {
+          "label": "未读动态",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位订阅 · 0 条未读",
+      "input": "",
+      "bulk": "",
+      "manual": false,
+      "submitting": false,
+      "empty": "暂无动态",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "添加所选（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "发帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回复",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "赞",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回应",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "zh",
+    "widget": "BulkImport",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未开启。可再次点开关申请，并检查系统是否允许 FluxDO 发送通知。",
+        "sbc63a7c1c9be3b27": "请先添加订阅用户",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已添加 {0} 位订阅",
+        "sc635e79e9b58810a": "最多订阅 50 人，请减少选择",
+        "se61422d7bac5e99f": "已订阅 {0}",
+        "s9036f7a90822785f": "该用户已在名单中，或已达 50 人上限",
+        "s6648820f4718cc24": "请输入有效的论坛用户名",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位订阅",
+        "s2a9010137d7ba142": "已导入 ",
+        "sc55916f90438e6a5": "没有找到这个用户",
+        "sa4a20e9ac255258a": "最多订阅 50 人，请减少名单",
+        "s082aaa7aa9d2be98": "请输入用户名，每行一位，也可用空格或逗号分隔",
+        "s98a2753a54b815ab": "更新未完成，将自动重试",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未读",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "添加所选（{0}）",
+        "sb5046209970d3db3": "暂无动态",
+        "see30635962bf9c82": "没有这类动态",
+        "s74572450882f687f": "没有未读动态",
+        "s146790885b1d568f": "还没有订阅",
+        "sd6bc651b67117e14": "{0} 位订阅 · {1} 条未读",
+        "s8cf8b8fb828a03de": "未读动态",
+        "s8739378e59b2c938": "订阅用户",
+        "s6170ff9554cef64c": "请先登录 FluxDO 论坛账号，再添加订阅。",
+        "sa76199f40aa9c334": "{0} 条未读动态",
+        "sdfa2ffad55077d69": "有新的订阅动态",
+        "sa1359137557c53eb": "无标题话题",
+        "s267e481ec1af6a70": "未允许{0}。再次点击此功能可重新申请。",
+        "sf31a9f3f1073da6e": "请安装插件后使用系统任务和通知",
+        "s495bc79da6bbc69f": "网络连接失败，请重试",
+        "sb349e315c004ef8c": "当前账号无法读取这些动态",
+        "sc231b1a2549a8a81": "请先登录论坛",
+        "s2ff77baa08e96609": "论坛请求较多，请稍后再试",
+        "sc0783c4f312aa20b": "页面已离开，更新已暂停",
+        "s8bd2f5a49f5cfbb0": "另一轮更新正在进行，请稍后查看",
+        "s45727a2cc1b1a3dd": "「{0}」权限已关闭，可在插件管理的权限设置中开启。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "后台刷新",
+        "s1f6ae9c8f8a4013d": "读取当前账号",
+        "s8e6ea6044ea558a2": "读取关注列表",
+        "s00ab785558830e10": "读取用户资料",
+        "sd0224e6a29f1e9bb": "读取动态",
+        "s5cdc64f233f60dee": "订阅刚刚发生变化，请重试",
+        "s9b51d9f4064fb64f": "回应",
+        "s9c0d90f768909594": "赞",
+        "scf945e21ddefbb46": "回复",
+        "s6549258dde9de9a1": "发帖",
+        "s79aad303b15f3ed3": "我的订阅",
+        "sfa669a1e79f7db60": "从关注中选择",
+        "sfa9d1a2012dc7f61": "添加订阅",
+        "s3725212d2092c70a": "订阅管理",
+        "s4d0680f9efaef147": "未读",
+        "s748ae6920776e7c8": "全部标为已读",
+        "sf959b11c48af2cac": "动态读取权限未开启",
+        "s02d786f1a036854d": "仍可查看已保存的动态",
+        "sa4d43e65c3f14473": "允许更新",
+        "s657d9cbf45ec9e6a": "清除筛选",
+        "sd50376b775b81ef6": "更新动态",
+        "s5891162dfd7b0df0": "订阅第一位用户",
+        "seeb00343a5a2c958": "关注的用户有新动态时，会出现在这里。",
+        "s40e8c231c87f5ad8": "添加用户",
+        "s6c8879b735bc2f97": "返回最近动态",
+        "sb42e32d04aae9a48": "继续浏览较早动态",
+        "sb8784c8dd5636ff2": "重试",
+        "s105835b30cf363b4": "导入名单",
+        "s736cff237d7d9255": "自动更新",
+        "s27e0cb22379330f2": "按批次检查名单，受限时从上次位置继续",
+        "s996d5a26af0fea4e": "由系统安排更新",
+        "s80733323a1111e63": "新动态通知",
+        "s8219de42a4b88abe": "系统通知已关闭",
+        "s89193ebd15971d26": "订阅仍会更新，开启系统通知后才能收到提醒",
+        "s68ea5dd4d7af20e6": "系统设置",
+        "s01eda9df8e0d7635": "系统未提供通知状态，请在系统设置中确认 FluxDO 通知已开启。",
+        "s1b3040a24c036cea": "移除订阅",
+        "sde365d163cd8e3dd": "论坛用户名",
+        "sfd6bde53aaf4edea": "订阅此人",
+        "sbd62a91c027770fb": "从旧名单复制用户名并粘贴到这里，每行一位，也可用空格或逗号分隔。仅加入本插件订阅，不改变网站关注关系。",
+        "s19a6fac4e33156a5": "用户名名单",
+        "s1d44dd136cbbe908": "检查并导入",
+        "s10dde5f6ba4e7531": "筛选已加载的关注",
+        "s66fe2bf52b5748b5": "没有匹配的关注",
+        "s7e7af41bb778403b": "加载下一页",
+        "s5ac3c3737429b384": "已订阅",
+        "s29d49a8440f8df87": "动态订阅",
+        "s923b88607a265c9d": "批量导入订阅"
+      },
+      "pageTitle": "批量导入订阅",
+      "stats": [
+        {
+          "label": "订阅用户",
+          "value": "2"
+        },
+        {
+          "label": "未读动态",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位订阅 · 0 条未读",
+      "input": "",
+      "bulk": "@Alice\nBob",
+      "manual": false,
+      "submitting": false,
+      "empty": "暂无动态",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "添加所选（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "发帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回复",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "赞",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回应",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "Settings",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未開啟。可再次點開關申請，並檢查系統是否允許 FluxDO 傳送通知。",
+        "sbc63a7c1c9be3b27": "請先新增訂閱使用者",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已新增 {0} 位訂閱",
+        "sc635e79e9b58810a": "最多訂閱 50 人，請減少選擇",
+        "se61422d7bac5e99f": "已訂閱 {0}",
+        "s9036f7a90822785f": "該使用者已在名單中，或已達 50 人上限",
+        "s6648820f4718cc24": "請輸入有效的論壇使用者名稱",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位訂閱",
+        "s2a9010137d7ba142": "已匯入 ",
+        "sc55916f90438e6a5": "沒有找到這個使用者",
+        "sa4a20e9ac255258a": "最多訂閱 50 人，請減少名單",
+        "s082aaa7aa9d2be98": "請輸入使用者名稱，每行一位，也可用空格或逗號分隔",
+        "s98a2753a54b815ab": "更新未完成，將自動重試",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未讀",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "新增所選（{0}）",
+        "sb5046209970d3db3": "暫無動態",
+        "see30635962bf9c82": "沒有這類動態",
+        "s74572450882f687f": "沒有未讀動態",
+        "s146790885b1d568f": "還沒有訂閱",
+        "sd6bc651b67117e14": "{0} 位訂閱 · {1} 條未讀",
+        "s8cf8b8fb828a03de": "未讀動態",
+        "s8739378e59b2c938": "訂閱使用者",
+        "s6170ff9554cef64c": "請先登入 FluxDO 論壇賬號，再新增訂閱。",
+        "sa76199f40aa9c334": "{0} 條未讀動態",
+        "sdfa2ffad55077d69": "有新的訂閱動態",
+        "sa1359137557c53eb": "無標題話題",
+        "s267e481ec1af6a70": "未允許{0}。再次點選此功能可重新申請。",
+        "sf31a9f3f1073da6e": "請安裝外掛後使用系統任務和通知",
+        "s495bc79da6bbc69f": "網路連線失敗，請重試",
+        "sb349e315c004ef8c": "當前賬號無法讀取這些動態",
+        "sc231b1a2549a8a81": "請先登入論壇",
+        "s2ff77baa08e96609": "論壇請求較多，請稍後再試",
+        "sc0783c4f312aa20b": "頁面已離開，更新已暫停",
+        "s8bd2f5a49f5cfbb0": "另一輪更新正在進行，請稍後檢視",
+        "s45727a2cc1b1a3dd": "「{0}」許可權已關閉，可在外掛管理的許可權設定中開啟。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "後臺重新整理",
+        "s1f6ae9c8f8a4013d": "讀取當前賬號",
+        "s8e6ea6044ea558a2": "讀取關注列表",
+        "s00ab785558830e10": "讀取使用者資料",
+        "sd0224e6a29f1e9bb": "讀取動態",
+        "s5cdc64f233f60dee": "訂閱剛剛發生變化，請重試",
+        "s9b51d9f4064fb64f": "回應",
+        "s9c0d90f768909594": "贊",
+        "scf945e21ddefbb46": "回覆",
+        "s6549258dde9de9a1": "發帖",
+        "s79aad303b15f3ed3": "我的訂閱",
+        "sfa669a1e79f7db60": "從關注中選擇",
+        "sfa9d1a2012dc7f61": "新增訂閱",
+        "s3725212d2092c70a": "訂閱管理",
+        "s4d0680f9efaef147": "未讀",
+        "s748ae6920776e7c8": "全部標為已讀",
+        "sf959b11c48af2cac": "動態讀取許可權未開啟",
+        "s02d786f1a036854d": "仍可檢視已儲存的動態",
+        "sa4d43e65c3f14473": "允許更新",
+        "s657d9cbf45ec9e6a": "清除篩選",
+        "sd50376b775b81ef6": "更新動態",
+        "s5891162dfd7b0df0": "訂閱第一位使用者",
+        "seeb00343a5a2c958": "關注的使用者有新動態時，會出現在這裡。",
+        "s40e8c231c87f5ad8": "新增使用者",
+        "s6c8879b735bc2f97": "返回最近動態",
+        "sb42e32d04aae9a48": "繼續瀏覽較早動態",
+        "sb8784c8dd5636ff2": "重試",
+        "s105835b30cf363b4": "匯入名單",
+        "s736cff237d7d9255": "自動更新",
+        "s27e0cb22379330f2": "按批次檢查名單，受限時從上次位置繼續",
+        "s996d5a26af0fea4e": "由系統安排更新",
+        "s80733323a1111e63": "新動態通知",
+        "s8219de42a4b88abe": "系統通知已關閉",
+        "s89193ebd15971d26": "訂閱仍會更新，開啟系統通知後才能收到提醒",
+        "s68ea5dd4d7af20e6": "系統設定",
+        "s01eda9df8e0d7635": "系統未提供通知狀態，請在系統設定中確認 FluxDO 通知已開啟。",
+        "s1b3040a24c036cea": "移除訂閱",
+        "sde365d163cd8e3dd": "論壇使用者名稱",
+        "sfd6bde53aaf4edea": "訂閱此人",
+        "sbd62a91c027770fb": "從舊名單複製使用者名稱並貼上到這裡，每行一位，也可用空格或逗號分隔。僅加入本外掛訂閱，不改變網站關注關係。",
+        "s19a6fac4e33156a5": "使用者名稱名單",
+        "s1d44dd136cbbe908": "檢查並匯入",
+        "s10dde5f6ba4e7531": "篩選已載入的關注",
+        "s66fe2bf52b5748b5": "沒有匹配的關注",
+        "s7e7af41bb778403b": "載入下一頁",
+        "s5ac3c3737429b384": "已訂閱",
+        "s29d49a8440f8df87": "動態訂閱",
+        "s923b88607a265c9d": "批次匯入訂閱"
+      },
+      "pageTitle": "訂閱管理",
+      "stats": [
+        {
+          "label": "訂閱使用者",
+          "value": "2"
+        },
+        {
+          "label": "未讀動態",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位訂閱 · 0 條未讀",
+      "input": "",
+      "bulk": "",
+      "manual": false,
+      "submitting": false,
+      "empty": "暫無動態",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "新增所選（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "發帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回覆",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "贊",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回應",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "BulkImport",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未開啟。可再次點開關申請，並檢查系統是否允許 FluxDO 傳送通知。",
+        "sbc63a7c1c9be3b27": "請先新增訂閱使用者",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已新增 {0} 位訂閱",
+        "sc635e79e9b58810a": "最多訂閱 50 人，請減少選擇",
+        "se61422d7bac5e99f": "已訂閱 {0}",
+        "s9036f7a90822785f": "該使用者已在名單中，或已達 50 人上限",
+        "s6648820f4718cc24": "請輸入有效的論壇使用者名稱",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位訂閱",
+        "s2a9010137d7ba142": "已匯入 ",
+        "sc55916f90438e6a5": "沒有找到這個使用者",
+        "sa4a20e9ac255258a": "最多訂閱 50 人，請減少名單",
+        "s082aaa7aa9d2be98": "請輸入使用者名稱，每行一位，也可用空格或逗號分隔",
+        "s98a2753a54b815ab": "更新未完成，將自動重試",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未讀",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "新增所選（{0}）",
+        "sb5046209970d3db3": "暫無動態",
+        "see30635962bf9c82": "沒有這類動態",
+        "s74572450882f687f": "沒有未讀動態",
+        "s146790885b1d568f": "還沒有訂閱",
+        "sd6bc651b67117e14": "{0} 位訂閱 · {1} 條未讀",
+        "s8cf8b8fb828a03de": "未讀動態",
+        "s8739378e59b2c938": "訂閱使用者",
+        "s6170ff9554cef64c": "請先登入 FluxDO 論壇賬號，再新增訂閱。",
+        "sa76199f40aa9c334": "{0} 條未讀動態",
+        "sdfa2ffad55077d69": "有新的訂閱動態",
+        "sa1359137557c53eb": "無標題話題",
+        "s267e481ec1af6a70": "未允許{0}。再次點選此功能可重新申請。",
+        "sf31a9f3f1073da6e": "請安裝外掛後使用系統任務和通知",
+        "s495bc79da6bbc69f": "網路連線失敗，請重試",
+        "sb349e315c004ef8c": "當前賬號無法讀取這些動態",
+        "sc231b1a2549a8a81": "請先登入論壇",
+        "s2ff77baa08e96609": "論壇請求較多，請稍後再試",
+        "sc0783c4f312aa20b": "頁面已離開，更新已暫停",
+        "s8bd2f5a49f5cfbb0": "另一輪更新正在進行，請稍後檢視",
+        "s45727a2cc1b1a3dd": "「{0}」許可權已關閉，可在外掛管理的許可權設定中開啟。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "後臺重新整理",
+        "s1f6ae9c8f8a4013d": "讀取當前賬號",
+        "s8e6ea6044ea558a2": "讀取關注列表",
+        "s00ab785558830e10": "讀取使用者資料",
+        "sd0224e6a29f1e9bb": "讀取動態",
+        "s5cdc64f233f60dee": "訂閱剛剛發生變化，請重試",
+        "s9b51d9f4064fb64f": "回應",
+        "s9c0d90f768909594": "贊",
+        "scf945e21ddefbb46": "回覆",
+        "s6549258dde9de9a1": "發帖",
+        "s79aad303b15f3ed3": "我的訂閱",
+        "sfa669a1e79f7db60": "從關注中選擇",
+        "sfa9d1a2012dc7f61": "新增訂閱",
+        "s3725212d2092c70a": "訂閱管理",
+        "s4d0680f9efaef147": "未讀",
+        "s748ae6920776e7c8": "全部標為已讀",
+        "sf959b11c48af2cac": "動態讀取許可權未開啟",
+        "s02d786f1a036854d": "仍可檢視已儲存的動態",
+        "sa4d43e65c3f14473": "允許更新",
+        "s657d9cbf45ec9e6a": "清除篩選",
+        "sd50376b775b81ef6": "更新動態",
+        "s5891162dfd7b0df0": "訂閱第一位使用者",
+        "seeb00343a5a2c958": "關注的使用者有新動態時，會出現在這裡。",
+        "s40e8c231c87f5ad8": "新增使用者",
+        "s6c8879b735bc2f97": "返回最近動態",
+        "sb42e32d04aae9a48": "繼續瀏覽較早動態",
+        "sb8784c8dd5636ff2": "重試",
+        "s105835b30cf363b4": "匯入名單",
+        "s736cff237d7d9255": "自動更新",
+        "s27e0cb22379330f2": "按批次檢查名單，受限時從上次位置繼續",
+        "s996d5a26af0fea4e": "由系統安排更新",
+        "s80733323a1111e63": "新動態通知",
+        "s8219de42a4b88abe": "系統通知已關閉",
+        "s89193ebd15971d26": "訂閱仍會更新，開啟系統通知後才能收到提醒",
+        "s68ea5dd4d7af20e6": "系統設定",
+        "s01eda9df8e0d7635": "系統未提供通知狀態，請在系統設定中確認 FluxDO 通知已開啟。",
+        "s1b3040a24c036cea": "移除訂閱",
+        "sde365d163cd8e3dd": "論壇使用者名稱",
+        "sfd6bde53aaf4edea": "訂閱此人",
+        "sbd62a91c027770fb": "從舊名單複製使用者名稱並貼上到這裡，每行一位，也可用空格或逗號分隔。僅加入本外掛訂閱，不改變網站關注關係。",
+        "s19a6fac4e33156a5": "使用者名稱名單",
+        "s1d44dd136cbbe908": "檢查並匯入",
+        "s10dde5f6ba4e7531": "篩選已載入的關注",
+        "s66fe2bf52b5748b5": "沒有匹配的關注",
+        "s7e7af41bb778403b": "載入下一頁",
+        "s5ac3c3737429b384": "已訂閱",
+        "s29d49a8440f8df87": "動態訂閱",
+        "s923b88607a265c9d": "批次匯入訂閱"
+      },
+      "pageTitle": "批次匯入訂閱",
+      "stats": [
+        {
+          "label": "訂閱使用者",
+          "value": "2"
+        },
+        {
+          "label": "未讀動態",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位訂閱 · 0 條未讀",
+      "input": "",
+      "bulk": "@Alice\nBob",
+      "manual": false,
+      "submitting": false,
+      "empty": "暫無動態",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "新增所選（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "發帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回覆",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "贊",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回應",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "Settings",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未開啓。可再次點開關申請，並檢查系統是否允許 FluxDO 發送通知。",
+        "sbc63a7c1c9be3b27": "請先添加訂閲用户",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已添加 {0} 位訂閲",
+        "sc635e79e9b58810a": "最多訂閲 50 人，請減少選擇",
+        "se61422d7bac5e99f": "已訂閲 {0}",
+        "s9036f7a90822785f": "該用户已在名單中，或已達 50 人上限",
+        "s6648820f4718cc24": "請輸入有效的論壇用户名",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位訂閲",
+        "s2a9010137d7ba142": "已導入 ",
+        "sc55916f90438e6a5": "沒有找到這個用户",
+        "sa4a20e9ac255258a": "最多訂閲 50 人，請減少名單",
+        "s082aaa7aa9d2be98": "請輸入用户名，每行一位，也可用空格或逗號分隔",
+        "s98a2753a54b815ab": "更新未完成，將自動重試",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未讀",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "添加所選（{0}）",
+        "sb5046209970d3db3": "暫無動態",
+        "see30635962bf9c82": "沒有這類動態",
+        "s74572450882f687f": "沒有未讀動態",
+        "s146790885b1d568f": "還沒有訂閲",
+        "sd6bc651b67117e14": "{0} 位訂閲 · {1} 條未讀",
+        "s8cf8b8fb828a03de": "未讀動態",
+        "s8739378e59b2c938": "訂閲用户",
+        "s6170ff9554cef64c": "請先登錄 FluxDO 論壇賬號，再添加訂閲。",
+        "sa76199f40aa9c334": "{0} 條未讀動態",
+        "sdfa2ffad55077d69": "有新的訂閲動態",
+        "sa1359137557c53eb": "無標題話題",
+        "s267e481ec1af6a70": "未允許{0}。再次點擊此功能可重新申請。",
+        "sf31a9f3f1073da6e": "請安裝插件後使用系統任務和通知",
+        "s495bc79da6bbc69f": "網絡連接失敗，請重試",
+        "sb349e315c004ef8c": "當前賬號無法讀取這些動態",
+        "sc231b1a2549a8a81": "請先登錄論壇",
+        "s2ff77baa08e96609": "論壇請求較多，請稍後再試",
+        "sc0783c4f312aa20b": "頁面已離開，更新已暫停",
+        "s8bd2f5a49f5cfbb0": "另一輪更新正在進行，請稍後查看",
+        "s45727a2cc1b1a3dd": "「{0}」權限已關閉，可在插件管理的權限設置中開啓。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "後台刷新",
+        "s1f6ae9c8f8a4013d": "讀取當前賬號",
+        "s8e6ea6044ea558a2": "讀取關注列表",
+        "s00ab785558830e10": "讀取用户資料",
+        "sd0224e6a29f1e9bb": "讀取動態",
+        "s5cdc64f233f60dee": "訂閲剛剛發生變化，請重試",
+        "s9b51d9f4064fb64f": "回應",
+        "s9c0d90f768909594": "贊",
+        "scf945e21ddefbb46": "回覆",
+        "s6549258dde9de9a1": "發帖",
+        "s79aad303b15f3ed3": "我的訂閲",
+        "sfa669a1e79f7db60": "從關注中選擇",
+        "sfa9d1a2012dc7f61": "添加訂閲",
+        "s3725212d2092c70a": "訂閲管理",
+        "s4d0680f9efaef147": "未讀",
+        "s748ae6920776e7c8": "全部標為已讀",
+        "sf959b11c48af2cac": "動態讀取權限未開啓",
+        "s02d786f1a036854d": "仍可查看已保存的動態",
+        "sa4d43e65c3f14473": "允許更新",
+        "s657d9cbf45ec9e6a": "清除篩選",
+        "sd50376b775b81ef6": "更新動態",
+        "s5891162dfd7b0df0": "訂閲第一位用户",
+        "seeb00343a5a2c958": "關注的用户有新動態時，會出現在這裏。",
+        "s40e8c231c87f5ad8": "添加用户",
+        "s6c8879b735bc2f97": "返回最近動態",
+        "sb42e32d04aae9a48": "繼續瀏覽較早動態",
+        "sb8784c8dd5636ff2": "重試",
+        "s105835b30cf363b4": "導入名單",
+        "s736cff237d7d9255": "自動更新",
+        "s27e0cb22379330f2": "按批次檢查名單，受限時從上次位置繼續",
+        "s996d5a26af0fea4e": "由系統安排更新",
+        "s80733323a1111e63": "新動態通知",
+        "s8219de42a4b88abe": "系統通知已關閉",
+        "s89193ebd15971d26": "訂閲仍會更新，開啓系統通知後才能收到提醒",
+        "s68ea5dd4d7af20e6": "系統設置",
+        "s01eda9df8e0d7635": "系統未提供通知狀態，請在系統設置中確認 FluxDO 通知已開啓。",
+        "s1b3040a24c036cea": "移除訂閲",
+        "sde365d163cd8e3dd": "論壇用户名",
+        "sfd6bde53aaf4edea": "訂閲此人",
+        "sbd62a91c027770fb": "從舊名單複製用户名並粘貼到這裏，每行一位，也可用空格或逗號分隔。僅加入本插件訂閲，不改變網站關注關係。",
+        "s19a6fac4e33156a5": "用户名名單",
+        "s1d44dd136cbbe908": "檢查並導入",
+        "s10dde5f6ba4e7531": "篩選已加載的關注",
+        "s66fe2bf52b5748b5": "沒有匹配的關注",
+        "s7e7af41bb778403b": "加載下一頁",
+        "s5ac3c3737429b384": "已訂閲",
+        "s29d49a8440f8df87": "動態訂閲",
+        "s923b88607a265c9d": "批量導入訂閲"
+      },
+      "pageTitle": "訂閲管理",
+      "stats": [
+        {
+          "label": "訂閲用户",
+          "value": "2"
+        },
+        {
+          "label": "未讀動態",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位訂閲 · 0 條未讀",
+      "input": "",
+      "bulk": "",
+      "manual": false,
+      "submitting": false,
+      "empty": "暫無動態",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "添加所選（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "發帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回覆",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "贊",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回應",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "BulkImport",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "通知尚未開啓。可再次點開關申請，並檢查系統是否允許 FluxDO 發送通知。",
+        "sbc63a7c1c9be3b27": "請先添加訂閲用户",
+        "s2e770b687629f3ec": "已更新 ",
+        "s393128d5d3e9a86c": "正在更新 ",
+        "s2a3b47ffe860958e": "已添加 {0} 位訂閲",
+        "sc635e79e9b58810a": "最多訂閲 50 人，請減少選擇",
+        "se61422d7bac5e99f": "已訂閲 {0}",
+        "s9036f7a90822785f": "該用户已在名單中，或已達 50 人上限",
+        "s6648820f4718cc24": "請輸入有效的論壇用户名",
+        "sfe62b636e3b77471": "{0}，首次更新未完成。{1}",
+        "s5da6a920da32d60e": " 位訂閲",
+        "s2a9010137d7ba142": "已導入 ",
+        "sc55916f90438e6a5": "沒有找到這個用户",
+        "sa4a20e9ac255258a": "最多訂閲 50 人，請減少名單",
+        "s082aaa7aa9d2be98": "請輸入用户名，每行一位，也可用空格或逗號分隔",
+        "s98a2753a54b815ab": "更新未完成，將自動重試",
+        "s523fb6184d48298d": "{0} 秒",
+        "sb28945155ccd7976": " · 未讀",
+        "s5c55a67935af8f45": "全部",
+        "s133f500d1624e24e": "添加所選（{0}）",
+        "sb5046209970d3db3": "暫無動態",
+        "see30635962bf9c82": "沒有這類動態",
+        "s74572450882f687f": "沒有未讀動態",
+        "s146790885b1d568f": "還沒有訂閲",
+        "sd6bc651b67117e14": "{0} 位訂閲 · {1} 條未讀",
+        "s8cf8b8fb828a03de": "未讀動態",
+        "s8739378e59b2c938": "訂閲用户",
+        "s6170ff9554cef64c": "請先登錄 FluxDO 論壇賬號，再添加訂閲。",
+        "sa76199f40aa9c334": "{0} 條未讀動態",
+        "sdfa2ffad55077d69": "有新的訂閲動態",
+        "sa1359137557c53eb": "無標題話題",
+        "s267e481ec1af6a70": "未允許{0}。再次點擊此功能可重新申請。",
+        "sf31a9f3f1073da6e": "請安裝插件後使用系統任務和通知",
+        "s495bc79da6bbc69f": "網絡連接失敗，請重試",
+        "sb349e315c004ef8c": "當前賬號無法讀取這些動態",
+        "sc231b1a2549a8a81": "請先登錄論壇",
+        "s2ff77baa08e96609": "論壇請求較多，請稍後再試",
+        "sc0783c4f312aa20b": "頁面已離開，更新已暫停",
+        "s8bd2f5a49f5cfbb0": "另一輪更新正在進行，請稍後查看",
+        "s45727a2cc1b1a3dd": "「{0}」權限已關閉，可在插件管理的權限設置中開啓。",
+        "s5dc5b331ad1b1dfb": "此功能",
+        "s4b6ded8a7f181397": "通知",
+        "s398e38a1f557fe51": "後台刷新",
+        "s1f6ae9c8f8a4013d": "讀取當前賬號",
+        "s8e6ea6044ea558a2": "讀取關注列表",
+        "s00ab785558830e10": "讀取用户資料",
+        "sd0224e6a29f1e9bb": "讀取動態",
+        "s5cdc64f233f60dee": "訂閲剛剛發生變化，請重試",
+        "s9b51d9f4064fb64f": "回應",
+        "s9c0d90f768909594": "贊",
+        "scf945e21ddefbb46": "回覆",
+        "s6549258dde9de9a1": "發帖",
+        "s79aad303b15f3ed3": "我的訂閲",
+        "sfa669a1e79f7db60": "從關注中選擇",
+        "sfa9d1a2012dc7f61": "添加訂閲",
+        "s3725212d2092c70a": "訂閲管理",
+        "s4d0680f9efaef147": "未讀",
+        "s748ae6920776e7c8": "全部標為已讀",
+        "sf959b11c48af2cac": "動態讀取權限未開啓",
+        "s02d786f1a036854d": "仍可查看已保存的動態",
+        "sa4d43e65c3f14473": "允許更新",
+        "s657d9cbf45ec9e6a": "清除篩選",
+        "sd50376b775b81ef6": "更新動態",
+        "s5891162dfd7b0df0": "訂閲第一位用户",
+        "seeb00343a5a2c958": "關注的用户有新動態時，會出現在這裏。",
+        "s40e8c231c87f5ad8": "添加用户",
+        "s6c8879b735bc2f97": "返回最近動態",
+        "sb42e32d04aae9a48": "繼續瀏覽較早動態",
+        "sb8784c8dd5636ff2": "重試",
+        "s105835b30cf363b4": "導入名單",
+        "s736cff237d7d9255": "自動更新",
+        "s27e0cb22379330f2": "按批次檢查名單，受限時從上次位置繼續",
+        "s996d5a26af0fea4e": "由系統安排更新",
+        "s80733323a1111e63": "新動態通知",
+        "s8219de42a4b88abe": "系統通知已關閉",
+        "s89193ebd15971d26": "訂閲仍會更新，開啓系統通知後才能收到提醒",
+        "s68ea5dd4d7af20e6": "系統設置",
+        "s01eda9df8e0d7635": "系統未提供通知狀態，請在系統設置中確認 FluxDO 通知已開啓。",
+        "s1b3040a24c036cea": "移除訂閲",
+        "sde365d163cd8e3dd": "論壇用户名",
+        "sfd6bde53aaf4edea": "訂閲此人",
+        "sbd62a91c027770fb": "從舊名單複製用户名並粘貼到這裏，每行一位，也可用空格或逗號分隔。僅加入本插件訂閲，不改變網站關注關係。",
+        "s19a6fac4e33156a5": "用户名名單",
+        "s1d44dd136cbbe908": "檢查並導入",
+        "s10dde5f6ba4e7531": "篩選已加載的關注",
+        "s66fe2bf52b5748b5": "沒有匹配的關注",
+        "s7e7af41bb778403b": "加載下一頁",
+        "s5ac3c3737429b384": "已訂閲",
+        "s29d49a8440f8df87": "動態訂閲",
+        "s923b88607a265c9d": "批量導入訂閲"
+      },
+      "pageTitle": "批量導入訂閲",
+      "stats": [
+        {
+          "label": "訂閲用户",
+          "value": "2"
+        },
+        {
+          "label": "未讀動態",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 位訂閲 · 0 條未讀",
+      "input": "",
+      "bulk": "@Alice\nBob",
+      "manual": false,
+      "submitting": false,
+      "empty": "暫無動態",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "全部",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "添加所選（0）",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "發帖",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "回覆",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "贊",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "回應",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 秒",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 秒",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 秒",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "Settings",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "Notifications are off. Tap again to request access and check system notification settings for FluxDO.",
+        "sbc63a7c1c9be3b27": "Add a subscription first.",
+        "s2e770b687629f3ec": "Updated ",
+        "s393128d5d3e9a86c": "Updating ",
+        "s2a3b47ffe860958e": "Added {0} subscriptions",
+        "sc635e79e9b58810a": "Up to 50 subscriptions. Select fewer users.",
+        "se61422d7bac5e99f": "Subscribed to {0}",
+        "s9036f7a90822785f": "Already subscribed, or the limit of 50 has been reached.",
+        "s6648820f4718cc24": "Enter a valid forum username.",
+        "sfe62b636e3b77471": "{0}. The initial update did not finish. {1}",
+        "s5da6a920da32d60e": " subscriptions",
+        "s2a9010137d7ba142": "Imported ",
+        "sc55916f90438e6a5": "User not found.",
+        "sa4a20e9ac255258a": "Up to 50 subscriptions. Shorten the list.",
+        "s082aaa7aa9d2be98": "Enter one username per line, or separate them with spaces or commas.",
+        "s98a2753a54b815ab": "Update incomplete. It will retry automatically.",
+        "s523fb6184d48298d": "{0} s",
+        "sb28945155ccd7976": " · Unread",
+        "s5c55a67935af8f45": "All",
+        "s133f500d1624e24e": "Add selected ({0})",
+        "sb5046209970d3db3": "No activity yet",
+        "see30635962bf9c82": "No activity of this type",
+        "s74572450882f687f": "All caught up",
+        "s146790885b1d568f": "No subscriptions yet",
+        "sd6bc651b67117e14": "{0} subscriptions · {1} unread",
+        "s8cf8b8fb828a03de": "Unread activities",
+        "s8739378e59b2c938": "Subscriptions",
+        "s6170ff9554cef64c": "Sign in to your forum account in FluxDO before adding subscriptions.",
+        "sa76199f40aa9c334": "{0} unread activities",
+        "sdfa2ffad55077d69": "New activity",
+        "sa1359137557c53eb": "Untitled topic",
+        "s267e481ec1af6a70": "Permission not granted: {0}. Tap the feature again to request access.",
+        "sf31a9f3f1073da6e": "Install the plugin to use scheduled tasks and notifications.",
+        "s495bc79da6bbc69f": "Connection failed. Please retry.",
+        "sb349e315c004ef8c": "This account cannot read this activity.",
+        "sc231b1a2549a8a81": "Sign in to the forum first.",
+        "s2ff77baa08e96609": "Too many forum requests. Try again later.",
+        "sc0783c4f312aa20b": "Update paused after leaving the page.",
+        "s8bd2f5a49f5cfbb0": "An update is already running. Check again shortly.",
+        "s45727a2cc1b1a3dd": "Permission for {0} is off. Enable it in plugin permissions.",
+        "s5dc5b331ad1b1dfb": "This feature",
+        "s4b6ded8a7f181397": "Notifications",
+        "s398e38a1f557fe51": "Background refresh",
+        "s1f6ae9c8f8a4013d": "Read current account",
+        "s8e6ea6044ea558a2": "Read following list",
+        "s00ab785558830e10": "Read profiles",
+        "sd0224e6a29f1e9bb": "Read activity",
+        "s5cdc64f233f60dee": "Subscriptions changed. Please try again.",
+        "s9b51d9f4064fb64f": "Reactions",
+        "s9c0d90f768909594": "Likes",
+        "scf945e21ddefbb46": "Replies",
+        "s6549258dde9de9a1": "Topics",
+        "s79aad303b15f3ed3": "My subscriptions",
+        "sfa669a1e79f7db60": "Choose from following",
+        "sfa9d1a2012dc7f61": "Add subscription",
+        "s3725212d2092c70a": "Manage subscriptions",
+        "s4d0680f9efaef147": "Unread",
+        "s748ae6920776e7c8": "Mark all as read",
+        "sf959b11c48af2cac": "Activity permission is off",
+        "s02d786f1a036854d": "Saved activity is still available",
+        "sa4d43e65c3f14473": "Allow updates",
+        "s657d9cbf45ec9e6a": "Clear filters",
+        "sd50376b775b81ef6": "Refresh activity",
+        "s5891162dfd7b0df0": "Add your first subscription",
+        "seeb00343a5a2c958": "New activity from your subscriptions appears here.",
+        "s40e8c231c87f5ad8": "Add user",
+        "s6c8879b735bc2f97": "Back to recent activity",
+        "sb42e32d04aae9a48": "Continue to older activity",
+        "sb8784c8dd5636ff2": "Retry",
+        "s105835b30cf363b4": "Import list",
+        "s736cff237d7d9255": "Automatic updates",
+        "s27e0cb22379330f2": "Check subscriptions in batches and resume after rate limits.",
+        "s996d5a26af0fea4e": "Updates are scheduled by the system",
+        "s80733323a1111e63": "Notify about new activity",
+        "s8219de42a4b88abe": "System notifications are off",
+        "s89193ebd15971d26": "Updates continue. Enable system notifications to receive alerts.",
+        "s68ea5dd4d7af20e6": "System settings",
+        "s01eda9df8e0d7635": "Notification status is unavailable. Check FluxDO notifications in system settings.",
+        "s1b3040a24c036cea": "Remove subscription",
+        "sde365d163cd8e3dd": "Forum username",
+        "sfd6bde53aaf4edea": "Subscribe",
+        "sbd62a91c027770fb": "Paste usernames from your old list, one per line or separated by spaces or commas. This adds plugin subscriptions without changing who you follow on the website.",
+        "s19a6fac4e33156a5": "Usernames",
+        "s1d44dd136cbbe908": "Check and import",
+        "s10dde5f6ba4e7531": "Filter loaded following list",
+        "s66fe2bf52b5748b5": "No matching users",
+        "s7e7af41bb778403b": "Load next page",
+        "s5ac3c3737429b384": "Subscribed",
+        "s29d49a8440f8df87": "Activity feed",
+        "s923b88607a265c9d": "Import subscriptions"
+      },
+      "pageTitle": "Manage subscriptions",
+      "stats": [
+        {
+          "label": "Subscriptions",
+          "value": "2"
+        },
+        {
+          "label": "Unread activities",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 subscriptions · 0 unread",
+      "input": "",
+      "bulk": "",
+      "manual": false,
+      "submitting": false,
+      "empty": "No activity yet",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "All",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "Add selected (0)",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "All",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "Topics",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "Replies",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "Likes",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "Reactions",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 s",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 s",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 s",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "BulkImport",
+    "data": {
+      "i18n": {
+        "s5edf0d2dfa525fe8": "Notifications are off. Tap again to request access and check system notification settings for FluxDO.",
+        "sbc63a7c1c9be3b27": "Add a subscription first.",
+        "s2e770b687629f3ec": "Updated ",
+        "s393128d5d3e9a86c": "Updating ",
+        "s2a3b47ffe860958e": "Added {0} subscriptions",
+        "sc635e79e9b58810a": "Up to 50 subscriptions. Select fewer users.",
+        "se61422d7bac5e99f": "Subscribed to {0}",
+        "s9036f7a90822785f": "Already subscribed, or the limit of 50 has been reached.",
+        "s6648820f4718cc24": "Enter a valid forum username.",
+        "sfe62b636e3b77471": "{0}. The initial update did not finish. {1}",
+        "s5da6a920da32d60e": " subscriptions",
+        "s2a9010137d7ba142": "Imported ",
+        "sc55916f90438e6a5": "User not found.",
+        "sa4a20e9ac255258a": "Up to 50 subscriptions. Shorten the list.",
+        "s082aaa7aa9d2be98": "Enter one username per line, or separate them with spaces or commas.",
+        "s98a2753a54b815ab": "Update incomplete. It will retry automatically.",
+        "s523fb6184d48298d": "{0} s",
+        "sb28945155ccd7976": " · Unread",
+        "s5c55a67935af8f45": "All",
+        "s133f500d1624e24e": "Add selected ({0})",
+        "sb5046209970d3db3": "No activity yet",
+        "see30635962bf9c82": "No activity of this type",
+        "s74572450882f687f": "All caught up",
+        "s146790885b1d568f": "No subscriptions yet",
+        "sd6bc651b67117e14": "{0} subscriptions · {1} unread",
+        "s8cf8b8fb828a03de": "Unread activities",
+        "s8739378e59b2c938": "Subscriptions",
+        "s6170ff9554cef64c": "Sign in to your forum account in FluxDO before adding subscriptions.",
+        "sa76199f40aa9c334": "{0} unread activities",
+        "sdfa2ffad55077d69": "New activity",
+        "sa1359137557c53eb": "Untitled topic",
+        "s267e481ec1af6a70": "Permission not granted: {0}. Tap the feature again to request access.",
+        "sf31a9f3f1073da6e": "Install the plugin to use scheduled tasks and notifications.",
+        "s495bc79da6bbc69f": "Connection failed. Please retry.",
+        "sb349e315c004ef8c": "This account cannot read this activity.",
+        "sc231b1a2549a8a81": "Sign in to the forum first.",
+        "s2ff77baa08e96609": "Too many forum requests. Try again later.",
+        "sc0783c4f312aa20b": "Update paused after leaving the page.",
+        "s8bd2f5a49f5cfbb0": "An update is already running. Check again shortly.",
+        "s45727a2cc1b1a3dd": "Permission for {0} is off. Enable it in plugin permissions.",
+        "s5dc5b331ad1b1dfb": "This feature",
+        "s4b6ded8a7f181397": "Notifications",
+        "s398e38a1f557fe51": "Background refresh",
+        "s1f6ae9c8f8a4013d": "Read current account",
+        "s8e6ea6044ea558a2": "Read following list",
+        "s00ab785558830e10": "Read profiles",
+        "sd0224e6a29f1e9bb": "Read activity",
+        "s5cdc64f233f60dee": "Subscriptions changed. Please try again.",
+        "s9b51d9f4064fb64f": "Reactions",
+        "s9c0d90f768909594": "Likes",
+        "scf945e21ddefbb46": "Replies",
+        "s6549258dde9de9a1": "Topics",
+        "s79aad303b15f3ed3": "My subscriptions",
+        "sfa669a1e79f7db60": "Choose from following",
+        "sfa9d1a2012dc7f61": "Add subscription",
+        "s3725212d2092c70a": "Manage subscriptions",
+        "s4d0680f9efaef147": "Unread",
+        "s748ae6920776e7c8": "Mark all as read",
+        "sf959b11c48af2cac": "Activity permission is off",
+        "s02d786f1a036854d": "Saved activity is still available",
+        "sa4d43e65c3f14473": "Allow updates",
+        "s657d9cbf45ec9e6a": "Clear filters",
+        "sd50376b775b81ef6": "Refresh activity",
+        "s5891162dfd7b0df0": "Add your first subscription",
+        "seeb00343a5a2c958": "New activity from your subscriptions appears here.",
+        "s40e8c231c87f5ad8": "Add user",
+        "s6c8879b735bc2f97": "Back to recent activity",
+        "sb42e32d04aae9a48": "Continue to older activity",
+        "sb8784c8dd5636ff2": "Retry",
+        "s105835b30cf363b4": "Import list",
+        "s736cff237d7d9255": "Automatic updates",
+        "s27e0cb22379330f2": "Check subscriptions in batches and resume after rate limits.",
+        "s996d5a26af0fea4e": "Updates are scheduled by the system",
+        "s80733323a1111e63": "Notify about new activity",
+        "s8219de42a4b88abe": "System notifications are off",
+        "s89193ebd15971d26": "Updates continue. Enable system notifications to receive alerts.",
+        "s68ea5dd4d7af20e6": "System settings",
+        "s01eda9df8e0d7635": "Notification status is unavailable. Check FluxDO notifications in system settings.",
+        "s1b3040a24c036cea": "Remove subscription",
+        "sde365d163cd8e3dd": "Forum username",
+        "sfd6bde53aaf4edea": "Subscribe",
+        "sbd62a91c027770fb": "Paste usernames from your old list, one per line or separated by spaces or commas. This adds plugin subscriptions without changing who you follow on the website.",
+        "s19a6fac4e33156a5": "Usernames",
+        "s1d44dd136cbbe908": "Check and import",
+        "s10dde5f6ba4e7531": "Filter loaded following list",
+        "s66fe2bf52b5748b5": "No matching users",
+        "s7e7af41bb778403b": "Load next page",
+        "s5ac3c3737429b384": "Subscribed",
+        "s29d49a8440f8df87": "Activity feed",
+        "s923b88607a265c9d": "Import subscriptions"
+      },
+      "pageTitle": "Import subscriptions",
+      "stats": [
+        {
+          "label": "Subscriptions",
+          "value": "2"
+        },
+        {
+          "label": "Unread activities",
+          "value": "0"
+        }
+      ],
+      "users": [
+        {
+          "name": "user0",
+          "id": 1,
+          "avatar": ""
+        },
+        {
+          "name": "user1",
+          "id": 2,
+          "avatar": ""
+        }
+      ],
+      "hasUsers": true,
+      "filtered": false,
+      "title": "2 subscriptions · 0 unread",
+      "input": "",
+      "bulk": "@Alice\nBob",
+      "manual": false,
+      "submitting": false,
+      "empty": "No activity yet",
+      "error": "",
+      "people": [
+        {
+          "name": "",
+          "avatar": "",
+          "label": "All",
+          "count": 0,
+          "selected": true
+        },
+        {
+          "name": "user0",
+          "avatar": "",
+          "label": "user0",
+          "count": 0,
+          "selected": false
+        },
+        {
+          "name": "user1",
+          "avatar": "",
+          "label": "user1",
+          "count": 0,
+          "selected": false
+        }
+      ],
+      "unreadOnly": false,
+      "hasUnread": false,
+      "needsActivity": false,
+      "choices": [],
+      "query": "",
+      "pickLabel": "Add selected (0)",
+      "canPick": false,
+      "candidatesLoading": false,
+      "candidatesError": "",
+      "nextCandidates": false,
+      "types": [
+        {
+          "id": "",
+          "label": "All",
+          "selected": true
+        },
+        {
+          "id": "topics",
+          "label": "Topics",
+          "selected": false
+        },
+        {
+          "id": "replies",
+          "label": "Replies",
+          "selected": false
+        },
+        {
+          "id": "likes",
+          "label": "Likes",
+          "selected": false
+        },
+        {
+          "id": "reactions",
+          "label": "Reactions",
+          "selected": false
+        },
+        {
+          "id": "boosts",
+          "label": "Boost",
+          "selected": false
+        }
+      ],
+      "items": [],
+      "more": true,
+      "historyWindowEnd": false,
+      "olderWindow": false,
+      "historyLoading": false,
+      "historyError": "",
+      "progress": "",
+      "enabled": true,
+      "background": true,
+      "notify": true,
+      "notificationBlocked": true,
+      "notificationUnknown": false,
+      "notificationSettings": true,
+      "pace": [
+        {
+          "n": 10,
+          "label": "10 s",
+          "selected": false
+        },
+        {
+          "n": 30,
+          "label": "30 s",
+          "selected": true
+        },
+        {
+          "n": 60,
+          "label": "60 s",
+          "selected": false
+        }
+      ],
+      "scheduleError": ""
+    }
+  }
+]

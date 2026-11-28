@@ -24,8 +24,8 @@ class BackgroundNotificationService {
 
   /// 初始化（在 main() 中调用一次）
   Future<void> initialize() async {
-    if (Platform.isIOS) {
-      await _initIOSWorkmanager();
+    if (Platform.isIOS || Platform.isAndroid) {
+      await (_workmanagerReady ??= Workmanager().initialize(callbackDispatcher));
     }
   }
 
@@ -117,9 +117,36 @@ class BackgroundNotificationService {
 
   // ==================== iOS ====================
 
-  Future<void> _initIOSWorkmanager() async {
-    await Workmanager().initialize(callbackDispatcher);
-    debugPrint('[BackgroundNotification] iOS Workmanager 已初始化');
+  Future<void>? _workmanagerReady;
+  Future<void> _pluginWakeQueue = Future.value();
+  bool? _pluginWake;
+  bool _pluginTasksRequested = false, _pluginUpdatesRequested = false;
+
+  Future<void> setPluginWake(bool enabled) {
+    _pluginTasksRequested = enabled;
+    return _syncPluginWake();
+  }
+  Future<void> setPluginUpdateWake(bool enabled) {
+    _pluginUpdatesRequested = enabled;
+    return _syncPluginWake();
+  }
+  Future<void> _syncPluginWake() {
+    if (!Platform.isIOS && !Platform.isAndroid) return Future.value();
+    final next = _pluginWakeQueue.then((_) async {
+      final enabled = _pluginTasksRequested || _pluginUpdatesRequested;
+      if (_pluginWake == enabled) return;
+      await initialize();
+      if (enabled) {
+        await Workmanager().registerPeriodicTask(kMetaverseWakeTask, kMetaverseWakeTask,
+          frequency: const Duration(minutes: 15), initialDelay: const Duration(minutes: 15),
+          constraints: Constraints(networkType: NetworkType.connected), existingWorkPolicy: ExistingPeriodicWorkPolicy.keep);
+      } else {
+        await Workmanager().cancelByUniqueName(kMetaverseWakeTask);
+      }
+      _pluginWake = enabled;
+    });
+    _pluginWakeQueue = next.catchError((Object _) {});
+    return next;
   }
 
   Future<void> _registerIOSPeriodicTask(int userId) async {

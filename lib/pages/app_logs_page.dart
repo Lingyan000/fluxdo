@@ -86,7 +86,10 @@ const Set<String> _knownEntryKeys = {
 
 /// 应用日志查看页面
 class AppLogsPage extends StatefulWidget {
-  const AppLogsPage({super.key, this.initialType = LogTypeFilter.all});
+  const AppLogsPage({super.key, this.initialType = LogTypeFilter.all, this.pluginId, this.pluginName});
+
+  final String? pluginId;
+  final String? pluginName;
 
   /// 初始类型筛选（调试工具入口跳转时预设）
   final LogTypeFilter initialType;
@@ -102,6 +105,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
 
   late LogTypeFilter _typeFilter = widget.initialType;
   _LogLevelFilter _levelFilter = _LogLevelFilter.all;
+  String _emitterFilter = '';
 
   bool _searching = false;
   final TextEditingController _searchController = TextEditingController();
@@ -120,7 +124,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
 
   Future<void> _loadLogs() async {
     setState(() => _loading = true);
-    final entries = await LoggerUtils.readLogEntries();
+    final entries = await LoggerUtils.readLogEntries(pluginId: widget.pluginId);
     if (mounted) {
       setState(() {
         _entries = entries;
@@ -138,6 +142,9 @@ class _AppLogsPageState extends State<AppLogsPage> {
       final type = e['type']?.toString() ?? 'general';
       if (!_levelFilter.matches(level)) return false;
       if (!_typeFilter.matches(type)) return false;
+      if (_emitterFilter.isNotEmpty && e['emitter'] != _emitterFilter) {
+        return false;
+      }
       if (query.isNotEmpty && !_matchesQuery(e, query)) return false;
       return true;
     }).toList();
@@ -152,6 +159,12 @@ class _AppLogsPageState extends State<AppLogsPage> {
       'errorType',
       'event',
       'name',
+      'pluginId',
+      'pluginVersion',
+      'runtimeId',
+      'surfaceId',
+      'traceId',
+      'emitter',
     ]) {
       final value = entry[key];
       if (value != null && value.toString().toLowerCase().contains(query)) {
@@ -168,7 +181,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
   }
 
   Future<void> _copyAll() async {
-    final content = await LoggerUtils.readLogContent();
+    final content = await LoggerUtils.readLogContent(pluginId: widget.pluginId);
     if (content.trim().isEmpty) {
       ToastService.showInfo(S.current.appLogs_noLogs);
       return;
@@ -209,7 +222,10 @@ class _AppLogsPageState extends State<AppLogsPage> {
   Future<void> _shareLog() async {
     final fullHistory = await _selectExportScope();
     if (fullHistory == null || !mounted) return;
-    final path = await LoggerUtils.getShareFilePath(fullHistory: fullHistory);
+    final path = await LoggerUtils.getShareFilePath(
+      fullHistory: fullHistory,
+      pluginId: widget.pluginId,
+    );
     if (!mounted) return;
     await ShareUtils.shareFile(
       XFile(path),
@@ -222,7 +238,10 @@ class _AppLogsPageState extends State<AppLogsPage> {
     if (fullHistory == null || !mounted) return;
     final String path;
     try {
-      path = await LoggerUtils.getShareFilePath(fullHistory: fullHistory);
+      path = await LoggerUtils.getShareFilePath(
+        fullHistory: fullHistory,
+        pluginId: widget.pluginId,
+      );
     } catch (_) {
       // 生成阶段的异常由 LoggerUtils 记录，保存面板尚未打开。
       ToastService.showError(S.current.share_saveFailed);
@@ -241,7 +260,9 @@ class _AppLogsPageState extends State<AppLogsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(context.l10n.appLogs_clearTitle),
-        content: Text(context.l10n.appLogs_clearContent),
+        content: Text(widget.pluginId == null
+            ? context.l10n.appLogs_clearContent
+            : context.l10n.metaverse_clearPluginLogs(widget.pluginName ?? widget.pluginId!)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -255,7 +276,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
       ),
     );
     if (confirmed == true) {
-      await LoggerUtils.clearLogs();
+      await LoggerUtils.clearLogs(pluginId: widget.pluginId);
       await _loadLogs();
       ToastService.showSuccess(S.current.appLogs_logsCleared);
     }
@@ -269,6 +290,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
       // 摘要与附件使用同一份导出，避免选择本次启动后仍夹带历史摘要。
       final logPath = await LoggerUtils.getShareFilePath(
         fullHistory: fullHistory,
+        pluginId: widget.pluginId,
       );
       if (!mounted) return;
       final deviceInfoFuture = LoggerUtils.getDeviceInfoText();
@@ -840,7 +862,9 @@ class _AppLogsPageState extends State<AppLogsPage> {
     }
 
     return AppBar(
-      title: Text(context.l10n.appLogs_title),
+      title: Text(widget.pluginId == null
+          ? context.l10n.appLogs_title
+          : '${widget.pluginName ?? widget.pluginId} · ${context.l10n.appLogs_title}'),
       centerTitle: true,
       actions: [
         IconButton(
@@ -1201,6 +1225,10 @@ class _AppLogsPageState extends State<AppLogsPage> {
               padding: const EdgeInsets.only(left: 12),
               child: Row(
                 children: [
+                  if (widget.pluginId != null) ...[
+                    _buildEmitterDropdown(),
+                    const SizedBox(width: 8),
+                  ],
                   for (final filter in _LogLevelFilter.values) ...[
                     if (filter != _LogLevelFilter.all) ...[
                       buildChip(
@@ -1242,6 +1270,48 @@ class _AppLogsPageState extends State<AppLogsPage> {
   }
 
   /// 类型筛选下拉：显示当前选中类型，激活非「全部」筛选时高亮
+  Widget _buildEmitterDropdown() {
+    final emitters = _entries
+        .map((entry) => entry['emitter'])
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    String label(String value) => switch (value) {
+      '' => context.l10n.metaverse_logAllEmitters,
+      'framework' => context.l10n.metaverse_logFramework,
+      'plugin' => context.l10n.metaverse_logPlugin,
+      _ => value,
+    };
+    return SwipeDismissiblePopupMenuButton<String>(
+      tooltip: context.l10n.metaverse_logAllEmitters,
+      initialValue: _emitterFilter,
+      onSelected: (value) => setState(() {
+        _emitterFilter = value;
+        _applyFilters();
+      }),
+      itemBuilder: (context) => [
+        for (final value in ['', ...emitters])
+          CheckedPopupMenuItem(
+            value: value,
+            checked: _emitterFilter == value,
+            child: Text(label(value)),
+          ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label(_emitterFilter)),
+            const Icon(Symbols.arrow_drop_down_rounded),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTypeDropdown(ThemeData theme) {
     final active = _typeFilter != LogTypeFilter.all;
     final fgColor = active

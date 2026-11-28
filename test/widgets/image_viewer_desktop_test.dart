@@ -41,6 +41,25 @@ class _PendingImageProvider extends ImageProvider<_PendingImageProvider> {
   ) => OneFrameImageStreamCompleter(Completer<ImageInfo>().future);
 }
 
+Future<void> _decodeVisible(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 50; attempt++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (find.byType(GestureImageView).evaluate().isNotEmpty) break;
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    });
+  }
+  final views = tester.widgetList<GestureImageView>(find.byType(GestureImageView));
+  expect(views, isNotEmpty);
+  await tester.runAsync(() async {
+    for (final view in views) {
+      await precacheImage(view.image, tester.element(find.byType(ImageViewerPage)))
+          .timeout(const Duration(seconds: 5));
+    }
+  });
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('桌面端三分区布局：无下拉关闭、放大后工具栏与关闭常驻、支持旋转/1:1/适配宽度与点暗幕关闭', (
     tester,
@@ -90,7 +109,7 @@ void main() {
     });
 
     await tester.tap(find.text('打开'));
-    await tester.pumpAndSettle();
+    await _decodeVisible(tester);
 
     expect(find.byType(ImageViewerPage), findsOneWidget);
     // 桌面端不使用下滑关闭容器
@@ -230,7 +249,7 @@ void main() {
     });
 
     await tester.tap(find.text('打开画廊'));
-    await tester.pumpAndSettle();
+    await _decodeVisible(tester);
 
     expect(find.text('1 / 3'), findsOneWidget);
     // 顶部有文件名时，关闭按钮仍紧贴顶栏最右侧（不被 Flexible + Spacer 挤到中间偏右）
@@ -328,7 +347,7 @@ void main() {
     });
 
     await tester.tap(find.text('打开宽图'));
-    await tester.pumpAndSettle();
+    await _decodeVisible(tester);
     expect(find.byType(ImageViewerPage), findsOneWidget);
 
     // 在下方暗幕拖拽（模拟滑动切图手势），不应误关

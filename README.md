@@ -98,6 +98,7 @@ brew install --cask Lingyan000/tap/fluxdo
 - [开发环境与日常命令](docs/development.md)
 - [发版与 iOS IPA](docs/release.md)
 - [Flatpak 打包说明](docs/flatpak.md)
+- [元宇宙第三方插件](docs/metaverse-plugin.md)
 
 ## 项目结构
 
@@ -174,5 +175,6 @@ This project is tested with BrowserStack.
 ## 相关文档
 
 - [开发环境与日常命令](docs/development.md)
+- [插件开发文档](docs/plugins/README.md)
 - [Flatpak 打包说明](docs/flatpak.md)
 - [发版与 iOS IPA](docs/release.md)

@@ -25,6 +25,9 @@ class NavEntry {
     required this.selectedIconData,
     required this.label,
     this.pageBuilder,
+    this.available = true,
+    this.description,
+    this.lazy = false,
     this.onPanelTap,
     this.onAction,
     this.requiresLogin = false,
@@ -36,6 +39,11 @@ class NavEntry {
 
   /// 稳定 id（home / profile / bookmarks / history / drafts / ...）
   final String id;
+
+  /// 动态入口暂不可用时保留编辑器中的配置，但不进入实际导航。
+  final bool available;
+  final String Function(BuildContext)? description;
+  final bool lazy;
 
   /// 入口类型
   final NavEntryKind kind;
@@ -74,3 +82,18 @@ class NavEntry {
   /// 可选：自定义选中图标渲染
   final Widget Function(BuildContext, WidgetRef)? customSelectedIconBuilder;
 }
+
+/// 只解析可用入口，不改写偏好。缺失插件可在重新启用后恢复原位置。
+List<NavEntry> resolveNavigationEntries(List<NavEntry> all, List<String> ids, {required bool loggedIn}) {
+  final byId = {for (final entry in all) entry.id: entry};
+  final seen = <String>{};
+  return [
+    for (final id in [...ids, ...all.where((e) => e.locked).map((e) => e.id)])
+      if (byId[id] case final entry?)
+        if (entry.available && (!entry.requiresLogin || loggedIn) && seen.add(id)) entry,
+  ];
+}
+
+String pluginNavigationId(String pluginId, String pageId) =>
+    'plugin:$pluginId:$pageId';
+bool isPluginNavigationId(String id) => id.startsWith('plugin:');

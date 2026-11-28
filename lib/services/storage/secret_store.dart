@@ -77,6 +77,9 @@ abstract interface class SecretStore {
 
   Future<void> deleteScope(SecretScope scope);
 
+  /// 读取精确作用域内的记录，键保留完整存储标识。
+  Future<Map<String, String>> readScope(SecretScope scope);
+
   Future<SecretStoreAvailability> checkAvailability();
 }
 
@@ -98,6 +101,12 @@ class SecretStoreException implements Exception {
 /// 测试与会话级凭证使用的纯内存实现。
 class InMemorySecretStore implements SecretStore {
   final Map<String, String> _values = {};
+
+  @override
+  Future<Map<String, String>> readScope(SecretScope scope) async => {
+    for (final entry in _values.entries)
+      if (entry.key.startsWith(scope.storagePrefix)) entry.key: entry.value,
+  };
 
   @override
   Future<String?> read(SecretKey key) async => _values[key.storageKey];

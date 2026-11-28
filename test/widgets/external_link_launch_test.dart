@@ -18,6 +18,66 @@ import '../support/url_launcher_test_platform.dart';
 const _url = 'https://hb.lafi.sh/tips';
 
 void main() {
+  testWidgets('网页登录默认使用内置浏览器，即使普通外链默认使用系统浏览器', (tester) async {
+    const url = 'https://linux.do/about';
+    final (prefs, launcher) = await _setUpBrowser(preferInApp: false);
+    await _pumpLauncher(
+      tester,
+      prefs,
+      (context) => launchExternalLink(context, url, preferSessionBrowser: true),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    await _expectBrowser(
+      tester,
+      launcher,
+      url,
+      ExternalLinkOpenChoice.inAppBrowser,
+    );
+  });
+  for (final mode in [LinkOpenMode.inApp, LinkOpenMode.external, LinkOpenMode.ask]) {
+    testWidgets('浏览器显式模式 $mode 覆盖偏好', (tester) async {
+      final (prefs, launcher) = await _setUpBrowser(
+        preferInApp: mode == LinkOpenMode.external,
+      );
+      var confirmations = 0;
+      await _pumpLauncher(tester, prefs, (context) => launchExternalLink(
+        context,
+        _url,
+        mode: mode,
+        confirm: (_, _) async {
+          confirmations++;
+          return ExternalLinkOpenChoice.inAppBrowser;
+        },
+      ));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      expect(confirmations, mode == LinkOpenMode.ask ? 1 : 0);
+      await _expectBrowser(
+        tester,
+        launcher,
+        _url,
+        mode == LinkOpenMode.external
+            ? ExternalLinkOpenChoice.systemBrowser
+            : ExternalLinkOpenChoice.inAppBrowser,
+      );
+    });
+  }
+  testWidgets('询问模式对信任域名也提供选择', (tester) async {
+    final (prefs, launcher) = await _setUpBrowser();
+    await _pumpLauncher(tester, prefs, (context) => launchExternalLink(
+      context,
+      'https://linux.do/about',
+      mode: LinkOpenMode.ask,
+    ));
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.externalLink_openInSystemBrowser), findsOneWidget);
+    await tester.tap(find.text(t.common_cancel));
+    await tester.pumpAndSettle();
+    expect(launcher.opened, isEmpty);
+    expect(find.byType(WebViewPage), findsNothing);
+  });
   for (final preferInApp in [false, true]) {
     for (final choice in [...ExternalLinkOpenChoice.values, null]) {
       testWidgets('外链本次选择 $choice 优先于内置浏览器偏好 $preferInApp', (tester) async {

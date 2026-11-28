@@ -1,0 +1,323 @@
+name: Plugin development
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/plugin-development.yaml'
+      - 'lib/modules/metaverse/**'
+      - 'lib/services/plugin_image_cache.dart'
+      - 'lib/services/data_management/cache_size_service.dart'
+      - 'lib/pages/image_viewer*.dart'
+      - 'lib/widgets/common/image_live_overlay.dart'
+      - 'test/widgets/image_viewer*_test.dart'
+      - 'test/widgets/image_live_overlay_test.dart'
+      - 'lib/modules/cdk/**'
+      - 'lib/modules/ldc_payment/**'
+      - 'packages/common_ui/lib/src/pin_input.dart'
+      - 'test/widgets/common/pin_input_test.dart'
+      - 'lib/l10n/modules/ldc/**'
+      - 'lib/services/ldc_payment_service.dart'
+      - 'lib/widgets/cdk_balance_card.dart'
+      - 'lib/l10n/modules/cdk/**'
+      - 'test/modules/cdk/**'
+      - 'test/services/ldc_payment_service_test.dart'
+      - 'lib/navigation/**'
+      - 'lib/main.dart'
+      - 'lib/pages/metaverse_page.dart'
+      - 'lib/pages/bottom_nav_settings_page.dart'
+      - 'lib/services/discourse/_users.dart'
+      - 'lib/services/background/**'
+      - 'lib/services/local_notification_service.dart'
+      - 'lib/widgets/user/following_feed_migration_sheet.dart'
+      - 'test/pages/following_feed_page_test.dart'
+      - 'lib/l10n/modules/followingfeed/**'
+      - 'android/app/src/main/kotlin/com/github/lingyan000/fluxdo/MainActivity.kt'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Info.plist'
+      - 'packages/qjs/**'
+      - 'lib/services/log/**'
+      - 'lib/l10n/modules/metaverse/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'test/modules/metaverse/**'
+      - 'test/fixtures/metaverse/**'
+      - 'test/services/log/**'
+      - 'test/architecture/**'
+      - 'tool/plugin_tools/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'mise.toml'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/plugin-development.yaml'
+      - 'lib/modules/metaverse/**'
+      - 'lib/services/plugin_image_cache.dart'
+      - 'lib/services/data_management/cache_size_service.dart'
+      - 'lib/pages/image_viewer*.dart'
+      - 'lib/widgets/common/image_live_overlay.dart'
+      - 'test/widgets/image_viewer*_test.dart'
+      - 'test/widgets/image_live_overlay_test.dart'
+      - 'lib/modules/cdk/**'
+      - 'lib/modules/ldc_payment/**'
+      - 'packages/common_ui/lib/src/pin_input.dart'
+      - 'test/widgets/common/pin_input_test.dart'
+      - 'lib/l10n/modules/ldc/**'
+      - 'lib/services/ldc_payment_service.dart'
+      - 'lib/widgets/cdk_balance_card.dart'
+      - 'lib/l10n/modules/cdk/**'
+      - 'test/modules/cdk/**'
+      - 'test/services/ldc_payment_service_test.dart'
+      - 'lib/navigation/**'
+      - 'lib/main.dart'
+      - 'lib/pages/metaverse_page.dart'
+      - 'lib/pages/bottom_nav_settings_page.dart'
+      - 'lib/services/discourse/_users.dart'
+      - 'lib/services/background/**'
+      - 'lib/services/local_notification_service.dart'
+      - 'lib/widgets/user/following_feed_migration_sheet.dart'
+      - 'test/pages/following_feed_page_test.dart'
+      - 'lib/l10n/modules/followingfeed/**'
+      - 'android/app/src/main/kotlin/com/github/lingyan000/fluxdo/MainActivity.kt'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Info.plist'
+      - 'packages/qjs/**'
+      - 'lib/services/log/**'
+      - 'lib/l10n/modules/metaverse/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'test/modules/metaverse/**'
+      - 'test/fixtures/metaverse/**'
+      - 'test/services/log/**'
+      - 'test/architecture/**'
+      - 'tool/plugin_tools/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'mise.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-development-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-development:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - run: git config --global core.symlinks true
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Lingyan000/fluxdo-plugin-tools
+          ref: 304ac06de9c3343b87dc6eb7cf85dc4e12922ab1
+          path: tools
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: npm install --global pnpm@12.21.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: tools
+      - run: pnpm build
+        working-directory: tools
+      # 显式解析应用依赖，再生成本地化和其他测试资源。
+      - name: Install application dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: Prepare application
+        working-directory: app
+        run: dart tool/project_prep.dart test
+      - name: Prepare test assets and tool path
+        run: |
+          New-Item -ItemType Directory -Force app/assets/certs | Out-Null
+          "FLUXDO_PLUGIN_TOOLS=$((Resolve-Path tools).Path)" >> $env:GITHUB_ENV
+          "FLUXDO_DART=$env:FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart.exe" >> $env:GITHUB_ENV
+      - name: Check SDK against real host APIs
+        working-directory: app
+        run: node tool/plugin_tools/check_sdk_contract.mjs
+      - name: Check generated component contract
+        working-directory: app
+        run: dart run tool/plugin_tools/export_components.dart test/fixtures/metaverse/sdk/components.json --check
+      - name: Analyze development integration
+        working-directory: app
+        run: flutter analyze lib/modules/metaverse/market lib/modules/metaverse/plugin/metaverse_plugin_backup.dart lib/modules/metaverse/plugin/metaverse_plugin_recovery.dart lib/modules/metaverse/plugin/metaverse_data_migration.dart lib/modules/metaverse/plugin/metaverse_approval_change.dart lib/modules/metaverse/plugin/metaverse_package_signature.dart lib/modules/metaverse/plugin/metaverse_plugin_preferences.dart lib/modules/metaverse/plugin/ui/metaverse_restore_page.dart test/modules/metaverse/metaverse_recovery_test.dart test/modules/metaverse/metaverse_signature_test.dart test/modules/metaverse/metaverse_reliability_ui_test.dart test/services/data_backup_service_test.dart lib/modules/metaverse/host/metaverse_system_wake.dart lib/services/background/background_notification_service.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart test/modules/metaverse/metaverse_auto_update_test.dart test/modules/metaverse/metaverse_update_ui_test.dart lib/navigation lib/modules/metaverse/host lib/modules/metaverse/plugin/metaverse_forum_request.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_page.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart lib/pages/metaverse_page.dart lib/pages/bottom_nav_settings_page.dart lib/main.dart lib/services/discourse/_users.dart test/modules/metaverse/metaverse_navigation_forum_test.dart lib/modules/metaverse/developer lib/modules/metaverse/plugin/metaverse_component_contract.dart lib/modules/metaverse/plugin/metaverse_ui_validator.dart lib/modules/metaverse/plugin/metaverse_plugin_host.dart lib/modules/metaverse/plugin/metaverse_event_stream.dart lib/modules/metaverse/plugin/metaverse_plugin_network.dart test/modules/metaverse/metaverse_event_stream_test.dart lib/modules/metaverse/plugin/metaverse_plugin_store.dart lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart lib/services/log/log_writer.dart packages/fluxdo_plugin_runtime tool/plugin_tools test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart
+      - name: Analyze release management and link routing
+        working-directory: app
+        run: >-
+          flutter analyze
+          lib/modules/metaverse/metaverse_link_router.dart
+          lib/modules/metaverse/core/metaverse_link_rule.dart
+          lib/modules/metaverse/core/metaverse_service.dart
+          lib/modules/metaverse/plugin/metaverse_plugin_service.dart
+          lib/modules/metaverse/plugin/providers/metaverse_task_providers.dart
+          lib/modules/metaverse/plugin/ui/metaverse_plugin_status.dart
+          lib/modules/metaverse/plugin/ui/metaverse_card_layout_page.dart
+          lib/modules/metaverse/plugin/ui/metaverse_permission_list.dart
+          lib/modules/metaverse/plugin/ui/metaverse_plugin_tile.dart
+          lib/services/data_management/data_backup_service.dart
+          test/modules/metaverse/metaverse_release_followup_ui_test.dart
+          test/modules/metaverse/metaverse_link_router_test.dart
+      - name: Build and verify native script engine
+        working-directory: app
+        run: dart run tool/plugin_tools/quickjs_peer.dart --check
+      - name: Run real QuickJS HMR regression
+        working-directory: app
+        run: node --test tool/plugin_tools/native.test.mjs
+      - name: Verify buyer workflows with simulated services
+        working-directory: app
+        run: node --test test/modules/metaverse/ld_store_buyer.test.mjs test/modules/metaverse/activity_feed.test.mjs
+      - name: Prepare SVG transformer before parallel asset compilation
+        working-directory: app
+        timeout-minutes: 2
+        run: |
+          New-Item -ItemType Directory -Force build/plugin-ci | Out-Null
+          dart run jovial_svg_transformer --input=assets/logo.svg --output=build/plugin-ci/logo.si
+          exit $LASTEXITCODE
+      - name: Verify installed activity plugin with the native task dispatcher
+        working-directory: app
+        timeout-minutes: 10
+        run: |
+          flutter test --verbose --reporter expanded --file-reporter json:plugin-activity-tests.json test/modules/metaverse/metaverse_scheduled_tasks_test.dart test/modules/metaverse/metaverse_activity_ui_test.dart test/modules/metaverse/metaverse_pagination_test.dart 2>&1 | Tee-Object -FilePath plugin-activity-build.log
+          exit $LASTEXITCODE
+      - name: Verify per-plugin permissions, installation and revocation
+        working-directory: app
+        run: >-
+          flutter test --reporter expanded
+          test/modules/metaverse/metaverse_recovery_test.dart
+          test/modules/metaverse/metaverse_signature_test.dart
+          test/modules/metaverse/metaverse_reliability_ui_test.dart
+          test/services/data_backup_service_test.dart
+          test/modules/metaverse/metaverse_auto_update_test.dart
+          test/modules/metaverse/metaverse_update_ui_test.dart
+          test/modules/metaverse/metaverse_market_ui_test.dart
+          test/modules/metaverse/metaverse_release_followup_ui_test.dart
+          test/modules/metaverse/metaverse_link_router_test.dart
+          test/modules/metaverse/metaverse_registry_test.dart
+          test/modules/metaverse/metaverse_capabilities_test.dart
+          test/modules/metaverse/metaverse_storage_scopes_test.dart
+          test/modules/metaverse/metaverse_data_tools_test.dart
+          test/modules/metaverse/metaverse_files_captcha_test.dart
+          test/modules/metaverse/metaverse_market_catalog_test.dart
+          test/modules/metaverse/metaverse_event_stream_test.dart
+          test/modules/metaverse/metaverse_plugin_contract_test.dart
+          test/modules/metaverse/metaverse_image_cache_test.dart
+          test/modules/metaverse/metaverse_content_components_test.dart
+          test/modules/metaverse/metaverse_page_components_test.dart
+          test/modules/metaverse/metaverse_inner_ui_test.dart
+          test/modules/metaverse/ld_store_api2_checkout_test.dart
+          test/modules/metaverse/ld_store_api2_login_test.dart
+          test/modules/metaverse/metaverse_native_ui_test.dart
+      - name: Verify shared image viewer and controlled image sources
+        working-directory: app
+        run: |
+          flutter analyze lib/pages/image_viewer_page.dart lib/pages/image_viewer_memory_source.dart lib/widgets/common/image_live_overlay.dart lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_live_overlay_test.dart test/widgets/image_viewer_live_text_gestures_test.dart test/modules/metaverse/metaverse_content_components_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter test --reporter expanded test/widgets/image_viewer_desktop_test.dart test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_viewer_fade_continuity_test.dart test/widgets/image_viewer_gradient_transition_test.dart test/widgets/image_live_overlay_test.dart test/widgets/image_viewer_live_text_gestures_test.dart
+          exit $LASTEXITCODE
+      - name: Verify native CDK claims and shared checkout without live transactions
+        working-directory: app
+        run: |
+          flutter analyze lib/modules/cdk lib/modules/ldc_payment packages/common_ui/lib/src/pin_input.dart lib/services/ldc_payment_service.dart lib/widgets/cdk_balance_card.dart test/modules/cdk test/widgets/common/pin_input_test.dart test/services/ldc_payment_service_test.dart test/services/ldc_biometric_payment_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter test --reporter expanded test/modules/cdk test/widgets/common/pin_input_test.dart test/services/ldc_payment_service_test.dart test/services/ldc_biometric_payment_test.dart
+          exit $LASTEXITCODE
+      - name: Run pairing, isolation, plugin and architecture regression
+        working-directory: app
+        run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_script_engine_test.dart test/pages/following_feed_page_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/log_policy_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
+      - name: Upload native test events
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-test-events
+          path: |
+            app/plugin-tests.json
+            app/plugin-activity-tests.json
+            app/plugin-activity-build.log
+            app/build/plugin-performance.json
+          if-no-files-found: ignore
+
+  portable-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    # macOS ARM 首次资源构建约需 17 分钟，为测试与清理保留独立余量。
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 30 || 20 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: flutter pub get
+      - run: dart tool/project_prep.dart test
+      # 先串行生成转换器快照，避免资源批量转换时争抢冷启动编译。
+      - name: Prepare SVG transformer before parallel asset compilation
+        timeout-minutes: 2
+        run: |
+          mkdir -p build/plugin-ci
+          dart run jovial_svg_transformer --input=assets/logo.svg --output=build/plugin-ci/logo.si
+      - name: Test real engine, storage and native component layout
+        run: |
+          mkdir -p assets/certs
+          flutter test --reporter expanded test/modules/metaverse/metaverse_script_engine_test.dart test/modules/metaverse/metaverse_data_tools_test.dart test/modules/metaverse/metaverse_storage_scopes_test.dart test/modules/metaverse/metaverse_pagination_test.dart test/modules/metaverse/metaverse_visual_baseline_test.dart
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plugin-runtime-${{ runner.os }}
+          path: build/plugin-performance.json
+
+  visual-baseline:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - run: git config --global core.symlinks true
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: flutter pub get
+      - run: dart tool/project_prep.dart test
+      - name: Prepare SVG transformer before parallel asset compilation
+        timeout-minutes: 2
+        run: |
+          New-Item -ItemType Directory -Force build/plugin-ci | Out-Null
+          dart run jovial_svg_transformer --input=assets/logo.svg --output=build/plugin-ci/logo.si
+          exit $LASTEXITCODE
+      - name: Compare fixed component baselines
+        env:
+          PLUGIN_GOLDENS: '1'
+        run: |
+          New-Item -ItemType Directory -Force assets/certs | Out-Null
+          flutter test --verbose --reporter expanded test/modules/metaverse/metaverse_visual_baseline_test.dart 2>&1 | Tee-Object -FilePath plugin-visual-build.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plugin-visual-diagnostics
+          path: |
+            plugin-visual-build.log
+            test/modules/metaverse/failures/**
+          if-no-files-found: ignore

@@ -1,0 +1,2311 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:app_icons/app_icons.dart';
+import 'package:jovial_svg/jovial_svg.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:dio/dio.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import '../../support/material_ui_finders.dart';
+import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/pages/metaverse_page.dart';
+import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
+import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
+import 'package:fluxdo/models/ldc_user_info.dart';
+import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/providers/core_providers.dart';
+import 'package:fluxdo/providers/ldc_providers.dart';
+import 'package:fluxdo/widgets/ldc_balance_card.dart';
+import 'package:fluxdo/modules/ldc_reward/models/ldc_reward_credentials.dart';
+import 'package:fluxdo/modules/ldc_reward/providers/ldc_reward_provider.dart';
+import 'package:fluxdo/modules/ldc_reward/widgets/ldc_reward_config_tile.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_file_service.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
+import 'package:fluxdo/modules/ldc_payment/ldc_payment_sheet.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_confirmation_sheet.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_connect_confirmation.dart';
+import 'package:fluxdo/modules/metaverse/developer/metaverse_component_examples.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/services/ldc_payment_service.dart';
+import 'package:fluxdo/services/ldc_biometric_payment.dart';
+import 'package:fluxdo/services/storage/secret_store.dart';
+import 'package:fluxdo/utils/dialog_utils.dart';
+import 'package:fluxdo/theme/app_colors.dart';
+import 'package:fluxdo/theme/app_theme.dart';
+import 'package:rfw/rfw.dart';
+import 'package:rfw/formats.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:m3e_ui/m3e_ui.dart';
+
+class _FixtureUser extends CurrentUserNotifier {
+  @override
+  User? build() => null;
+}
+
+class _FixtureBalance extends LdcUserInfoNotifier {
+  _FixtureBalance(this.mode);
+  final String mode;
+  @override
+  Future<LdcUserInfo?> build() async {
+    if (mode == 'loading') return Completer<LdcUserInfo?>().future;
+    if (mode == 'error') throw StateError('offline');
+    return LdcUserInfo.fromJson({
+      'id': 42,
+      'username': 'tester',
+      'nickname': 'tester',
+      'trust_level': 2,
+      'avatar_url': '',
+      'total_receive': '0',
+      'total_payment': '0',
+      'total_transfer': '0',
+      'total_community': '8000',
+      'community_balance': '7940.98',
+      'available_balance': '7950.98',
+      'pay_score': 0,
+      'is_pay_key': true,
+      'is_admin': false,
+      'remain_quota': '5000',
+      'pay_level': 1,
+      'daily_limit': null,
+    });
+  }
+}
+
+class _NoReward extends LdcRewardCredentialsNotifier {
+  @override
+  Future<LdcRewardCredentials?> build() async => null;
+}
+
+class _FixtureCodeStore extends MetaversePluginStore {
+  factory _FixtureCodeStore(SharedPreferences preferences) {
+    final root = Directory.systemTemp.createTempSync('plugin-native-ui-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    return _FixtureCodeStore._(preferences, root);
+  }
+  _FixtureCodeStore._(SharedPreferences preferences, this.root)
+    : super(
+        preferences: preferences,
+        secretStore: InMemorySecretStore(),
+        rootDirectory: () async => root,
+      );
+  final Directory root;
+  MetaversePluginCode? written;
+  @override
+  Future<void> writeCode(String id, MetaversePluginCode code) async {
+    await super.writeCode(id, code);
+    written = code;
+  }
+
+  @override
+  Future<MetaversePluginCode> readCode(String id) async =>
+      written ?? await super.readCode(id);
+}
+
+class _EmptyPlugins extends MetaversePluginsController {
+  @override
+  List<InstalledMetaversePlugin> build() => [];
+}
+
+class _Payment implements LdcPaymentDelegate {
+  int payments = 0, refreshes = 0;
+  int passwords = 0;
+  bool timeout = false, refreshFails = false;
+  bool rejectPassword = false;
+  String status = 'completed';
+  Completer<void>? pending;
+  final order = LdcPaymentOrder(
+    token: 'fixture',
+    orderNo: 'LD202611120042',
+    name: '开发者工具包',
+    amount: '12.50',
+    payer: 'tester',
+    payee: 'seller',
+    merchant: 'LD士多',
+    expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+  );
+  @override
+  Future<LdcPaymentOrder> prepare(String no, String username) async => order;
+  @override
+  Future<void> setInitialPassword(String password, String username) async {
+    expect(password, '123456');
+    passwords++;
+  }
+
+  @override
+  Future<void> pay(LdcPaymentOrder order, String password) async {
+    payments++;
+    expect(password, '123456');
+    if (pending != null) await pending!.future;
+    if (rejectPassword) throw const LdcPaymentException('支付密码不正确');
+    if (timeout) {
+      throw DioException.receiveTimeout(
+        timeout: const Duration(seconds: 1),
+        requestOptions: RequestOptions(),
+      );
+    }
+  }
+
+  @override
+  Future<bool> refreshPayment(String no) async {
+    refreshes++;
+    if (refreshFails) throw StateError('offline');
+    return status == 'completed';
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final snapshots = Platform.environment['LD_STORE_SNAPSHOTS'] == '1';
+  final captureKey = GlobalKey();
+  late SharedPreferences preferences;
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    preferences = await SharedPreferences.getInstance();
+    final icons =
+        FontLoader('packages/material_symbols_icons/MaterialSymbolsRounded')
+          ..addFont(
+            rootBundle.load(
+              'packages/material_symbols_icons/lib/fonts/MaterialSymbolsRounded.ttf',
+            ),
+          );
+    await icons.load();
+    final materialIcons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await materialIcons.load();
+    if (snapshots) {
+      final font = File('C:/Windows/Fonts/msyh.ttc');
+      final loader = FontLoader('ReviewFont')
+        ..addFont(font.readAsBytes().then(ByteData.sublistView));
+      await loader.load();
+    }
+  });
+
+  Widget app(
+    Widget child, {
+    String title = 'LD士多',
+    Brightness brightness = Brightness.light,
+    double scale = 1,
+    bool reducedMotion = false,
+    SegmentedCardMode? cardMode,
+    Widget? barActions,
+    _FixtureCodeStore? pluginStore,
+  }) {
+    const seed = Colors.indigo;
+    final baseTheme = buildAppTheme(
+      ColorScheme.fromSeed(seedColor: seed, brightness: brightness),
+      AppColors.material(brightness),
+      UiShapes.standard,
+      const ThemeState(mode: ThemeMode.system, seedColor: seed),
+      fullscreenSwipeBack: false,
+      pageBackground: false,
+    );
+    final theme = cardMode == null ? baseTheme : baseTheme.copyWith(extensions: [
+      ...baseTheme.extensions.values.where((value) => value is! SegmentedCardStyle),
+      SegmentedCardStyle(mode: cardMode),
+    ]);
+    return ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(preferences),
+        currentUserProvider.overrideWith(_FixtureUser.new),
+        metaversePluginsProvider.overrideWith(
+          pluginStore == null
+              ? _EmptyPlugins.new
+              : MetaversePluginsController.new,
+        ),
+        if (pluginStore != null) ...[
+          metaversePluginStoreProvider.overrideWithValue(pluginStore),
+          metaversePluginDirectoryProvider.overrideWith((_) async => pluginStore.root),
+          metaverseTaskDriverProvider.overrideWithValue(null),
+          metaverseServicesProvider.overrideWith(
+            (ref) => [
+              for (final plugin in ref.watch(metaversePluginsProvider))
+                MetaversePluginService(plugin),
+            ],
+          ),
+        ],
+      ],
+      child: RepaintBoundary(
+        key: captureKey,
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            debugShowCheckedModeBanner: false,
+            theme: snapshots
+                ? theme.copyWith(
+                    textTheme: theme.textTheme.apply(fontFamily: 'ReviewFont'),
+                  )
+                : theme,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+                disableAnimations: reducedMotion,
+              ),
+              child: child!,
+            ),
+            home: MetaversePluginPageFrame(title: title, actions: barActions, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+
+  testWidgets('系统文件打开先确认，取消保留现状，再次打开可安装', (tester) async {
+    await preferences.clear();
+    final store = _FixtureCodeStore(preferences);
+    final manifest = jsonDecode(File('docs/examples/metaverse-plugin/plugin.json').readAsStringSync());
+    final bundle = jsonEncode({
+      'manifest': manifest,
+      'files': {
+        'ui.rfwtxt': File('docs/examples/metaverse-plugin/ui.rfwtxt').readAsStringSync(),
+        'main.js': File('docs/examples/metaverse-plugin/main.js').readAsStringSync(),
+      },
+    });
+    final directory = Directory.systemTemp.createTempSync('fluxdo_file_install_');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/示例 #1.fluxplugin')..writeAsStringSync(bundle);
+    final service = MetaversePluginFileService.instance;
+    const channel = MethodChannel('com.fluxdo/plugin_files');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    var incoming = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'readFile') return Uint8List.fromList(utf8.encode(bundle));
+      final files = incoming;
+      incoming = [];
+      return files;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    service.initialize([file.path]);
+    Future<void> activateFile() async {
+      incoming = [file.uri.toString()];
+      await messenger.handlePlatformMessage(
+        channel.name,
+        channel.codec.encodeMethodCall(const MethodCall('filesAvailable')),
+        null,
+      );
+    }
+    await tester.pumpWidget(app(const Text('文件安装'), pluginStore: store));
+    final context = tester.element(find.text('文件安装'));
+    addTearDown(() => service.detach(context));
+    service.attach(context);
+    Future<void> waitForSheet() async {
+      for (var attempt = 0; attempt < 30; attempt++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(AppSheetScaffold).evaluate().isNotEmpty) break;
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(AppSheetScaffold), findsOneWidget);
+    }
+    await waitForSheet();
+    final l = context.l10n;
+    expect(store.loadIndex(), isEmpty);
+    expect(store.written, isNull);
+    // 同一文件的重复系统事件不会再叠加弹框。
+    await activateFile();
+    await tester.tap(find.widgetWithText(TextButton, l.common_cancel));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppSheetScaffold), findsNothing);
+    expect(store.loadIndex(), isEmpty);
+    await activateFile();
+    await waitForSheet();
+    await tester.tap(find.widgetWithText(FilledButton, l.metaverse_pluginInstall));
+    final success = find.text(l.metaverse_pluginInstalled(manifest['name'] as String));
+    for (var attempt = 0; attempt < 100 && success.evaluate().isEmpty; attempt++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(success, findsOneWidget);
+    expect(store.loadIndex().single.id, manifest['id']);
+    expect(store.loadIndex().single.enabled, isFalse);
+    expect(store.written?.script, (jsonDecode(bundle)['files'] as Map)['main.js']);
+    service.detach(context);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  Future<void> snapshot(WidgetTester tester, String name, {bool settle = true}) async {
+    if (!snapshots) return;
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await tester.runAsync(() async {
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(captureKey),
+      );
+      final picture = await boundary.toImage(pixelRatio: 2);
+      final bytes = await picture.toByteData(format: ui.ImageByteFormat.png);
+      picture.dispose();
+      final dir = Directory('build/ld-store-ui');
+      await dir.create(recursive: true);
+      await File('${dir.path}/$name.png')
+          .writeAsBytes(bytes!.buffer.asUint8List());
+    });
+  }
+
+  for (final brightness in Brightness.values) {
+    testWidgets('服务协议默认未勾选、取消与重新打开 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(360,760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      bool? result;
+      await tester.pumpWidget(app(Builder(builder:(context)=>TextButton(
+        onPressed:() async {result=await showMetaverseConfirmation(context,'LD士多',{
+          'title':'登录 LD士多','message':'使用 Linux DO 账号登录后，可收藏商品、领取优惠券并查看订单。请先阅读士多服务条款。',
+          'confirmLabel':'使用 Linux DO 账号登录',
+          'agreement':{'label':'《LD士多服务条款》','url':'https://ldcstore.com/docs/terms'},
+        });},child:const Text('开始登录'))),brightness:brightness,scale:1.4));
+      await tester.tap(find.text('开始登录'));await tester.pumpAndSettle();
+      final button=find.widgetWithText(FilledButton,'使用 Linux DO 账号登录');
+      expect(tester.widget<FilledButton>(button).onPressed,isNull);
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,false);
+      await snapshot(tester,'consent-${brightness.name}');
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));await tester.pump();
+      await tester.ensureVisible(button);await tester.tap(button);await tester.pumpAndSettle();
+      expect(result,true);
+      await tester.tap(find.text('开始登录'));await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,false);
+      await tester.ensureVisible(find.text(S.current.common_cancel));
+      await tester.tap(find.text(S.current.common_cancel));await tester.pumpAndSettle();
+      expect(result,false);expect(tester.takeException(),isNull);
+    });
+    testWidgets('公共 Connect 必须单独确认 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(360,760);tester.view.devicePixelRatio=1;
+      addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
+      final manifest=MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()));
+      bool? approved;
+      await tester.pumpWidget(app(Builder(builder:(context)=>TextButton(onPressed:() async {
+        approved=await showMetaverseConnectConfirmation(context,manifest,'tester',callback:Uri.parse('https://api.ldspro.qzz.io/api/auth/callback'));
+      },child:const Text('授权'))),brightness:brightness,scale:1.4));
+      await tester.tap(find.text('授权'));await tester.pumpAndSettle();
+      expect(approved,isNull);expect(find.text('api.ldspro.qzz.io'),findsOneWidget);
+      await snapshot(tester,'connect-${brightness.name}');
+      await tester.tap(find.text(S.current.common_deny));await tester.pumpAndSettle();expect(approved,false);
+      await tester.tap(find.text('授权'));await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.common_allow));await tester.pumpAndSettle();expect(approved,true);
+      expect(tester.takeException(),isNull);
+    });
+  }
+
+  Future<void> openPayment(
+    WidgetTester tester,
+    _Payment payment, {
+    bool needsPassword = false,
+    bool reducedMotion = false,
+    Size size = const Size(390, 844),
+    double scale = 1,
+    LdcBiometricPayment? biometrics,
+    Brightness brightness = Brightness.light,
+    ValueChanged<Map<String, Object?>?>? onResult,
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      app(
+        Builder(
+          builder: (context) => Center(
+            child: FilledButton(
+              onPressed: () async {
+                final result = await showLdcPaymentSheet(
+                  context,
+                  payment: payment,
+                  orderNo: payment.order.orderNo,
+                  username: 'tester',
+                  needsPassword: needsPassword,
+                  biometrics: biometrics,
+                );
+                onResult?.call(result);
+              },
+              child: const Text('支付入口'),
+            ),
+          ),
+        ),
+        reducedMotion: reducedMotion,
+        scale: scale,
+        brightness: brightness,
+      ),
+    );
+    await tester.tap(find.text('支付入口'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('首次设置密码须二次输入，保存后回到付款确认且不自动扣款', (tester) async {
+    final payment = _Payment();
+    await openPayment(tester, payment, needsPassword: true);
+    await tester.enterText(find.byType(TextField).first, '123456');
+    await tester.enterText(find.byType(TextField).last, '123456');
+    await tester.pumpAndSettle();
+    final save = find.text(
+      tester
+          .element(find.byType(Scaffold).first)
+          .l10n
+          .metaverse_nativePasswordSave,
+    );
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(payment.passwords, 1);
+    expect(payment.payments, 0);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('原生付款展示商户与实际金额，取消不扣款', (tester) async {
+    final payment = _Payment();
+    await openPayment(tester, payment);
+    expect(find.text('12.50 LDC'), findsOneWidget);
+    expect(find.text('LD士多 · seller'), findsOneWidget);
+    expect(payment.payments, 0);
+    expect(
+      tester
+          .widget<AppSheetScaffold>(find.byType(AppSheetScaffold))
+          .showDragHandle,
+      isTrue,
+    );
+    expect(find.byType(PinInput), findsOneWidget);
+    await snapshot(tester, 'payment');
+    await tester.tap(
+      findMaterialTooltip(
+        tester.element(find.byType(Scaffold).first).l10n.common_cancel,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(payment.payments, 0);
+    expect(payment.refreshes, 0);
+  });
+
+  testWidgets('密码输入不提交，显式确认后只扣一次并回查原单', (tester) async {
+    final payment = _Payment()..pending = Completer<void>();
+    await openPayment(tester, payment);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    expect(payment.payments, 0);
+    final confirm = find.text(
+      tester
+          .element(find.byType(Scaffold).first)
+          .l10n
+          .metaverse_nativePayConfirm('12.50'),
+    );
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pump();
+    expect(payment.payments, 1);
+    final pin = tester.widget<PinInput>(find.byType(PinInput));
+    expect(pin.statusLabel, S.current.ldc_processingPayment);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.text('•'), findsNWidgets(6));
+    for (final dot in find.text('•').evaluate()) {
+      expect(dot.findAncestorWidgetOfExactType<Opacity>()!.opacity, greaterThan(0));
+    }
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.byType(LoadingSpinner), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.ancestor(of: confirm, matching: find.byType(FilledButton)),
+          )
+          .onPressed,
+      isNull,
+    );
+    payment.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(payment.refreshes, 1);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+    await snapshot(tester, 'payment-success');
+    await tester.tap(
+      find.text(
+        tester
+            .element(find.byType(Scaffold).first)
+            .l10n
+            .metaverse_nativePayViewOrder,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+  });
+
+  testWidgets('支付密码拒绝后展开输入，重新填写六位仍需确认', (tester) async {
+    final payment = _Payment()..rejectPassword = true;
+    await openPayment(tester, payment);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.text('支付密码不正确'), findsOneWidget);
+    expect(tester.widget<PinInput>(find.byType(PinInput)).statusLabel, isNull);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    await tester.tap(findMaterialTooltip(l.common_cancel));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('付款响应丢失后仅提供查单，查单恢复也不重放扣款', (tester) async {
+    final payment = _Payment()
+      ..timeout = true
+      ..refreshFails = true;
+    await openPayment(tester, payment);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    final confirm = find.text(
+      tester
+          .element(find.byType(Scaffold).first)
+          .l10n
+          .metaverse_nativePayConfirm('12.50'),
+    );
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(find.byType(TextField), findsNothing);
+    expect(
+      find.text(
+        tester
+            .element(find.byType(Scaffold).first)
+            .l10n
+            .metaverse_nativePayPending,
+      ),
+      findsOneWidget,
+    );
+    payment.refreshFails = false;
+    await tester.tap(
+      find.text(
+        tester
+            .element(find.byType(Scaffold).first)
+            .l10n
+            .metaverse_nativePayCheck,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(payment.refreshes, 2);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+  });
+
+  testWidgets('超时后订单仍待支付时保留查单，成功态由服务端状态确认', (tester) async {
+    final payment = _Payment()
+      ..timeout = true
+      ..status = 'pending';
+    await openPayment(tester, payment);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.byType(PinInput), findsNothing);
+    expect(find.text(l.metaverse_nativePayPending), findsOneWidget);
+    payment.status = 'completed';
+    await tester.tap(find.text(l.metaverse_nativePayCheck));
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+    expect(payment.payments, 1);
+  });
+
+  testWidgets('减少动态效果时直接完成，商户刷新失败保留收银台成功结果', (tester) async {
+    final payment = _Payment()..refreshFails = true;
+    await openPayment(tester, payment, reducedMotion: true);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(find.text(l.metaverse_nativePaySuccess), findsOneWidget);
+    expect(find.text(l.metaverse_nativePayPending), findsNothing);
+    expect(payment.payments, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('通用页面组件应用主题 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(
+          metaverseWidgetLibraryName,
+          createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)),
+        );
+      addTearDown(runtime.dispose);
+      await tester.pumpWidget(app(const SizedBox(), brightness: brightness));
+      for (final example in metaverseComponentExamples(S.current)
+          .where((example) => example.previewHeight > 200)) {
+        runtime.update(
+          metaversePluginLibraryName,
+          parseLibraryFile('import fluxdo; widget Preview = ${example.source};'),
+        );
+        await tester.pumpWidget(app(
+          SafeArea(
+            child: RemoteWidget(
+              runtime: runtime,
+              widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Preview'),
+              data: DynamicContent(example.parameters),
+              onEvent: (_, _) {},
+            ),
+          ),
+          title: example.name,
+          brightness: brightness,
+        ));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: example.name);
+        await snapshot(tester, 'component-${example.name}-${brightness.name}');
+      }
+    });
+  }
+  for (final brightness in Brightness.values) {
+    testWidgets('内置支付键盘输入与删除，六位输入完成不自动付款 $brightness', (tester) async {
+      final payment = _Payment();
+      await openPayment(tester, payment, brightness: brightness);
+      for (final digit in '1234567'.split('')) {
+        await tester.tap(find.byKey(ValueKey('ldc-key-$digit')));
+        await tester.pump();
+      }
+      final input = tester.widget<TextField>(find.byType(TextField));
+      expect(input.controller!.text, '123456');
+      expect(input.keyboardType, TextInputType.none);
+      expect(
+        tester.testTextInput.setClientArgs?['inputType'],
+        TextInputType.none.toJson(),
+      );
+      expect(payment.payments, 0);
+      await tester.tap(find.byKey(const ValueKey('ldc-key-delete')));
+      await tester.pump();
+      expect(input.controller!.text, '12345');
+      await snapshot(tester, 'payment-keypad-${brightness.name}');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('内置键盘设置密码可切换两次输入，保存后等待明确付款', (tester) async {
+    final payment = _Payment();
+    await openPayment(tester, payment, needsPassword: true);
+    for (final digit in '123456123456'.split('')) {
+      await tester.tap(find.byKey(ValueKey('ldc-key-$digit')));
+      await tester.pump();
+    }
+    expect(
+      tester.testTextInput.setClientArgs?['inputType'],
+      TextInputType.none.toJson(),
+    );
+    expect(payment.payments, 0);
+    for (final input in tester.widgetList<TextField>(find.byType(TextField))) {
+      expect(input.controller!.text, '123456');
+    }
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.tap(find.text(l.metaverse_nativePasswordSave));
+    await tester.pumpAndSettle();
+    expect(payment.passwords, 1);
+    expect(payment.payments, 0);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('支付结果待确认时系统返回也向订单页传递状态', (tester) async {
+    final payment = _Payment()
+      ..timeout = true
+      ..status = 'pending';
+    Map<String, Object?>? result;
+    await openPayment(tester, payment, onResult: (value) => result = value);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    await navigatorKey.currentState!.maybePop();
+    await tester.pumpAndSettle();
+    expect(result, {'state': 'pending'});
+    expect(payment.payments, 1);
+    expect(payment.refreshes, 1);
+  });
+
+  testWidgets('密码输入仅保留六位数字，删除与清空同步格子，读屏隐藏原文', (tester) async {
+    final semantics = tester.ensureSemantics();
+    int visibleDots() => find.text('•').evaluate().where((element) {
+      final opacity = element.findAncestorWidgetOfExactType<Opacity>();
+      return opacity != null && opacity.opacity > 0;
+    }).length;
+    await openPayment(tester, _Payment());
+    await tester.enterText(find.byType(TextField), '1a23456789');
+    await tester.pumpAndSettle();
+    final input = tester.widget<TextField>(find.byType(TextField));
+    expect(input.controller!.text, '123456');
+    expect(input.obscureText, isTrue);
+    expect(visibleDots(), 6);
+    expect(tester.getSemantics(find.byType(EditableText)).value, '••••••');
+    await tester.enterText(find.byType(TextField), '123');
+    await tester.pumpAndSettle();
+    expect(visibleDots(), 3);
+    input.controller!.clear();
+    await tester.pumpAndSettle();
+    expect(visibleDots(), 0);
+    expect(tester.getSemantics(find.byType(EditableText)).value, isEmpty);
+    semantics.dispose();
+  });
+
+  for (final width in [390.0, 800.0]) {
+    testWidgets('插件弹层复用统一外壳 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        app(
+          const MetaversePluginPage(
+            pluginId: 'test.missing',
+            page: 'details',
+            modal: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final shell = tester.widget<AppSheetScaffold>(
+        find.byType(AppSheetScaffold),
+      );
+      expect(shell.showDragHandle, width < 600);
+      expect(shell.expandToFill, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final failure in ['network', 'decode']) {
+    testWidgets('插件图片 $failure 失败可点击重试', (tester) async {
+      var requests = 0;
+      final retriedImage = Completer<Uint8List>();
+      final semantics = tester.ensureSemantics();
+      final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+      final runtime = Runtime()
+        ..update(
+          metaverseWidgetLibraryName,
+          createMetaverseWidgetLibrary(
+            loadImage: (_) async {
+              requests++;
+              if (requests == 1) {
+                if (failure == 'network') throw StateError('offline');
+                return Uint8List(2);
+              }
+              return retriedImage.future;
+            },
+          ),
+        )
+        ..update(
+          metaversePluginLibraryName,
+          parseLibraryFile('''
+import fluxdo;
+widget Thumbnail = Image(url: "https://images.example.org/product.png", width: 96.0, height: 96.0);
+'''),
+        );
+      addTearDown(runtime.dispose);
+      await tester.pumpWidget(
+        app(
+          RemoteWidget(
+            runtime: runtime,
+            widget: const FullyQualifiedWidgetName(
+              metaversePluginLibraryName,
+              'Thumbnail',
+            ),
+            data: DynamicContent(),
+            onEvent: (_, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final retry = findMaterialTooltip(S.current.common_retry);
+      expect(retry, findsOneWidget);
+      expect(
+        find.bySemanticsLabel(S.current.common_imageUnavailable),
+        findsOneWidget,
+      );
+      expect(requests, 1);
+      // 占位区域的边缘也可以重试，等待请求时移除重试操作。
+      await tester.tapAt(tester.getTopLeft(retry) + const Offset(4, 4));
+      await tester.pump();
+      expect(retry, findsNothing);
+      expect(find.bySemanticsLabel(S.current.common_loading), findsOneWidget);
+      expect(requests, 2);
+      retriedImage.complete(png);
+      await tester.pumpAndSettle();
+      expect(requests, 2);
+      expect(retry, findsNothing);
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+  }
+
+  testWidgets('插件按实际内容渲染 SVG 并在地址切换后释放旧矢量图', (tester) async {
+    var requests = 0;
+    final runtime = Runtime()
+      ..update(
+        metaverseWidgetLibraryName,
+        createMetaverseWidgetLibrary(
+          loadImage: (uri) async {
+            requests++;
+            return Uint8List.fromList(
+              utf8.encode(
+                uri.path == '/bad.ico'
+                    ? '<svg broken'
+                    : '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">'
+                          '<rect width="40" height="40" fill="red"/>'
+                          '<image href="https://unlisted.example.org/private.png"/>'
+                          '</svg>',
+              ),
+            );
+          },
+        ),
+      )
+      ..update(
+        metaversePluginLibraryName,
+        parseLibraryFile('''
+import fluxdo;
+widget Thumbnail = Image(url: data.url, width: 96.0, height: 96.0);
+'''),
+      );
+    addTearDown(runtime.dispose);
+    final content = DynamicContent({
+      'url': 'https://images.example.org/favicon.ico',
+    });
+    await tester.pumpWidget(
+      app(
+        RemoteWidget(
+          runtime: runtime,
+          widget: const FullyQualifiedWidgetName(
+            metaversePluginLibraryName,
+            'Thumbnail',
+          ),
+          data: content,
+          onEvent: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((widget) => widget is ScalableImageWidget),
+      findsOneWidget,
+    );
+    expect(requests, 1);
+    expect(findMaterialTooltip(S.current.common_retry), findsNothing);
+    content.update('url', 'https://images.example.org/bad.ico');
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((widget) => widget is ScalableImageWidget),
+      findsNothing,
+    );
+    expect(findMaterialTooltip(S.current.common_retry), findsOneWidget);
+    expect(requests, 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('通用搜索组件提交、清空与脚本更新保留标准输入行为', (tester) async {
+    final runtime = Runtime()
+      ..update(
+        metaverseWidgetLibraryName,
+        createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)),
+      )
+      ..update(
+        metaversePluginLibraryName,
+        parseLibraryFile('''
+import fluxdo;
+widget Search = SearchInput(hint: "搜索", value: data.query,
+  onChanged: event "change" {}, onSubmitted: event "submit" {});
+'''),
+      );
+    addTearDown(runtime.dispose);
+    final content = DynamicContent({'query': ''});
+    final events = <String>[];
+    await tester.pumpWidget(
+      app(
+        RemoteWidget(
+          runtime: runtime,
+          widget: const FullyQualifiedWidgetName(
+            metaversePluginLibraryName,
+            'Search',
+          ),
+          data: content,
+          onEvent: (name, arguments) =>
+              events.add('$name:${arguments['value']}'),
+        ),
+      ),
+    );
+    expect(
+      (tester.getCenter(find.text('搜索')).dy -
+              tester.getCenter(find.byIcon(Symbols.search_rounded)).dy).abs(),
+      lessThanOrEqualTo(2),
+    );
+    await tester.enterText(find.byType(TextField), '卡密');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    expect(find.byType(InputFieldShell), findsOneWidget);
+    expect(events, ['change:卡密', 'submit:卡密']);
+    expect(
+      tester.getCenter(find.byIcon(Symbols.search_rounded)).dy,
+      tester.getCenter(find.byIcon(Symbols.close_rounded)).dy,
+    );
+    await tester.tap(
+      findMaterialTooltip(
+        tester.element(find.byType(Scaffold).first).l10n.common_clear,
+      ),
+    );
+    await tester.pump();
+    expect(events.sublist(2), ['change:', 'submit:']);
+    content.update('query', '新查询');
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '新查询',
+    );
+  });
+
+  testWidgets('已安装插件详情展示真实权限且可滚动', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final manifest = MetaversePluginManifest.parse(
+      jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
+    );
+    final store = _FixtureCodeStore(preferences);
+    await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file')]);
+    await tester.pumpWidget(app(MetaversePluginPermissionsPage(pluginId: manifest.id),
+      pluginStore: store, scale: 1.4));
+    await tester.pumpAndSettle();
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    expect(find.text(l.metaverse_managedPermissions), findsOneWidget);
+    final identity = find.byKey(const ValueKey(MetaversePluginPermission.identity));
+    await tester.tap(identity);
+    await tester.pumpAndSettle();
+    expect(tester.widget<M3eSwitchListTile>(identity).value, isFalse);
+    expect(store.loadIndex().single.allows(MetaversePluginPermission.identity), isFalse);
+    final network = find.byKey(const ValueKey(MetaversePluginPermission.network));
+    await tester.ensureVisible(network);
+    expect(tester.widget(network), isA<ListTile>());
+    expect(find.text(l.metaverse_pluginInstall), findsNothing);
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('凭证输入期间撤销再开放服务账号，旧的确认不写入凭证', (tester) async {
+    final manifest = MetaversePluginManifest.parse(
+      jsonDecode(File('test/fixtures/metaverse/api1_token.json').readAsStringSync()),
+    );
+    final store = _FixtureCodeStore(preferences);
+    await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file', enabled: true)]);
+    bool? result;
+    late MetaversePluginsController controller;
+    await tester.pumpWidget(app(Builder(builder: (context) {
+      final container = ProviderScope.containerOf(context);
+      controller = container.read(metaversePluginsProvider.notifier);
+      return TextButton(
+        onPressed: () async {
+          final service = MetaversePluginService(controller.byId(manifest.id)!);
+          result = await service.reauthorize(context, container);
+        },
+        child: const Text('授权入口'),
+      );
+    }), pluginStore: store));
+    await tester.tap(find.text('授权入口'));
+    await tester.pumpAndSettle();
+    final input = find.byType(TextField);
+    await tester.enterText(input, 'fixture-token');
+    const account = MetaversePluginPermission.serviceAccount;
+    await controller.setPermission(manifest.id, account, false);
+    await controller.setPermission(manifest.id, account, true);
+    await tester.tap(find.widgetWithText(FilledButton, tester.element(input).l10n.common_confirm));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
+    expect(await store.readToken(manifest.id), isNull);
+  });
+
+  for (final width in [320.0, 390.0, 800.0]) {
+    testWidgets('安装权限可滚动且底部确认始终可点击 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final manifest = MetaversePluginManifest.parse(
+        jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
+      );
+      Map<MetaversePluginPermission, bool>? result;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async =>
+                  result = await showMetaversePluginInstallSheet(
+                    context,
+                    manifest,
+                    isUpdate: true,
+                  ),
+              child: const Text('安装入口'),
+            ),
+          ),
+          scale: width == 320 ? 1.6 : 1,
+        ),
+      );
+      await tester.tap(find.text('安装入口'));
+      await tester.pumpAndSettle();
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      final update = find.widgetWithText(
+        FilledButton,
+        l.metaverse_pluginUpdate,
+      );
+      expect(update.hitTestable(), findsOneWidget);
+      const identity = MetaversePluginPermission.identity;
+      if (width == 390) {
+        final toggle = find.byKey(const ValueKey(identity));
+        await tester.ensureVisible(toggle);
+        expect(tester.widget<M3eSwitchListTile>(toggle).value, isFalse);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(tester.widget<M3eSwitchListTile>(toggle).value, isTrue);
+      }
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      await tester.drag(list, const Offset(0, -900));
+      await tester.pumpAndSettle();
+      await tester.drag(list, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
+      expect(update.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      if (width == 390) {
+        controller.jumpTo(0);
+        await snapshot(tester, 'install-review');
+      }
+      await tester.tap(update);
+      await tester.pumpAndSettle();
+      expect(result, width == 390 ? {identity: true} : isEmpty);
+      expect(find.text('安装入口'), findsOneWidget);
+    });
+  }
+
+  for (final mode in ['data', 'error', 'loading']) {
+    testWidgets('打赏入口并入余额卡片并在 $mode 状态保留', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        app(
+          ProviderScope(
+            overrides: [
+              ldcUserInfoProvider.overrideWith(() => _FixtureBalance(mode)),
+              currentUserProvider.overrideWith(_FixtureUser.new),
+              ldcRewardCredentialsProvider.overrideWith(_NoReward.new),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: LdcBalanceCard(
+                footer: LdcRewardConfigTile(embedded: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      if (mode != 'loading') await tester.pumpAndSettle();
+      expect(find.byType(Card), findsOneWidget);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(find.text(l.reward_title), findsOneWidget);
+      if (mode == 'data') await snapshot(tester, 'ldc-reward-merged');
+      await tester.tap(find.text(l.reward_title));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final choice in ['file', 'url']) {
+    testWidgets('添加插件分组选择 $choice，小屏大字可操作', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      PluginInstallChoice? result;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showMetaversePluginPicker(
+                context,
+              ),
+              child: const Text('添加入口'),
+            ),
+          ),
+          scale: 1.4,
+        ),
+      );
+      await tester.tap(find.text('添加入口'));
+      await tester.pumpAndSettle();
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(
+        tester
+            .widget<AppSheetScaffold>(find.byType(AppSheetScaffold))
+            .showDragHandle,
+        isTrue,
+      );
+      expect(find.descendant(of: find.byType(AppSheetScaffold), matching: find.text('LD士多')), findsNothing);
+      await snapshot(tester, 'plugin-picker');
+      if (choice == 'file') {
+        await tester.ensureVisible(find.text(l.metaverse_importFile));
+        await tester.tap(find.text(l.metaverse_importFile));
+        await tester.pumpAndSettle();
+        expect(result, (url: null));
+      } else {
+        await tester.ensureVisible(find.text(l.metaverse_installFromUrl));
+        await tester.tap(find.text(l.metaverse_installFromUrl));
+        await tester.pumpAndSettle();
+        tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.enterText(
+          find.byType(TextField),
+          'http://example.com/plugin.json',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, l.common_continue),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tester.enterText(
+          find.byType(TextField),
+          'https://example.com/plugin.json',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.go);
+        await tester.pumpAndSettle();
+        expect(result?.url, 'https://example.com/plugin.json');
+      }
+      expect(find.text('添加入口'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final scale in [1.0, 1.4]) {
+    testWidgets('实际插件账号页的登录错误完整显示 scale=$scale', (tester) async {
+      await preferences.clear();
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const error = '登录在「服务回调」阶段收到异常响应（HTTP 403），请重试。';
+      final store = _FixtureCodeStore(preferences)
+        ..written = (
+          ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+          script:
+              '''
+            fluxdo.on('page.open', ctx => {
+              ctx.setData('loginLabel', '登录士多');
+              ctx.setData('loginError', ${jsonEncode(error)});
+              ctx.setData('authorized', false);
+              ctx.setData('authBusy', false);
+            });
+          ''',
+        );
+      final plugin = InstalledMetaversePlugin(
+        manifest: MetaversePluginManifest.parse(
+          jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
+        ),
+        source: 'asset:plugins/ld-store/plugin.json',
+        enabled: true,
+      );
+      await store.saveIndex([plugin]);
+      await tester.pumpWidget(
+        app(
+          MetaversePluginPage(pluginId: plugin.id, page: 'account'),
+          pluginStore: store,
+          scale: scale,
+        ),
+      );
+      final errorText = find.text(error);
+      // QuickJS 运行在真实 isolate；允许其消息进入测试的虚拟时钟。
+      for (
+        var attempt = 0;
+        attempt < 40 && errorText.evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(errorText, findsOneWidget);
+      final paragraph = tester.renderObject<RenderParagraph>(errorText);
+      // 检查所有文字落在祖先真正的裁切区域内，能复现内层圆角削字问题。
+      RenderObject? child = paragraph;
+      RenderObject? parent = child.parent;
+      while (parent != null) {
+        if (parent is RenderClipRRect) {
+          final rect = MatrixUtils.transformRect(
+            paragraph.getTransformTo(parent),
+            paragraph.paintBounds,
+          );
+          final clip = parent.borderRadius
+              .resolve(TextDirection.ltr)
+              .toRRect(Offset.zero & parent.size);
+          for (final point in [
+            rect.topLeft,
+            rect.bottomLeft,
+            rect.topRight,
+            rect.bottomRight,
+          ]) {
+            expect(clip.contains(point), isTrue, reason: '文字边缘被圆角裁掉');
+          }
+        }
+        child = parent;
+        parent = child.parent;
+      }
+      expect(tester.takeException(), isNull);
+      await snapshot(tester, 'login-error-$scale');
+      await tester.pumpWidget(const SizedBox());
+      // 脚本引擎退出消息未返回时，宿主在两秒后兜底释放 isolate。
+      await tester.pump(const Duration(seconds: 2));
+    });
+  }
+
+  for (final brightness in Brightness.values) {
+    testWidgets('服务卡片移除入口箭头，统计加载与完成可见 ${brightness.name}', (tester) async {
+      await preferences.clear();
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = _FixtureCodeStore(preferences)..written = (
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: '''fluxdo.on('card.load',ctx=>ctx.setData('overviewInitialLoading',true));
+fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'},{value:'2',label:'待发货'},{value:'4',label:'优惠券'},{value:'5',label:'未读消息'}]);ctx.setData('overviewInitialLoading',false);});''',
+      );
+      final plugin = InstalledMetaversePlugin(
+        manifest: MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync())),
+        source: 'fixture:ld-store', enabled:true,
+      );
+      await store.saveIndex([plugin]);
+      try {
+      await tester.pumpWidget(app(
+        Padding(padding:const EdgeInsets.all(16), child: SingleChildScrollView(child: MetaversePluginCard(
+          service: MetaversePluginService(plugin),
+          host: MetaverseCardHost(isProcessing:false,onDisable:(){},onReauthorize:(){}),
+        ))), pluginStore:store, brightness:brightness, scale:brightness==Brightness.dark ? 1.4 : 1,
+      ));
+      for (var i=0; i<80 && find.byType(SkeletonBox).evaluate().isEmpty; i++) {
+        await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:25))); await tester.pump();
+      }
+      expect(find.byType(SkeletonBox),findsWidgets);
+      expect(find.byIcon(Symbols.chevron_right_rounded),findsNothing);
+      await snapshot(tester,'service-card-loading-${brightness.name}',settle:false);
+      final container = ProviderScope.containerOf(tester.element(find.byType(MetaversePluginCard)));
+      container.read(metaversePluginHostsProvider).refreshVisibleCards();
+      for (var i=0; i<80 && find.text('待付款').evaluate().isEmpty; i++) {
+        await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:25))); await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('3'),findsOneWidget);
+      expect(find.byType(SkeletonBox),findsNothing);
+      await snapshot(tester,'service-card-${brightness.name}');
+      expect(tester.takeException(),isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 2));
+      }
+    });
+  }
+
+  for (final width in [320.0, 800.0]) {
+    testWidgets('标题栏多操作横向滚动，窄弹层仍可关闭 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var invoked = false;
+      await tester.pumpWidget(app(Builder(builder: (context) => TextButton(
+        onPressed: () => showAppDialog<void>(context: context, builder: (_) => Dialog(
+          child: SizedBox(width: 560, height: 420, child: MetaversePluginPageFrame(
+            title: '页面', modal: true,
+            customTitle: const Text('一个较长的自定义标题', maxLines: 1, overflow: TextOverflow.ellipsis),
+            actions: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (var i = 0; i < 8; i++) IconButton(
+                tooltip: '操作 $i', icon: const Icon(Symbols.favorite_rounded),
+                onPressed: () => invoked = true,
+              ),
+            ]),
+            child: const Text('弹层正文'),
+          )),
+        )), child: const Text('打开测试弹层'),
+      )), scale: 1.4));
+      await tester.tap(find.text('打开测试弹层'));
+      await tester.pumpAndSettle();
+      final scroll = find.descendant(of: find.byType(AppSheetScaffold), matching: find.byWidgetPredicate(
+        (widget) => widget is SingleChildScrollView && widget.scrollDirection == Axis.horizontal,
+      ));
+      expect(tester.getSize(scroll).width, lessThanOrEqualTo(tester.getSize(find.byType(AppSheetScaffold)).width / 2));
+      expect(findMaterialTooltip('操作 7').hitTestable(), findsNothing);
+      await tester.drag(scroll, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(findMaterialTooltip('操作 7').hitTestable());
+      expect(invoked, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byIcon(Symbols.close_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('弹层正文'), findsNothing);
+      expect(find.text('打开测试弹层'), findsOneWidget);
+    });
+  }
+
+  for (final enabled in [true, false]) {
+    testWidgets('应用更新保留原有插件 enabled=$enabled', (tester) async {
+      await preferences.clear();
+      final oldJson = jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync()) as Map<String, dynamic>;
+      oldJson['version'] = '1.6.0';
+      final store = _FixtureCodeStore(preferences);
+      await store.saveIndex([
+        InstalledMetaversePlugin(
+          manifest: MetaversePluginManifest.parse(oldJson, allowLegacyMetadata: true),
+          source: 'asset:plugins/ld-store/plugin.json',
+          enabled: enabled,
+        ),
+      ]);
+      await tester.pumpWidget(app(const MetaversePage(), pluginStore: store));
+      await tester.pumpAndSettle();
+      expect(store.loadIndex().single.manifest.version, '1.6.0');
+      expect(store.loadIndex().single.enabled, enabled);
+      expect(store.written, isNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final confirm in [true, false]) {
+    testWidgets('生物识别付款确认 $confirm，取消保留密码入口', (tester) async {
+      var confirmed = true;
+      var authentications = 0;
+      final biometric = LdcBiometricPayment(
+        accountId: 501,
+        store: InMemorySecretStore(),
+        preferences: preferences,
+        checkSession: () async {},
+        available: () async => true,
+        authenticate: (_) async {
+          authentications++;
+          return confirmed;
+        },
+      );
+      await biometric.enable('123456', 'setup');
+      confirmed = confirm;
+      final payment = _Payment();
+      await openPayment(tester, payment, biometrics: biometric);
+      expect(payment.payments, 0);
+      expect(authentications, 1);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      final pay = find.widgetWithText(FilledButton, l.ldc_biometricPay);
+      final switchMode = find.byKey(
+        const ValueKey('ldc-switch-authentication'),
+      );
+      final title = find.text(l.metaverse_nativePayTitle);
+      expect(
+        tester.getCenter(switchMode).dx,
+        greaterThan(tester.getCenter(title).dx),
+      );
+      expect(
+        (tester.getCenter(switchMode).dy - tester.getCenter(title).dy).abs(),
+        lessThan(1),
+      );
+      await tester.tap(switchMode);
+      await tester.pumpAndSettle();
+      expect(find.byType(PinInput), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ldc-key-1')));
+      await tester.pump();
+      await tester.tap(switchMode);
+      await tester.pumpAndSettle();
+      expect(find.byType(PinInput), findsNothing);
+      expect(authentications, 1);
+      expect(payment.payments, 0);
+      if (confirm) await snapshot(tester, 'payment-biometric');
+      await tester.ensureVisible(pay);
+      await tester.tap(pay);
+      await tester.pumpAndSettle();
+      expect(authentications, 2);
+      expect(payment.payments, confirm ? 1 : 0);
+      expect(payment.refreshes, confirm ? 1 : 0);
+      if (confirm) {
+        expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+      } else {
+        expect(find.byType(PinInput), findsOneWidget);
+        expect(find.text(l.ldc_biometricFailed), findsOneWidget);
+      }
+    });
+  }
+
+  for (final setupAllowed in [true, false]) {
+    testWidgets('主动开启生物识别 $setupAllowed，仅在密码付款确认后保存', (tester) async {
+      await preferences.clear();
+      var authentications = 0;
+      final payment = _Payment()..pending = Completer<void>();
+      final biometric = LdcBiometricPayment(
+        accountId: 601,
+        store: InMemorySecretStore(),
+        preferences: preferences,
+        checkSession: () async {},
+        available: () async => true,
+        authenticate: (_) async {
+          expect(payment.payments, 1);
+          expect(payment.pending!.isCompleted, isTrue);
+          authentications++;
+          return setupAllowed;
+        },
+      );
+      await openPayment(tester, payment, biometrics: biometric);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(
+        tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+        isFalse,
+      );
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.pump();
+      final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+      await tester.ensureVisible(pay);
+      await tester.tap(pay);
+      await tester.pump();
+      expect(authentications, 0);
+      expect(biometric.enabled, isFalse);
+      payment.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(authentications, 1);
+      expect(biometric.enabled, setupAllowed);
+      expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+      expect(
+        find.text(
+          setupAllowed ? l.ldc_biometricEnabled : l.ldc_biometricSaveFailed,
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
+  testWidgets('付款响应丢失时只查单，不开启生物识别或重放付款', (tester) async {
+    await preferences.clear();
+    var authentications = 0;
+    final payment = _Payment()..timeout = true;
+    final biometric = LdcBiometricPayment(
+      accountId: 602,
+      store: InMemorySecretStore(),
+      preferences: preferences,
+      checkSession: () async {},
+      available: () async => true,
+      authenticate: (_) async {
+        authentications++;
+        return true;
+      },
+    );
+    await openPayment(tester, payment, biometrics: biometric);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+    await tester.ensureVisible(pay);
+    await tester.tap(pay);
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(payment.refreshes, 1);
+    expect(authentications, 0);
+    expect(biometric.enabled, isFalse);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+  });
+
+  testWidgets('窄屏大字体下内置键盘、付款和关闭入口可见', (tester) async {
+    await preferences.clear();
+    final payment = _Payment();
+    final biometric = LdcBiometricPayment(
+      accountId: 603,
+      store: InMemorySecretStore(),
+      preferences: preferences,
+      checkSession: () async {},
+      available: () async => true,
+      authenticate: (_) async => true,
+    );
+    await openPayment(
+      tester,
+      payment,
+      biometrics: biometric,
+      size: const Size(320, 640),
+      scale: 1.6,
+    );
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+    await tester.ensureVisible(pay);
+    await tester.pumpAndSettle();
+    expect(pay.hitTestable(), findsOneWidget);
+    final cancel = findMaterialTooltip(l.common_cancel);
+    await tester.ensureVisible(cancel);
+    await tester.pumpAndSettle();
+    expect(cancel.hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ldc-key-0')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      tester.testTextInput.setClientArgs?['inputType'],
+      TextInputType.none.toJson(),
+    );
+    await snapshot(tester, 'payment-large-text');
+    expect(tester.takeException(), isNull);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    expect(payment.payments, 0);
+  });
+
+  final data = <String, Object?>{
+    'chatDraftError': '',
+    'i18n': (jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map)['zh'],
+    'overviewLoading':false,'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
+    'accountName':'','usage':'','tradeNo':'','refundHint':'','couponHint':'','sellerProfileAvailable':true,'overviewError':'','value':'12.50','original':'20.00','discount':'38% 优惠','buyLabel':'立即兑换',
+    'typeLabel':'自动发卡','category':'开发工具','sellerName':'tester','sellerAvatar':'',
+    'rules':['每人累计限购 2 件','需要信任等级 TL1'],'metrics':[{'label':'库存','value':'18'},{'label':'已售','value':'32'},{'label':'浏览','value':'128'}],
+    'listedAt':'2026-11-18 上架','total':'24 件商品','quantityValue':1,'quantityMax':5,
+    'categories':[{'id':'','name':'全部','selected':true},{'id':'tool','name':'工具','selected':false},{'id':'media','name':'影音','selected':false}],
+    'sorts':[{'label':'默认排序','sort':'updated_at','direction':'DESC','selected':true},{'label':'低价','sort':'final_price','direction':'ASC','selected':false}],
+    'filterError':'','min':'','max':'','stock':false,
+    'canCancel':true,'canCheck':true,'canRepurchase':true,'cancelLabel':'取消订单','statusNote':'请在 2026-11-20 10:30 前完成付款',
+    'fields':[{'label':'数量','value':'1'},{'label':'商品小计','value':'12.50 LDC'}],
+    'times':[{'label':'创建时间','value':'2026-11-20 10:25'}],
+    'orderEvents':[{'title':'创建订单','time':'2026-11-20 10:25','message':''}],
+    'loading': false,
+    'loginLabel': '登录士多',
+    'loginError': '',
+    'authBusy': false,
+    'ready': true,
+    'error': '',
+    'externalError': '',
+    'externalBusy': false,
+    'restockAvailable': false,
+    'restockLoading': false,
+    'restockError': '',
+    'comments': <Object?>[],
+    'recentOrders': <Object?>[], 'unavailableCoupons': <Object?>[], 'refundDetails': <Object?>[],
+    'commentsError': '',
+    'commentsMessage': '暂无评论',
+    'commentsMore': false,
+    'commentsLoading': false,
+    'message': '',
+    'filters': false,
+    'filterLabel': '筛选与排序',
+    'selection': '全部 · 默认排序',
+    'title': '开发者工具包',
+    'seller': '卖家 · tester',
+    'price': '12.50 LDC',
+    'image': 'https://images.example.org/unavailable.png',
+    'buy': true,
+    'description': '包含开发工具使用说明。兑换后可在订单中查看交付内容。',
+    'details': '工具 · 库存 18 · 已售 32',
+    'conditions': '等级要求 TL1 · 自动交付',
+    'quantity': '1',
+    'estimate': '12.50 LDC',
+    'canRemove': false,
+    'canAdd': true,
+    'nativeOrder': true,
+    'orderState': 'idle',
+    'canSubmit': true,
+    'quoteReady': true,
+    'canQuote': true,
+    'quoteNote': '',
+    'orderNote': '',
+    'payable': '12.50 LDC',
+    'couponRows': [
+      {'id': '1', 'label': '新人券 · 12.50 LDC', 'selected': true},
+    ],
+    'noCoupon': false,
+    'state': '待支付',
+    'amount': '12.50 LDC',
+    'orderTitle': '开发者工具包',
+    'orderNo': 'LD202611120042',
+    'delivery': '自动发货',
+    'canPay': true,
+    'paymentAvailable': true,
+    'paymentNote': '',
+    'orderFilters': [
+      {'status': '', 'label': '全部', 'selected': true},
+      {'status': 'pending', 'label': '待支付', 'selected': false},
+    ],
+    'rows': [
+      {
+        'id': '1',
+        'value':'12.50','original':'20.00','sellerName':'tester','sellerAvatar':'','typeIcon':'key','typeLabel':'自动发卡','availability':'','preferenceTime':'','listingNote':'',
+        'title': '开发者工具包',
+        'price': '12.50 LDC',
+        'stock': '库存 18',
+        'sold': '已售 32', 'discount': '38% 优惠', 'originalLabel': '原价 20.00',
+        'image': 'https://images.example.org/unavailable.png',
+        'no': 'LD202611120042',
+        'state': '待支付',
+        'amount': '12.50 LDC',
+      },
+      {
+        'id': '2',
+        'value':'3.00','original':'','sellerName':'seller','sellerAvatar':'','typeIcon':'gift','typeLabel':'手动发货','availability':'','preferenceTime':'','listingNote':'',
+        'title': '社区数字纪念卡与开发者工具兑换套装',
+        'price': '3.00 LDC',
+        'stock': '库存 不限',
+        'sold': '已售 8', 'discount': '', 'originalLabel': '',
+        'image': '',
+        'no': 'LD202611110039',
+        'state': '已完成',
+        'amount': '3.00 LDC',
+      },
+    ],
+  };
+  for (final brightness in Brightness.values) {
+    for (final layout in [(320.0, 1.0), (320.0, 1.6), (390.0, 1.0), (800.0, 1.0)]) {
+      testWidgets('商品评论空态间距与加载错误互斥 ${brightness.name} $layout', (tester) async {
+        final (width, scale) = layout;
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final runtime = Runtime()
+          ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+          ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+        addTearDown(runtime.dispose);
+        final content = DynamicContent({...data, 'image': '', 'authorized': true, 'buyerError': '',
+          'canComment': false, 'commentStatsReady': false, 'commentsInitialLoading': true, 'commentsLoading': true,
+          'commentsMessage': '', 'commentsError': '',
+        });
+        final events = <String>[];
+        await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+          widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Product'), data: content,
+          onEvent: (name, _) => events.add(name)), title: '商品详情', brightness: brightness, scale: scale, reducedMotion: true));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('商品评论'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsWidgets);
+        expect(find.byType(AppEmptyState), findsNothing);
+        if (width == 390) await snapshot(tester, 'comments-loading-${brightness.name}');
+
+        content.updateAll({'commentsInitialLoading': false, 'commentsLoading': false, 'commentsError': '评论暂时加载失败'});
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('重新加载评论'), findsOneWidget);
+        await tester.ensureVisible(find.text('重新加载评论'));
+        await tester.tap(find.text('重新加载评论'));
+        expect(events.last, 'commentsRetry');
+        if (width == 390) await snapshot(tester, 'comments-error-${brightness.name}');
+
+        content.updateAll({'commentsError': '', 'commentsMessage': '暂无评论', 'canComment': true, 'commentStatsReady': true,
+          'commentStats': [{'value':'—','label':'评分'},{'value':'0','label':'已评分'},{'value':'2','label':'收藏'},{'value':'0 / 0','label':'评论 / 回复'}]});
+        await tester.pumpAndSettle();
+        expect(find.byType(AppEmptyState), findsOneWidget);
+        expect(find.text('暂无评论'), findsOneWidget);
+        expect(find.text('重新加载评论'), findsNothing);
+        expect(find.text(S.current.common_retry), findsNothing);
+        final statsCard = find.ancestor(of: find.text('评论 / 回复'), matching: find.byType(Material)).first;
+        expect(tester.getTopLeft(find.byType(AppEmptyState)).dy - tester.getBottomLeft(statsCard).dy, greaterThanOrEqualTo(16));
+        expect(tester.getTopLeft(statsCard).dy - tester.getBottomLeft(find.text('商品评论')).dy, greaterThanOrEqualTo(16));
+        await tester.ensureVisible(find.text('商品评论'));
+        await tester.pumpAndSettle();
+        await snapshot(tester, 'comments-empty-${brightness.name}-${width.toInt()}-$scale');
+        await tester.ensureVisible(find.text('暂无评论'));
+        await tester.pumpAndSettle();
+        if (scale > 1) await snapshot(tester, 'comments-empty-large-${brightness.name}');
+
+        content.updateAll({'commentStatsReady': false, 'commentsMessage': '该商品已关闭评论', 'canComment': false});
+        await tester.pumpAndSettle();
+        expect(find.text('写评论'), findsNothing);
+        expect(find.text('评分'), findsNothing);
+        expect(find.text('该商品已关闭评论'), findsOneWidget);
+        expect(tester.getTopLeft(find.byType(AppEmptyState)).dy - tester.getBottomLeft(find.text('商品评论')).dy, greaterThanOrEqualTo(16));
+
+        content.updateAll({'commentsMessage': '', 'commentsMore': true, 'commentsLoading': true, 'comments': [
+          {'id':'c1','author':'买家','handle':'@buyer','avatar':'','content':'说明清楚，兑换顺利。','time':'2026-11-24T12:00:00Z','rating':'','badge':'已购','moderation':'',
+            'interactive':false,'canDelete':false,'repliesOpen':true,'replies':<Object>[],'repliesEmpty':true,'repliesError':'','repliesMore':false,'repliesLoading':false},
+        ]});
+        await tester.pump();
+        expect(find.byType(LoadingSpinner), findsOneWidget);
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('更多评论'), findsNothing);
+        expect(find.text('说明清楚，兑换顺利。'), findsOneWidget);
+        expect(find.text('暂无可见回复'), findsOneWidget);
+        content.updateAll({'commentsLoading': false, 'commentsError': '评论暂时加载失败'});
+        await tester.pumpAndSettle();
+        expect(find.byType(LoadingSpinner), findsNothing);
+        expect(find.text('更多评论'), findsNothing);
+        expect(find.text('重新加载评论'), findsOneWidget);
+        expect(find.text('说明清楚，兑换顺利。'), findsOneWidget);
+        content.update('commentsError', '');
+        await tester.pumpAndSettle();
+        expect(find.text('更多评论'), findsOneWidget);
+        await tester.ensureVisible(find.text('更多评论'));
+        await tester.tap(find.text('更多评论'));
+        expect(events.last, 'commentsMore');
+        if (width == 390) await snapshot(tester, 'comments-content-${brightness.name}');
+        expect(tester.takeException(), isNull);
+      });
+    }
+    for (final width in [320.0, 390.0, 800.0]) {
+      testWidgets('我的士多加载不出现空白入口且统计等高 ${brightness.name} $width', (tester) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final runtime = Runtime()
+          ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+          ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+        addTearDown(runtime.dispose);
+        final initial = {...data, 'authorized': true, 'accountName': 'Lin', 'accountMeta': '@lin · TL3',
+          'overviewLoading': true, 'overviewInitialLoading': true,
+          'stats': [for (final label in ['待付款','待发货','优惠券','未读消息']) {'value':'—','label':label}],
+        }..remove('refundHint');
+        final content = DynamicContent(initial);
+        await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+          widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Account'), data: content),
+          title: '我的士多', brightness: brightness, cardMode: SegmentedCardMode.outlined,
+          scale: width == 320 ? 1.6 : 1, reducedMotion: true));
+        await tester.pumpAndSettle();
+        void noEmptyRows() {
+          for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
+            expect((tile.title! as Text).data?.trim(), isNotEmpty);
+          }
+          expect(tester.takeException(), isNull);
+        }
+        noEmptyRows();
+        expect(find.byIcon(Symbols.info_rounded), findsNothing);
+        expect(find.byType(SkeletonBox), findsNWidgets(4));
+        expect(find.text('待付款'), findsOneWidget);
+        final menuTop = tester.getTopLeft(find.text('我的订单')).dy;
+        await snapshot(tester, 'account-loading-${brightness.name}-${width.toInt()}');
+        content.updateAll({'overviewLoading': false, 'overviewInitialLoading': false,
+          'stats': [{'value':'3','label':'待付款'},{'value':'2','label':'待发货'},{'value':'4','label':'优惠券'},{'value':'5','label':'未读消息'}]});
+        await tester.pumpAndSettle();
+        noEmptyRows();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(tester.getTopLeft(find.text('我的订单')).dy, closeTo(menuTop, 0.01));
+        await snapshot(tester, 'account-loaded-${brightness.name}-${width.toInt()}');
+        content.update('overviewLoading', true);
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('3'), findsOneWidget);
+        content.updateAll({'overviewLoading': false, 'hasRefundAttention': true, 'refundHint': '2 笔售后待处理'});
+        await tester.pumpAndSettle();
+        expect(find.text('2 笔售后待处理'), findsOneWidget);
+        noEmptyRows();
+        content.updateAll({'hasRefundAttention': false, 'refundHint': '',
+          'stats': initial['stats'], 'overviewError': '暂时无法更新统计，仍可进入浏览'});
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Symbols.info_rounded), findsNothing);
+        expect(find.byType(SkeletonBox), findsNothing);
+        noEmptyRows();
+        await snapshot(tester, 'account-error-${brightness.name}-${width.toInt()}');
+      });
+    }
+    testWidgets('我的士多未登录与登录后分组末项圆角 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final content = DynamicContent({...data, 'authorized': false});
+      await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+        widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Account'), data: content),
+        title: '我的士多', brightness: brightness, cardMode: SegmentedCardMode.outlined));
+      await tester.pumpAndSettle();
+      void expectLast(String label) {
+        final row = tester.widget<SegmentedCardItem>(find.ancestor(
+          of: find.text(label), matching: find.byType(SegmentedCardItem),
+        ).first);
+        expect(row.index, row.count - 1);
+        final material = find.ancestor(of: find.text(label), matching: find.byType(Material)).first;
+        final shape = tester.widget<Material>(material).shape! as RoundedSuperellipseBorder;
+        final radius = shape.borderRadius.resolve(TextDirection.ltr);
+        expect(radius.bottomLeft.x, greaterThan(0));
+        expect(radius.bottomRight.x, greaterThan(0));
+      }
+      expectLast('士多消息');
+      await snapshot(tester, 'account-outlined-${brightness.name}');
+      content.updateAll({'authorized': true, 'spendingSummary': '累计 12.50 LDC'});
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('消费记录'));
+      await tester.pumpAndSettle();
+      expectLast('消费记录');
+      content.update('authorized', false);
+      await tester.pumpAndSettle();
+      expectLast('士多消息');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('商城头像与订单补图、商户封面和评论头像 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final bytes = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+      Uint8List fixture(String name) {
+        final file = File('build/ld-store-images/$name');
+        return snapshots && file.existsSync() ? file.readAsBytesSync() : bytes;
+      }
+      final avatarBytes = fixture('avatar.png'), productBytes = fixture('product.webp');
+      final requests = <String>[];
+      final events = <String>[];
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (uri) async {
+          requests.add(uri.path);
+          return uri.path.endsWith('avatar.png') ? avatarBytes : productBytes;
+        }))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final values = DynamicContent({...data, 'authorized': true, 'accountName':'Lin', 'accountAvatar':'https://images.example/avatar.png'});
+      Widget render(String name) => RemoteWidget(runtime:runtime,
+        widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name), data:values,
+        onEvent:(event,args)=>events.add(event));
+      await tester.pumpWidget(app(render('Market'), barActions:render('MarketActions'), brightness:brightness));
+      await tester.runAsync(() async {
+        for (final image in [avatarBytes, productBytes]) {
+          await precacheImage(ResizeImage(MemoryImage(image),width:1024,height:1024,policy:ResizeImagePolicy.fit), tester.element(find.byType(Scaffold)));
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(requests,contains('/avatar.png'));
+      final account = findMaterialTooltip('我的士多');
+      expect(find.descendant(of:account, matching:find.byType(Image)),findsOneWidget);
+      expect(tester.widget<RawImage>(find.descendant(of:account,matching:find.byType(RawImage))).image,isNotNull);
+      await tester.tap(account);expect(events.last,'account');
+      await snapshot(tester,'market-avatar-${brightness.name}');
+      values.update('authorized',false);await tester.pumpAndSettle();
+      expect(find.descendant(of:account,matching:find.byType(Image)),findsNothing);
+      await tester.tap(account);expect(events.last,'account');
+      values.updateAll({'rows':[
+        {...(data['rows'] as List).first as Map<String,dynamic>, 'image':'https://images.example/product.webp','seller':'Lin','quantity':'× 1','time':'2026-11-21T00:00:00Z'},
+        {...(data['rows'] as List).last as Map<String,dynamic>, 'image':'','seller':'seller','quantity':'× 1','time':'2026-11-20T00:00:00Z'},
+      ]});
+      await tester.pumpWidget(app(render('BuyerOrders'),title:'我的订单',brightness:brightness));
+      await tester.pumpAndSettle();
+      expect(find.byType(Image),findsOneWidget);
+      expect(tester.widget<RawImage>(find.byType(RawImage)).image,isNotNull);
+      await snapshot(tester,'orders-images-${brightness.name}');
+
+      final product = Map<String, dynamic>.from((data['rows'] as List).first as Map);
+      values.updateAll({
+        'merchantReady':true, 'merchantTitle':'社区小店', 'merchantMeta':'@seller · TL3',
+        'merchantAvatar':'https://images.example/merchant-avatar.png',
+        'merchantStats':[{'label':'在售','value':'2'},{'label':'上架','value':'3'},{'label':'销量','value':'269'}],
+        'rows':[{...product,'image':'https://images.example/product.webp','sellerAvatar':'https://images.example/seller-avatar.png'},(data['rows'] as List).last],
+      });
+      requests.clear();
+      await tester.pumpWidget(app(render('Merchant'),title:'卖家商品',brightness:brightness));
+      await tester.pumpAndSettle();
+      expect(find.text('@seller · TL3'),findsOneWidget);
+      expect(find.text('269'),findsOneWidget);
+      expect(requests.toSet(),{'/merchant-avatar.png','/product.webp','/seller-avatar.png'});
+      final pixels = tester.widgetList<RawImage>(find.byType(RawImage)).toList();
+      expect(pixels,hasLength(3));
+      expect(pixels.every((image)=>image.image!=null),isTrue);
+      await snapshot(tester,'merchant-audit-${brightness.name}');
+
+      values.updateAll({
+        'image':'', 'authorized':true, 'commentsMessage':'', 'commentStatsReady':true,
+        'commentStats':[{'label':'评分','value':'4.0 / 5'},{'label':'已评分','value':'1'},{'label':'收藏','value':'4'},{'label':'评论 / 回复','value':'1 / 1'}],
+        'comments':[{'id':'comment','author':'买家昵称','handle':'@buyer','avatar':'https://images.example/buyer-avatar.png','time':'2026-11-08T17:03:21Z','content':'兑换顺利，说明很清楚。','badge':'已购','rating':'4 / 5','moderation':'','repliesOpen':true,'repliesError':'','replies':[{'author':'店主','handle':'@seller','avatar':'','time':'2026-11-08T17:18:13Z','content':'谢谢反馈。','badge':'卖家','rating':'','moderation':''}]}],
+      });
+      await tester.pumpWidget(app(render('Product'),title:'商品详情',brightness:brightness));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('商品评论'));
+      await tester.pumpAndSettle();
+      final authorRow=find.ancestor(of:find.text('买家昵称'),matching:find.byType(Row)).first;
+      expect(tester.widget<RawImage>(find.descendant(of:authorRow,matching:find.byType(RawImage))).image,isNotNull);
+      expect(find.text('4 / 5'),findsOneWidget);
+      expect(find.text('谢谢反馈。'),findsOneWidget);
+      await snapshot(tester,'comments-audit-${brightness.name}');
+      expect(tester.takeException(),isNull);
+    });
+  }
+  for (final brightness in Brightness.values) {
+    testWidgets('会话骨架空态错误与输入发送状态 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final content = DynamicContent({...data, 'chatIdentity': '12', 'chatKeys': <Object>[], 'chatRows': <Object>[],
+        'chatReady': false, 'chatOrder': '', 'chatState': '', 'chatError': '', 'chatDraft': '',
+        'chatDraftError': '', 'chatSendEnabled': false, 'chatSending': false, 'canSend': false, 'loading': true});
+      final events = <String>[];
+      await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+        widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Chat'), data: content,
+        onEvent: (name, args) {
+          events.add(name);
+          if (name == 'chatInput') content.updateAll({'chatDraft': args['value'], 'chatSendEnabled': (args['value'] as String).trim().isNotEmpty});
+          if (name == 'chatSend') content.update('chatSending', true);
+        }), title: '求购洽谈', brightness: brightness));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(SkeletonBox), findsNWidgets(2));
+      await snapshot(tester, 'chat-loading-${brightness.name}', settle: false);
+      content.updateAll({'loading': false, 'chatError': '读取会话失败，请重试'});
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.common_retry));
+      expect(events.last, 'chatRefresh');
+      await snapshot(tester, 'chat-error-${brightness.name}');
+      content.updateAll({'chatError': '', 'chatReady': true, 'chatState': '洽谈中', 'canSend': true});
+      await tester.pumpAndSettle();
+      expect(find.text('还没有消息'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
+      await snapshot(tester, 'chat-empty-${brightness.name}');
+      await tester.enterText(find.byType(TextField), '你好，想了解一下设备数量。');
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNotNull);
+      await snapshot(tester, 'chat-compose-${brightness.name}');
+      await tester.tap(find.widgetWithText(FilledButton, '发送'));
+      await tester.pump();
+      expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '你好，想了解一下设备数量。');
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
+      content.update('chatSending', false);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+    for (final width in [320.0, 390.0, 800.0]) {
+      testWidgets('士多页面 ${brightness.name} $width 布局与底部操作区', (tester) async {
+        tester.view.physicalSize = Size(width, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final runtime = Runtime()
+          ..update(
+            metaverseWidgetLibraryName,
+            createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)),
+          )
+          ..update(
+            metaversePluginLibraryName,
+            parseLibraryFile(
+              File('test/fixtures/metaverse/ld-store/ui.rfwtxt')
+                  .readAsStringSync()
+                  .replaceAll('\r\n', '\n'),
+            ),
+          );
+        addTearDown(runtime.dispose);
+        for (final name in [
+          'Card',
+          'Market',
+          'Product',
+          'Review',
+          'BuyerOrders',
+          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant','Filters','Account','Messages','Chats','Chat',
+        ]) {
+          final actionWidget = {'Market':'MarketActions','Product':'ProductActions','BuyerOrder':'OrderActions','Messages':'MessageActions'}[name];
+          await tester.pumpWidget(
+            app(
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: name == 'Card' ? 32 : 0,
+                ),
+                child: RemoteWidget(
+                  runtime: runtime,
+                  widget: FullyQualifiedWidgetName(
+                    metaversePluginLibraryName,
+                    name,
+                  ),
+                  data: DynamicContent({ ...data,
+                    'favoriteLabel':'收藏商品','canComment':true,'buyerError':'','buyerBusy':false,
+                    if(name=='Chat') ...{'chatIdentity':'12','chatKeys':['2','1'],'chatRows':[{'id':'2','mine':true,'system':false,'author':'tester','content':'我看一下，稍后回复你。','time':'2026-11-25T04:01:00Z'},{'id':'1','mine':false,'system':false,'author':'lin','content':'你好，这个工具支持多个设备吗？','time':'2026-11-25T04:00:00Z'}], 'chatDraft':'','chatError':'','chatReady':true,'chatState':'洽谈中','chatOrder':'','canSend':true,'chatSendEnabled':false,'chatSending':false,'chatMore':true},
+                    if(name=='Chats') 'rows':[{'id':'12','requestId':'7','title':'开发者工具','name':'participant','summary':'有新进展','state':'洽谈中','unread':true}],
+                    'canApply':true,'refundState':'申请售后','refundAmount':'',
+                    'refundMessage':'如商品存在问题，可以申请退款。','deadline':'',
+                    'refundFields':[
+                      {'name':'reasonCode','label':'退款原因','type':'choice','required':true,'options':[{'value':'other','label':'其他问题'}]},
+                      {'name':'reasonDetail','label':'问题描述','hint':'请说明具体问题（10–500 字）','type':'multiline','required':true,'maxLength':500},
+                      {'name':'contacted','label':'已联系卖家协商','type':'toggle','value':false},
+                    ],
+                    if (name == 'CommentForm') 'fields':[{'name':'content','label':'评论内容','hint':'分享使用体验或提出问题（5–500 字）','type':'multiline','maxLength':500}],
+                    'canClaim':true,'claimed':false,'claimLabel':'领取优惠券',
+                    'coupon':{'title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','starts':'2026-11-17 00:00（北京时间）','state':''},
+                    if(name=='Messages') 'messagesChanged':true,
+                    if(name=='Messages') 'rows':[{'id':'m1','title':'订单已交付','content':'您兑换的开发工具包已交付，可前往订单查看。','time':'2026-11-18T12:00:00Z','read':false,'link':'/order/LD1'}],
+                    if(name=='Coupons') 'rows':[
+                      {'id':'c1','title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','state':'待支付订单占用','action':'查看订单'},
+                    ],
+                    'tabs': name == 'Messages'
+                        ? [{'value':'all','label':'全部','selected':true},{'value':'unread','label':'未读','selected':false},{'value':'read','label':'已读','selected':false}]
+                        : [{'value':'unused','label':'未使用','selected':true},{'value':'used','label':'已使用','selected':false},{'value':'expired','label':'已过期','selected':false}],
+                    'collections':[{'id':'favorites','label':'已收藏','selected':true},{'id':'blocked','label':'不感兴趣','selected':false}],
+                    'collectionHint':'搜索收藏的商品','collectionEmpty':'还没有收藏商品',
+                    'merchantReady':true,'merchantTitle':'tester 的商品','merchantMeta':'@tester · TL3','merchantAvatar':'','merchantStats':[{'label':'在售','value':'2'},{'label':'销量','value':'40'}],
+                  }),
+                ),
+              ),
+              title: switch (name) {
+                'Product' => '商品详情',
+                'Review' => '确认订单',
+                'BuyerOrders' => '我的订单',
+                'BuyerOrder' => '订单详情',
+                'Favorites' => '我的收藏',
+                'Coupons' => '我的优惠券',
+                'Coupon' => '领取优惠券',
+                'CommentForm' => '发布评论',
+                'Refund' => '退款与售后',
+                'Merchant' => '卖家商品',
+                'Filters' => '筛选与排序',
+                'Account' => '我的士多',
+                'Messages' => '系统消息',
+                'Chat' => '开发工具授权',
+                'Chats' => '求购洽谈',
+                _ => 'LD士多',
+              },
+              brightness: brightness,
+              scale: width == 320 ? 1.4 : 1,
+              barActions: actionWidget == null ? null : RemoteWidget(
+                runtime: runtime, widget: FullyQualifiedWidgetName(metaversePluginLibraryName, actionWidget),
+                data: DynamicContent({...data, 'favoriteLabel':'收藏商品','buyerBusy':false,'favorited':false,'unread':true}),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: name);
+          if (name == 'Chat') {
+            expect(find.text('发送'), findsOneWidget);
+            expect(find.text('加载更早消息'), findsOneWidget);
+            final theirs = find.ancestor(of: find.text('你好，这个工具支持多个设备吗？'), matching: find.byType(AnimatedAlign)).first;
+            final mine = find.ancestor(of: find.text('我看一下，稍后回复你。'), matching: find.byType(AnimatedAlign)).first;
+            expect(tester.widget<AnimatedAlign>(theirs).alignment, Alignment.centerLeft);
+            expect(tester.widget<AnimatedAlign>(mine).alignment, Alignment.centerRight);
+            expect(find.byType(InputFieldShell), findsOneWidget);
+            expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
+          }
+          if (width == 390) {
+            await snapshot(tester, '${name.toLowerCase()}-${brightness.name}');
+          }
+          if (name == 'Chat') {
+            tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+            await tester.enterText(find.byType(TextField), '想确认一下设备数量。\n谢谢！');
+            await tester.pumpAndSettle();
+            final input = tester.getRect(find.byType(TextField));
+            expect(input.bottom, lessThanOrEqualTo(544));
+            expect(input.left, closeTo(16, 1));
+            expect(tester.getRect(find.text('我看一下，稍后回复你。')).bottom, lessThan(input.top));
+            await snapshot(tester, 'chat-keyboard-${width.toInt()}-${brightness.name}');
+            tester.view.resetViewInsets();
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+          }
+          if (name == 'Product') {
+            final buy = find.widgetWithText(FilledButton, '登录后兑换');
+            expect(tester.getRect(buy).center.dx, greaterThan(width / 2));
+            expect(tester.getRect(buy).right, closeTo(width - 16, 1));
+            for (final failed in [false, true]) {
+              await tester.pumpWidget(app(
+                RemoteWidget(
+                  runtime: runtime,
+                  widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
+                  data: DynamicContent({
+                    ...data,
+                    'linkProduct': true, 'buyLabel':'查看兑换方式',
+                    'externalError': failed ? '读取兑换地址失败（HTTP 503）' : '',
+                  }),
+                ),
+                brightness: brightness,
+                scale: width == 320 ? 1.4 : 1,
+              ));
+              await tester.pumpAndSettle();
+              expect(tester.takeException(), isNull, reason: '链接商品 $failed');
+              final action = find.text('查看兑换方式');
+              expect(action, findsOneWidget);
+              expect(tester.getRect(action).bottom, lessThan(844));
+              if (failed) {
+                expect(tester.getRect(find.text('读取兑换地址失败（HTTP 503）')).bottom,
+                    lessThan(tester.getRect(action).top));
+              }
+              if (width == 390) {
+                await snapshot(tester, 'product-link-$failed-${brightness.name}');
+              }
+            }
+          }
+          if (name == 'Review') {
+            final confirm = find.widgetWithText(FilledButton, '确认兑换');
+            expect(tester.getRect(confirm).left, closeTo(16, 1));
+            expect(tester.getRect(confirm).right, closeTo(width - 16, 1));
+          }
+        }
+      });
+    }
+  }
+  final communityFixtures = jsonDecode(File('test/fixtures/metaverse/ld-store-community.json').readAsStringSync()) as List;
+  final communityLocales = jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map;
+  for (final brightness in Brightness.values) {
+    testWidgets('提醒设置与私密证据小屏 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n','\n')));
+      addTearDown(runtime.dispose);
+      final locale = brightness == Brightness.dark ? 'en' : 'zh';
+      for (final name in ['Reminders', 'ReportDetail']) {
+        final report = communityFixtures.firstWhere((f) => f['widget'] == 'ReportDetail' && f['locale'] == locale);
+        final model = <String,Object?>{...data, ...Map<String,Object?>.from(report['data']),
+          'i18n':communityLocales[locale], 'reminderEnabled':true, 'reminderNotify':false,
+          'reminderBlocked':true,'reminderSettings':true,'reminderError':'',
+          'reminderNote':locale=='en' ? 'Checks approximately every 15 minutes. The system controls execution.' : '约每 15 分钟检查一次，实际执行由系统安排。',
+          'evidence':[{'id':'1','label':locale=='en'?'Private evidence':'私密证据'}], 'canAddEvidence':true,
+          'attachmentReady':true,'attachmentName':'evidence.png','evidenceBusy':false,'evidenceError':'','evidenceProgress':0.5};
+        final content = RemoteWidget(runtime:runtime, widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name), data:DynamicContent(model),onEvent:(_,_){});
+        await tester.pumpWidget(app(name=='Reminders' ? SingleChildScrollView(child:content) : content,
+          title:locale=='en'?'My store':'我的士多', brightness:brightness, scale:1.4));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(),isNull);
+        if(name=='ReportDetail') {
+          await tester.scrollUntilVisible(find.text('evidence.png'),180,scrollable:find.byType(Scrollable).last);
+          await tester.pumpAndSettle();
+          expect(find.text('evidence.png').hitTestable(),findsOneWidget);
+        }
+        await snapshot(tester,'capabilities-${name.toLowerCase()}-${brightness.name}');
+        await tester.pumpWidget(app(const SizedBox()));
+      }
+    });
+  }
+  test('首发插件候选的静态图标均有原生映射', () {
+    final sources = [File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+      (jsonDecode(File('test/fixtures/metaverse/release/activity-feed-1.0.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
+    for (final source in sources) {
+      for (final match in RegExp(r'(?:icon:|Symbol\(name:)\s*"([a-z_]+)"').allMatches(source)) {
+        expect(metaverseIcons, contains(match[1]), reason: match[0]);
+      }
+    }
+  });
+  for (final fixture in communityFixtures) {
+    final locale = fixture['locale'] as String, name = fixture['widget'] as String;
+    testWidgets('社区页面四语小屏 $locale/$name', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 24);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final model = Map<String, Object?>.from(fixture['data'] as Map);
+      model['i18n'] = communityLocales[locale.replaceAll('-', '_')];
+      await tester.pumpWidget(app(RemoteWidget(
+        runtime: runtime,
+        widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
+        data: DynamicContent(model), onEvent: (_, _) {},
+      ), title: model['pageTitle'] as String,
+        brightness: locale == 'en' || locale == 'zh-HK' ? Brightness.dark : Brightness.light,
+        scale: 1.4));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      if (['CommunityForm', 'ReplyForm', 'ReportDetail'].contains(name)) {
+        expect(find.byType(FilledButton).hitTestable(), findsOneWidget);
+        expect(tester.getBottomLeft(find.byType(FilledButton)).dy, lessThanOrEqualTo(696));
+      }
+      await snapshot(tester, 'community-$locale-$name');
+      if (name == 'Product') {
+        final label = (communityLocales[locale.replaceAll('-', '_')] as Map).entries
+            .firstWhere((entry) => (communityLocales['zh'] as Map)[entry.key] == '回复').value as String;
+        await tester.scrollUntilVisible(find.text(label), 220, scrollable: find.byType(Scrollable).last);
+        await tester.pumpAndSettle();
+        expect(find.text(label).hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await snapshot(tester, 'community-$locale-comments');
+      }
+      await tester.pumpWidget(app(const SizedBox()));
+      await tester.pumpAndSettle();
+    });
+  }
+  for(final brightness in Brightness.values) {
+    testWidgets('士多加载与刷新保留布局 ${brightness.name}', (tester) async {
+      tester.view.physicalSize=const Size(390,844);tester.view.devicePixelRatio=1;
+      tester.view.padding=const FakeViewPadding(bottom:34);
+      addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);addTearDown(tester.view.resetPadding);
+      final runtime=Runtime()
+        ..update(metaverseWidgetLibraryName,createMetaverseWidgetLibrary(loadImage:(_)async=>Uint8List(0)))
+        ..update(metaversePluginLibraryName,parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n','\n')));
+      addTearDown(runtime.dispose);
+      for(final name in ['Market','Messages','Review','BuyerOrder']) {
+        final state=DynamicContent({...data,'ready':false,'initialLoading':true,'loading':true,'rows':<Object>[],
+          'tabs':<Object>[],'needsSession':false,'buyerError':'','messagesChanged':false,'quoteInitialLoading':false});
+        Widget page()=>RemoteWidget(runtime:runtime,widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name),data:state);
+        await tester.pumpWidget(app(page(),brightness:brightness,title:name));
+        await tester.pump(const Duration(milliseconds:200));
+        expect(find.byType(SkeletonBox),findsWidgets,reason:name);
+        expect(tester.takeException(),isNull,reason:name);
+        await snapshot(tester,'loading-${name.toLowerCase()}-${brightness.name}',settle:false);
+        if(name=='Review') {
+          state.update('initialLoading',false);state.update('ready',true);state.update('quoteReady',false);
+          state.update('quoting',true);state.update('quoteInitialLoading',true);state.update('canSubmit',false);
+          await tester.pump();
+          final summary=find.text('开发者工具包');final top=tester.getTopLeft(summary);
+          await snapshot(tester,'quote-loading-${brightness.name}',settle:false);
+          state.update('quoteInitialLoading',false);state.update('quoting',false);state.update('quoteReady',true);state.update('loading',false);
+          await tester.pumpAndSettle();expect(tester.getTopLeft(summary),top);
+          state.update('loading',true);await tester.pump();expect(tester.getTopLeft(summary),top);
+          expect(find.byType(SkeletonBox),findsNothing);
+          expect(tester.takeException(),isNull);
+        }
+      }
+      await tester.pumpWidget(app(const SizedBox()));await tester.pumpAndSettle();
+    });
+  }
+
+}

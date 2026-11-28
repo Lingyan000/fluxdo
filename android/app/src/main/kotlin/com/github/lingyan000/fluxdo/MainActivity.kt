@@ -31,7 +31,7 @@ import android.webkit.WebView
 import androidx.webkit.CookieManagerCompat
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -39,7 +39,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val TAG = "AppLink"
@@ -392,11 +392,34 @@ class MainActivity : FlutterActivity() {
         AndroidAvifChannel.register(flutterEngine.dartExecutor.binaryMessenger)
         // 公共文件落盘通道(MediaStore 下载目录 / SAF 另存为 / 打开 content uri)
         PublicFileChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        PluginFileChannel.register(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+        NetworkRouteChannel.register(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         // 会话通知快捷方式(系统通知左侧显示发送者头像)
         ConversationShortcutChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "openDefaultLinkSettings" -> result.success(openDefaultLinkSettings())
+                "openNotificationSettings" -> {
+                    try {
+                        val intent = if (android.os.Build.VERSION.SDK_INT >= 26) {
+                            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                            if (manager.areNotificationsEnabled() && manager.getNotificationChannel("metaverse_plugins") != null) {
+                                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    .putExtra(Settings.EXTRA_CHANNEL_ID, "metaverse_plugins")
+                            } else {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            }
+                        } else {
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
                 "openInBrowser" -> {
                     val url = call.argument<String>("url")
                     if (url != null) {

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/site_customization.dart';
 import '../constants.dart';
+import '../modules/metaverse/metaverse_link_router.dart';
 import '../modules/mini_apps/mini_app_navigation.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/image_viewer_page.dart';
@@ -29,6 +30,8 @@ import 'link_security.dart';
 import 'url_helper.dart';
 
 const _browserChannel = MethodChannel('com.github.lingyan000.fluxdo/browser');
+
+enum LinkOpenMode { preference, inApp, ask, external }
 
 /// 检查 URL 是否属于站点内部链接（主域名或子域名）
 bool isInternalUrl(Uri uri) {
@@ -79,6 +82,8 @@ Future<void> launchExternalLink(
   Future<ExternalLinkOpenChoice?> Function(String url, LinkRiskLevel risk)?
   confirm,
   Future<void> Function(String url)? showBlocked,
+  bool preferSessionBrowser = false,
+  LinkOpenMode mode = LinkOpenMode.preference,
 }) async {
   if (url.isEmpty) return;
   final uri = Uri.tryParse(url);
@@ -86,9 +91,11 @@ Future<void> launchExternalLink(
 
   // 链接安全检查
   ExternalLinkOpenChoice? explicitChoice;
+  var riskLevel = LinkRiskLevel.normal;
+  var needsConfirmation = mode == LinkOpenMode.ask;
   final config = AppConstants.siteCustomization.linkSecurityConfig;
   if (config != null && config.enableExitConfirmation) {
-    final riskLevel = LinkSecurity.checkUrl(url, config);
+    riskLevel = LinkSecurity.checkUrl(url, config);
 
     switch (riskLevel) {
       case LinkRiskLevel.internal:
@@ -100,15 +107,20 @@ Future<void> launchExternalLink(
         await (showBlocked?.call(url) ?? showLinkBlockedDialog(context, url));
         return;
       case LinkRiskLevel.normal:
+        needsConfirmation = needsConfirmation || mode == LinkOpenMode.preference;
+        break;
       case LinkRiskLevel.risky:
       case LinkRiskLevel.dangerous:
-        // 需要确认的链接，显示确认对话框
-        explicitChoice =
-            await (confirm?.call(url, riskLevel) ??
-                showExternalLinkConfirmDialog(context, url, riskLevel));
-        if (explicitChoice == null) return;
+        needsConfirmation = true;
         break;
     }
+  }
+
+  if (!context.mounted) return;
+  if (needsConfirmation) {
+    explicitChoice = await (confirm?.call(url, riskLevel) ??
+        showExternalLinkConfirmDialog(context, url, riskLevel));
+    if (explicitChoice == null) return;
   }
 
   // 安全确认对话框关闭时，原帖子/页面可能已经被滚动回收或导航销毁。
@@ -117,10 +129,14 @@ Future<void> launchExternalLink(
   final preferInApp = switch (explicitChoice) {
     ExternalLinkOpenChoice.inAppBrowser => true,
     ExternalLinkOpenChoice.systemBrowser => false,
-    null => ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(preferencesProvider).openExternalLinksInAppBrowser,
+    null when mode == LinkOpenMode.inApp => true,
+    null when mode == LinkOpenMode.external => false,
+    null =>
+      preferSessionBrowser ||
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(preferencesProvider).openExternalLinksInAppBrowser,
   };
 
   if (preferInApp && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -171,6 +187,12 @@ Future<void> launchContentLink(
   }
 
   if (await openMiniAppLink(context, url)) return;
+  if (!context.mounted) return;
+
+  // 已开启服务的声明式链接；路由层限制第三方不能覆盖论坛内链。
+  if (await openMetaverseLink(context, url)) {
+    return;
+  }
   if (!context.mounted) return;
 
   // 1. 识别用户链接 /u/username

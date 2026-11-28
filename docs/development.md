@@ -60,8 +60,13 @@ dart tool/cli.dart dev macos
 独立的 `devtools_extension` 仍跟随 `devtools_extensions` 宿主使用旧 Material，
 待宿主支持独立 UI 包后一起迁移，避免新旧主题上下文不匹配。
 
-Apple 工程继续使用现有 CocoaPods 配置，Android 继续使用现有 AGP 配置；
-SDK 升级不同时启用 HCPP 或改动平台构建方式。
+Android 构建链与 Flutter 3.50 模板对齐：Gradle 9.5.0、AGP 9.3.1、Kotlin 2.4.20，Java/JVM 目标仍为 17。
+首次构建请在 SDK Manager 安装 Android SDK Platform 37，通知插件所用的 AndroidX 库要求至少用 API 37 编译。
+部分第三方插件仍使用旧 Kotlin 插件与 AGP DSL，因此保留 `android.builtInKotlin=false` 和
+`android.newDsl=false`；待这些插件迁移后再统一启用内置 Kotlin。Android 库按实际 Kotlin 源码补齐旧编译插件，
+编译 SDK 不低于宿主；这些处理不改变应用的 minSdk/targetSdk。旧 CargoKit 的 `Project.exec` 调用
+由 `android/gradle/legacy-process.gradle` 转到 Gradle 的 `ExecOperations`，不改 pub 缓存。
+Apple 继续使用 CocoaPods；未启用 HCPP。
 
 ## 常用命令
 
@@ -105,6 +110,7 @@ mise l10n -- --force
 - `mise test` 会自动执行测试所需的 `pub get + 增量 l10n`
 - `mise release` / `mise prerelease` 会在真正写入版本号和打 tag 前自动执行发版前检查
 - `mise r sync` 不是 hook，而是手动的显式预热命令；日常直接 `mise dev` / `mise build` 即可
+- 插件界面的 rfw 核心组件包含动态图标解码，统一入口对 profile/release 默认传入 `--no-tree-shake-icons`。直接调用 `flutter build` 时需要自行传入该选项，命令行显式指定的裁剪选项会保留。
 
 ## 国际化工作流
 

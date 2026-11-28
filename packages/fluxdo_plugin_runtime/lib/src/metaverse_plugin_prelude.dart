@@ -1,0 +1,275 @@
+/// 注入到每个插件脚本环境的前导脚本：定义全局 `fluxdo` SDK。
+///
+/// 这里只是便利封装，不是安全边界——插件与它在同一个 JS 环境里，可以绕过
+/// SDK 直接发消息。所有权限检查都在 Dart 侧（`MetaversePluginRuntime` 与
+/// `MetaversePluginHost`）。
+///
+/// 覆盖 flutter_js 自带的 `setTimeout`/`console`：自带的定时器不受宿主
+/// 管理，引擎释放后仍会回调。
+const metaversePluginPrelude = r'''
+(function () {
+  'use strict';
+  var send = globalThis.sendMessage;
+  var CHANNEL = 'fluxdoMetaverse';
+  var seq = 0, pending = {}, handlers = {}, timers = {}, timerSeq = 0;
+
+  function post(message) { send(CHANNEL, JSON.stringify(message)); }
+
+  function request(method, params, surface) {
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      post({ t: 'call', id: id, m: method, s: surface, p: params === undefined ? null : params });
+    });
+  }
+
+  function report(where, error) {
+    post({
+      t: 'error',
+      where: String(where),
+      message: String((error && error.message) || error),
+      stack: String((error && error.stack) || '')
+    });
+  }
+
+  function text(value) {
+    if (typeof value === 'string') return value;
+    if (value instanceof Error) return value.message;
+    try { return JSON.stringify(value); } catch (e) { return String(value); }
+  }
+
+  function logger(level) {
+    return function () {
+      post({ t: 'log', level: level, message: Array.prototype.map.call(arguments, text).join(' ') });
+    };
+  }
+
+  function makeContext(info) {
+    return Object.freeze({
+      surface: info.surface,
+      kind: info.kind,
+      page: info.page || null,
+      params: info.params || {},
+      api: makeApi(info.surface),
+      setData: function (key, value) {
+        post({ t: 'data', s: info.surface, k: String(key), v: value === undefined ? null : value });
+      }
+    });
+  }
+
+  globalThis.console = Object.freeze({
+    log: logger('info'), info: logger('info'), debug: logger('info'),
+    warn: logger('warn'), error: logger('error')
+  });
+
+  globalThis.setTimeout = function (fn, ms) {
+    if (typeof fn !== 'function') return 0;
+    var id = ++timerSeq;
+    var args = Array.prototype.slice.call(arguments, 2);
+    timers[id] = function () { fn.apply(null, args); };
+    post({ t: 'timer', op: 'set', id: id, ms: Number(ms) || 0 });
+    return id;
+  };
+
+  globalThis.clearTimeout = function (id) {
+    if (!timers[id]) return;
+    delete timers[id];
+    post({ t: 'timer', op: 'clear', id: id });
+  };
+
+  function makeApi(surface) {
+    function call(method, params) { return request(method, params, surface); }
+    return Object.freeze({
+    /** 注册事件处理器：card.load / page.open / page.hide / page.resume / surface.close，或界面声明的事件。 */
+    on: function (name, handler) {
+      name = String(name);
+      handlers[name] = handler;
+      return function () { if (handlers[name] === handler) delete handlers[name]; };
+    },
+
+    /** 发起网络请求，目标域名须在清单 permissions.network 内。 */
+    fetch: function (url, options) {
+      options = options || {};
+      var body = options.body;
+      var headers = Object.assign({}, options.headers || {});
+      if (body !== undefined && body !== null && typeof body !== 'string') {
+        body = JSON.stringify(body);
+        if (!Object.keys(headers).some(function (k) { return k.toLowerCase() === 'content-type'; })) {
+          headers['Content-Type'] = 'application/json';
+        }
+      }
+      return call('fetch', {
+        url: String(url),
+        method: options.method || 'GET',
+        headers: headers,
+        body: body === undefined ? null : body,
+        auth: options.auth === true,
+        credential: options.credential === undefined ? null : String(options.credential)
+      }).then(function (response) {
+        response.ok = response.status >= 200 && response.status < 300;
+        response.json = function () { return JSON.parse(response.body); };
+        return response;
+      });
+    },
+
+    streams: Object.freeze({
+      open: function (options) { return call('streams.open', options); },
+      close: function (id) { return call('streams.close', {id: String(id)}); }
+    }),
+    files: Object.freeze({
+      pick: function (options) { return call('files.pick', options); },
+      upload: function (options) { return call('files.upload', options).then(function(response) {
+        response.ok = response.status >= 200 && response.status < 300;
+        response.json = function () { return JSON.parse(response.body); };
+        return response;
+      }); },
+      preview: function (options) { return call('files.preview', options); },
+      release: function (handle) { return call('files.release', {handle: String(handle)}); },
+      cancel: function (id) { return call('files.cancel', {id: String(id)}); }
+    }),
+    captcha: Object.freeze({request: function (options) { return call('captcha.request', options); }}),
+    storage: Object.freeze({
+      get: function (key, options) { return call('storage.get', { key: String(key), scope: options && options.scope }); },
+      set: function (key, value, options) { return call('storage.set', { key: String(key), value: value === undefined ? null : value, scope: options && options.scope }); },
+      setMany: function (entries, options) { return call('storage.setMany', {entries: entries, scope: options && options.scope}); },
+      compareAndSet: function (key, expected, value, options) { return call('storage.compareAndSet', {key: String(key), expected: expected, value: value, scope: options && options.scope}); },
+      remove: function (key, options) { return call('storage.remove', { key: String(key), scope: options && options.scope }); }
+    }),
+
+    credentials: Object.freeze({
+      request: function (name) { return call('credentials.request', {name: String(name)}); },
+      status: function (name, options) { return call('credentials.status', {name: String(name), jwt: options && options.jwt === true}); },
+      capture: function (name, request, options) {
+        request = Object.assign({}, request);
+        if (request.body !== undefined && typeof request.body !== 'string') {
+          request.body = JSON.stringify(request.body);
+          request.headers = Object.assign({'Content-Type': 'application/json'}, request.headers || {});
+        }
+        return call('credentials.capture', Object.assign({}, options || {}, {name: String(name), request: request}));
+      },
+      remove: function (name) { return call('credentials.remove', {name: String(name)}); }
+    }),
+    tasks: Object.freeze({
+      schedule: function (options) { return call('tasks.schedule', options); },
+      cancel: function (id) { return call('tasks.cancel', {id: String(id)}); },
+      list: function () { return call('tasks.list'); }
+    }),
+    notifications: Object.freeze({
+      status: function () { return call('notifications.status'); },
+      openSettings: function () { return call('notifications.openSettings'); },
+      isAllowed: function () { return call('notifications.isAllowed'); },
+      revoke: function () { return call('notifications.revoke'); },
+      requestPermission: function () { return call('notifications.requestPermission'); },
+      show: function (options) { return call('notifications.show', options); },
+      cancel: function (key) { return call('notifications.cancel', {key: String(key)}); }
+    }),
+    navigation: Object.freeze({
+      dismiss: function () { return call('navigation.dismiss'); },
+      setBadge: function (page, count) { return call('navigation.setBadge', {page: String(page), count: count}); }
+    }),
+    forum: Object.freeze({
+      read: function (options) { return call('forum.read', options); },
+      open: function (destination) { return call('forum.open', destination); }
+    }),
+    host: Object.freeze({features: function () { return call('host.features'); }, environment: function () { return call('host.environment'); }}),
+    preferences: Object.freeze({get: function () { return call('preferences.get'); }}),
+    permissions: Object.freeze({
+      status: function () { return call('permissions.status'); },
+      request: function (names) { return call('permissions.request', {names: names}); }
+    }),
+    dialogs: Object.freeze({confirm: function (options) { return call('dialogs.confirm', options); }}),
+    connect: Object.freeze({
+      authorize: function (url) { return call('connect.authorize', {url: String(url)}); }
+    }),
+    payments: Object.freeze({
+      request: function (options) { return call('payments.request', options); }
+    }),
+    crypto: Object.freeze({
+      pkce: function () { return call('crypto.pkce'); },
+      uuid: function () { return call('crypto.uuid'); },
+      sha256: function (text) { return call('crypto.sha256', {text: String(text)}); }
+    }),
+
+    auth: Object.freeze({
+      status: function () { return call('auth.status'); },
+      request: function () { return call('auth.request'); },
+      signOut: function () { return call('auth.signOut'); }
+    }),
+
+    user: Object.freeze({
+      get: function () { return call('user.get'); }
+    }),
+
+    navigate: function (page, params, options) { return call('navigate', { page: String(page), params: params || {}, replace: !!(options && options.replace) }); },
+    /** 在用户点击时预约一次页面导航，用于异步操作成功后的跳转。 */
+    prepareNavigation: function (page, options) {
+      page = String(page);
+      var replace = !!(options && options.replace);
+      return call('navigation.prepare', {page: page, replace: replace}).then(function (token) {
+        return function (params) {
+          return call('navigate', {page: page, params: params || {}, continuation: token, replace: replace});
+        };
+      });
+    },
+    session: Object.freeze({
+      login: function () { return call('session.login'); },
+      open: function (path) { return call('session.open', { path: String(path) }); }
+    }),
+    openUrl: function (url) { return call('openUrl', { url: String(url) }); },
+    browser: Object.freeze({
+      open: function (url, options) {
+        return call('browser.open', { url: String(url), mode: options && options.mode || 'ask' });
+      }
+    }),
+    toast: function (message, type) { return call('toast', { message: String(message), type: type || 'info' }); }
+    });
+  }
+  globalThis.fluxdo = makeApi(null);
+
+  Object.defineProperty(globalThis, '__fluxdoMetaverse', {
+    value: Object.freeze({
+      settle: function (id, ok, json) {
+        var entry = pending[id];
+        if (!entry) return;
+        delete pending[id];
+        var value = JSON.parse(json);
+        if (ok) entry.resolve(value); else entry.reject(new Error(String(value)));
+      },
+      dispatch: function (name, infoJson, argsJson, delivery) {
+        var handler = handlers[name];
+        var task = JSON.parse(infoJson).kind === 'task';
+        var taskSurface = JSON.parse(infoJson).surface;
+        if (typeof handler !== 'function') {
+          if (delivery) post({t: 'delivery.done', d: delivery});
+          if (task) post({t: 'task.done', s: taskSurface, ok: false, error: 'task_handler_missing'});
+          return false;
+        }
+        var eventId = ++seq;
+        post({t: 'event', phase: 'start', id: eventId});
+        function done(error, result) {
+          if (name === 'page.open' || name === 'card.load') post({t:'surface.ready', ok:!error});
+          if (delivery) post({t: 'delivery.done', d: delivery});
+          post({t: 'event', phase: 'end', id: eventId});
+          if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : '', result: name === 'storage.partition' ? result : null});
+        }
+        try {
+          var result = handler(makeContext(JSON.parse(infoJson)), JSON.parse(argsJson));
+          if (result && typeof result.then === 'function') {
+            result.then(function (value) { done(null, value); }, function (error) { report(name, error); done(error); });
+          } else { done(null, result); }
+        } catch (error) {
+          report(name, error);
+          done(error);
+        }
+        return true;
+      },
+      timer: function (id) {
+        var fn = timers[id];
+        if (!fn) return;
+        delete timers[id];
+        try { fn(); } catch (error) { report('setTimeout', error); }
+      }
+    })
+  });
+})();
+''';

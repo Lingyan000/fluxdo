@@ -44,6 +44,7 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    PluginFileHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
     ImageZoomCursor.register(with: flutterViewController.engine)
     MacOSUpdateHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in

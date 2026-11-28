@@ -1,0 +1,98 @@
+name: Plugin mobile runtime
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/plugin-mobile-smoke.yaml'
+      - 'tool/plugin_tools/create_mobile_smoke.dart'
+      - 'tool/plugin_tools/mobile_smoke_test.txt'
+      - 'packages/qjs/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'lib/modules/metaverse/plugin/runtime/**'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/plugin-mobile-smoke.yaml'
+      - 'tool/plugin_tools/create_mobile_smoke.dart'
+      - 'tool/plugin_tools/mobile_smoke_test.txt'
+      - 'packages/qjs/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'lib/modules/metaverse/plugin/runtime/**'
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: dart tool/plugin_tools/create_mobile_smoke.dart
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          working-directory: build/plugin-mobile-smoke
+          script: flutter test integration_test/runtime_test.dart -d emulator-5554
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: dart tool/plugin_tools/create_mobile_smoke.dart
+      - name: Boot iOS simulator
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"].values.flatten.find{|d|d["name"].start_with?("iPhone")};abort "No simulator" unless d;puts d["udid"]')
+          echo "PLUGIN_SMOKE_DEVICE=$device" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun simctl list runtimes
+          xcrun simctl boot "$device" || true
+          xcrun simctl bootstatus "$device" -b
+          open -a Simulator --args -CurrentDeviceUDID "$device"
+      - name: Run iOS simulator smoke
+        timeout-minutes: 18
+        working-directory: build/plugin-mobile-smoke
+        run: |
+          set -o pipefail
+          flutter test --verbose --reporter expanded integration_test/runtime_test.dart -d "$PLUGIN_SMOKE_DEVICE" 2>&1 | tee ios-smoke.log
+      - name: Collect iOS startup diagnostics
+        if: failure() && env.PLUGIN_SMOKE_DEVICE != ''
+        timeout-minutes: 2
+        run: |
+          mkdir -p build/plugin-mobile-smoke/diagnostics
+          xcrun simctl list devices > build/plugin-mobile-smoke/diagnostics/devices.txt
+          xcrun simctl io "$PLUGIN_SMOKE_DEVICE" screenshot build/plugin-mobile-smoke/diagnostics/simulator.png || true
+          xcrun simctl spawn "$PLUGIN_SMOKE_DEVICE" log show --last 20m --style compact --predicate 'process == "Runner" OR (process == "SpringBoard" AND eventMessage CONTAINS "pluginMobileSmoke")' > build/plugin-mobile-smoke/diagnostics/simulator.log 2>&1 || true
+          find "$HOME/Library/Logs/DiagnosticReports" -type f -name 'Runner*' -exec cp {} build/plugin-mobile-smoke/diagnostics/ \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plugin-ios-smoke
+          path: |
+            build/plugin-mobile-smoke/ios-smoke.log
+            build/plugin-mobile-smoke/diagnostics/
+          if-no-files-found: ignore

@@ -14,6 +14,8 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:mime/mime.dart';
+import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:super_clipboard/super_clipboard.dart';
 
 import '../services/discourse_cache_manager.dart';
@@ -24,7 +26,7 @@ import '../services/svg_image_cache.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/image_save_utils.dart';
-import '../utils/screenshot_utils.dart';
+import '../utils/image_format.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/layout/immersive_insets_hold.dart';
@@ -53,9 +55,15 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 
+part 'image_viewer_memory_source.dart';
+
 class ImageViewerPage extends ConsumerStatefulWidget {
   final String? imageUrl;
   final Uint8List? imageBytes;
+
+  /// 由调用方读取图片，查看器不接触 URL、凭据或网络缓存。
+  /// 首次打开和用户重试时调用；适用于有独立访问策略的图片来源。
+  final Future<Uint8List> Function()? imageLoader;
   final String? heroTag;
   final List<String>? galleryImages;
 
@@ -89,6 +97,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     super.key,
     this.imageUrl,
     this.imageBytes,
+    this.imageLoader,
     this.heroTag,
     this.galleryImages,
     this.heroTags,
@@ -101,7 +110,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     this.heroSourceFit,
     this.heroSourceRadius = 0,
     this.heroSourceCircular = false,
-  }) : assert(imageUrl != null || imageBytes != null);
+  }) : assert(imageUrl != null || imageBytes != null || imageLoader != null),
+       assert(imageLoader == null || (imageUrl == null && imageBytes == null));
 
   /// 查看器路由的黑底/整页淡入淡出曲线:与 Hero 飞行(吃路由原始
   /// animation,全程 300ms)异速 —— push 前 60%(~180ms)完成淡入、
@@ -253,16 +263,37 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   }
 
   /// 打开内存图片查看器
-  static void openBytes(BuildContext context, Uint8List bytes) {
-    Navigator.push(
-      context,
-      InteractionPageRouteBuilder(
+  static Future<void> openBytes(BuildContext context, Uint8List bytes) =>
+      _openMemory(context, ImageViewerPage(imageBytes: bytes));
+
+  /// 打开受控来源的大图。加载、重试与图片操作均复用同一份内存数据。
+  static Future<void> openWithLoader(
+    BuildContext context, {
+    required Future<Uint8List> Function() loadImage,
+    Future<void>? closeWhen,
+    bool evictOnClose = false,
+  }) async {
+    final loaded = <Uint8List>[];
+    try {
+      await _openMemory(context, ImageViewerPage(imageLoader: () async {
+        final bytes = await loadImage();
+        if (evictOnClose) loaded.add(bytes);
+        return bytes;
+      }, enableShare: true), closeWhen: closeWhen);
+    } finally {
+      for (final bytes in loaded) { await MemoryImage(bytes).evict(); }
+    }
+  }
+
+  static Future<void> _openMemory(BuildContext context, ImageViewerPage page, {Future<void>? closeWhen}) {
+    final navigator = Navigator.of(context);
+    final route = InteractionPageRouteBuilder<void>(
         opaque: false,
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 220),
         reverseTransitionDuration: const Duration(milliseconds: 170),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return ImageViewerPage(imageBytes: bytes);
+          return page;
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
             buildPredictiveBackPageTransitions(
@@ -276,8 +307,13 @@ class ImageViewerPage extends ConsumerStatefulWidget {
                 child: child,
               ),
             ),
-      ),
-    );
+      );
+    if (closeWhen != null) {
+      unawaited(closeWhen.then((_) {
+        if (route.isActive && navigator.mounted) navigator.removeRoute(route);
+      }));
+    }
+    return navigator.push(route);
   }
 
   @override
@@ -431,6 +467,70 @@ class _DesktopChromeSlideState extends State<_DesktopChromeSlide> {
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     with TickerProviderStateMixin, DoubleTapZoomMixin, WidgetsBindingObserver {
+  _ViewerMemoryImage? _memoryImage;
+  final _memoryRetryKey = GlobalKey();
+  bool _memoryLoading = false;
+  bool get _usesMemory =>
+      widget.imageBytes != null || widget.imageLoader != null;
+  bool get _imageToolsAvailable => !_usesMemory || _memoryImage != null;
+
+  int get _viewerMaxDimension => (View.of(context).physicalSize.longestSide * 3)
+      .clamp(2048.0, 8192.0)
+      .round();
+
+  Future<void> _loadMemoryImage() async {
+    if (_memoryLoading) return;
+    setState(() {
+      _memoryLoading = true;
+      _memoryImage = null;
+    });
+    try {
+      final bytes = await (widget.imageBytes != null
+          ? Future.value(widget.imageBytes!)
+          : widget.imageLoader!());
+      if (!mounted) return;
+      final image = await _ViewerMemoryImage.prepare(
+        bytes,
+        _viewerMaxDimension,
+      );
+      if (!mounted) return;
+      setState(() => _memoryImage = image);
+      _schedulePassiveOcrIfNeeded();
+    } catch (_) {
+      // 错误详情由来源的日志系统记录，查看器只呈现统一的失败与重试。
+    } finally {
+      if (mounted) setState(() => _memoryLoading = false);
+    }
+  }
+
+  Widget _buildMemoryError() => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Symbols.broken_image_rounded,
+          color: Colors.white70,
+          size: 48,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          S.current.common_imageUnavailable,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        if (widget.imageLoader != null) ...[
+          const SizedBox(height: 12),
+          TextButton.icon(
+            key: _memoryRetryKey,
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            onPressed: _loadMemoryImage,
+            icon: const Icon(Symbols.refresh_rounded),
+            label: Text(S.current.common_retry),
+          ),
+        ],
+      ],
+    ),
+  );
+
   late int currentIndex;
   final _predecoder = ImagePredecodeController();
   final _dismissOffset = ValueNotifier(Offset.zero);
@@ -528,7 +628,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         ),
       ),
     );
-    if (index == (widget.imageBytes != null ? 0 : currentIndex)) {
+    if (index == (_usesMemory ? 0 : currentIndex)) {
       _bindObservedGestureController(controller);
     }
     return controller;
@@ -741,9 +841,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   double _dismissOpacity(Offset offset, Size pageSize) {
     if (pageSize.height <= 0) return 1;
     // 网络图只响应纵向关闭，内存图允许向任意方向拖出。
-    final distance = widget.imageBytes == null
-        ? offset.dy.abs() * 2
-        : offset.distance;
+    final distance = !_usesMemory ? offset.dy.abs() * 2 : offset.distance;
     return (1 - distance / pageSize.height).clamp(0.0, 1.0);
   }
 
@@ -762,6 +860,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
     currentIndex = widget.initialIndex;
     _activeHeroPage = ValueNotifier(currentIndex);
+    if (widget.imageBytes case final bytes?) {
+      // 已有位图立即显示；SVG 需先转换为不含外链资源的本地位图。
+      if (!SvgUtils.isSvgBytes(bytes)) {
+        _memoryImage = _ViewerMemoryImage(bytes);
+      }
+    }
+    if (_usesMemory && _memoryImage == null) {
+      unawaited(_loadMemoryImage());
+    }
     // 初始化双击缩放
     initDoubleTapZoom();
     // 预加载相邻图片
@@ -1015,7 +1122,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   ImageGestureController? get _activeGestureController =>
-      _gestureControllers[widget.imageBytes != null ? 0 : currentIndex];
+      _gestureControllers[_usesMemory ? 0 : currentIndex];
 
   void _stepZoom(double delta) {
     final controller = _activeGestureController;
@@ -1029,7 +1136,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _activeGestureController?.zoomTo(1.0);
   }
 
-  int get _activePageIndex => widget.imageBytes != null ? 0 : currentIndex;
+  int get _activePageIndex => _usesMemory ? 0 : currentIndex;
 
   int _rotationForPage(int index) => ((_pageRotations[index] ?? 0) % 4 + 4) % 4;
 
@@ -1215,7 +1322,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   void _handleDesktopCanvasPointerDown(PointerDownEvent event) {
     _desktopActivePointers.add(event.pointer);
-    if (_desktopActivePointers.length > 1) {
+    // 原始指针监听不参与按钮的手势竞争；重试点击不能同时触发暗幕退出。
+    final retry = _memoryRetryKey.currentContext?.findRenderObject();
+    final onRetry = retry is RenderBox && retry.hasSize &&
+        (Offset.zero & retry.size).contains(retry.globalToLocal(event.position));
+    if (_desktopActivePointers.length > 1 || onRetry) {
       _desktopBackdropPointer = null;
       _desktopBackdropDownGlobal = null;
       return;
@@ -1273,7 +1384,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         Future.value(false))) {
       return;
     }
-    if (widget.imageBytes != null) {
+    if (_usesMemory) {
       await _copyMemoryImage();
       return;
     }
@@ -1364,6 +1475,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 预加载相邻图片
   void _preloadAdjacentImages() {
+    if (_usesMemory) return;
     _scheduleAdjacentPredecode();
     final images = widget.galleryImages;
     if (images == null || images.length <= 1) return;
@@ -1394,6 +1506,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   void _scheduleAdjacentPredecode() {
     _cancelPredecode();
+    if (_usesMemory) return;
     final images = widget.galleryImages;
     if (_predecodePaused ||
         images == null ||
@@ -1445,21 +1558,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   Future<Uint8List> _loadToolImage(String? url, CancelToken token) async {
-    final bytes =
-        widget.imageBytes ??
-        await BlobImageCache.fetch(
-          BlobImageCache.originalBucket,
-          url!,
-          cancellation: token,
-        );
+    final bytes = _usesMemory
+        ? (_memoryImage?.bytes ?? (throw StateError('图片尚未加载')))
+        : await BlobImageCache.fetch(
+            BlobImageCache.originalBucket,
+            url!,
+            cancellation: token,
+          );
     if (token.isCancelled) throw token.cancelError!;
     return ImageToolBytes.png(bytes);
   }
 
   Future<Uint8List> _loadOcrImage(String? url, CancelToken token) async {
-    final bytes =
-        widget.imageBytes ??
-        await BlobImageCache.fetch(
+    final bytes = _usesMemory
+        ? (_memoryImage?.bytes ?? (throw StateError('图片尚未加载')))
+        : await BlobImageCache.fetch(
           BlobImageCache.originalBucket,
           url!,
           cancellation: token,
@@ -1472,7 +1585,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _passiveOcrTimer?.cancel();
     _passiveOcrTimer = null;
     if (!PlatformUtils.isDesktop) return;
-    if (_liveOverlayMode.value != null ||
+    if (!_imageToolsAvailable ||
+        _liveOverlayMode.value != null ||
         _currentImageMayBeAnimated ||
         _rotationForPage(_activePageIndex) != 0 ||
         !_readDirectTextSelect()) {
@@ -1485,6 +1599,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _passiveOcrTimer = Timer(const Duration(milliseconds: 260), () async {
       _passiveOcrTimer = null;
       if (!mounted ||
+          !_imageToolsAvailable ||
           targetPage != currentIndex ||
           _liveOverlayMode.value != null ||
           _currentImageMayBeAnimated ||
@@ -1510,6 +1625,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     Offset globalPosition, {
     required bool isMemory,
   }) async {
+    if (!_imageToolsAvailable) return;
     final targetPage = currentIndex;
     _imageLongPressSelecting = false;
     void openMenu() {
@@ -1562,6 +1678,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     Offset? tapPosition,
     VoidCallback? onTapMissed,
   }) {
+    if (!_imageToolsAvailable) return;
     _passiveOcrTimer?.cancel();
     final pageIdx = _activePageIndex;
     setState(() {
@@ -1616,7 +1733,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   Future<void> _editCurrentImage() async {
     if (_isEditing.value) return;
     _isEditing.value = true;
-    final url = widget.imageBytes == null ? _currentImageUrl : null;
+    final url = _usesMemory ? null : _currentImageUrl;
     Directory? temporary;
     try {
       Uint8List? edited = _pendingReplySource == url
@@ -1711,12 +1828,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 保存内存图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveMemoryImage() async {
-    if (_isSaving.value || widget.imageBytes == null) return;
+    final image = _memoryImage;
+    if (_isSaving.value || image == null) return;
     _isSaving.value = true;
     try {
       await ImageSaveUtils.saveBytes(
-        widget.imageBytes!,
-        fileName: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
+        image.bytes,
+        fileName:
+            'fluxdo_${DateTime.now().millisecondsSinceEpoch}.${image.extension}',
       );
     } finally {
       if (mounted) _isSaving.value = false;
@@ -1725,8 +1844,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 复制内存图片到剪贴板
   Future<void> _copyMemoryImage() async {
-    final bytes = widget.imageBytes;
-    if (bytes == null || bytes.isEmpty) return;
+    final image = _memoryImage;
+    if (image == null) return;
     try {
       final clipboard = SystemClipboard.instance;
       if (clipboard == null) {
@@ -1734,7 +1853,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         return;
       }
       final item = DataWriterItem();
-      item.add(Formats.png(bytes));
+      item.add(Formats.png(await image.clipboardPng()));
+      if (!mounted) return;
       await clipboard.write([item]);
       if (mounted) ToastService.showSuccess(S.current.image_copied);
     } catch (e) {
@@ -1745,19 +1865,29 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 分享内存图片
   Future<void> _shareMemoryImage() async {
-    final bytes = widget.imageBytes;
-    if (bytes == null || bytes.isEmpty) return;
+    final image = _memoryImage;
+    if (image == null || _isSharing.value) return;
+    _isSharing.value = true;
     try {
-      await ScreenshotUtils.shareImage(bytes);
+      final file = await ShareUtils.createOutboxFile(
+        'fluxdo_${DateTime.now().millisecondsSinceEpoch}.${image.extension}',
+      );
+      await file.writeAsBytes(image.bytes);
+      if (!mounted) return;
+      await ShareUtils.shareFile(
+        XFile(file.path, mimeType: ShareUtils.imageMimeType(image.extension)),
+      );
     } catch (e) {
       debugPrint('[ImageViewerPage] shareMemoryImage error: $e');
       if (mounted) ToastService.showError(S.current.common_shareFailed);
+    } finally {
+      if (mounted) _isSharing.value = false;
     }
   }
 
   /// 内存图片的长按 / 右键菜单（编辑 / 识别文字 / 保存 / 复制 / 分享）
   void _showBytesContextMenu(BuildContext context, {Offset? position}) {
-    if (widget.imageBytes == null) return;
+    if (_memoryImage == null) return;
 
     if (PlatformUtils.isDesktop && position != null) {
       final overlayRenderObject = Overlay.of(context).context
@@ -2033,7 +2163,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
 
     // 内存图片模式
-    if (widget.imageBytes != null) {
+    if (_usesMemory) {
       return _wrapDesktopShortcuts(
         context,
         AnnotatedRegion<SystemUiOverlayStyle>(
@@ -2073,21 +2203,32 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       context,
                       position: details.globalPosition,
                     ),
-                    child: GestureImageView(
-                      image: MemoryImage(widget.imageBytes!),
-                      controller: _obtainGestureController(
-                        0,
-                        inPageView: false,
-                        maxScale: 5.0,
-                        animationMaxScale: 5.5,
-                      ),
-                      fit: BoxFit.contain,
-                      enableSlideOutPage: true,
-                      onDoubleTap: (state) {
-                        _hideUI();
-                        handleDoubleTapZoom(state);
-                      },
-                    ),
+                    child: _memoryImage == null
+                        ? (_memoryLoading
+                              ? _buildImageLoadingProgress(context, null)
+                              : _buildMemoryError())
+                        : GestureImageView(
+                            image: ResizeImage(
+                              MemoryImage(_memoryImage!.bytes),
+                              width: _viewerMaxDimension,
+                              height: _viewerMaxDimension,
+                              policy: ResizeImagePolicy.fit,
+                            ),
+                            controller: _obtainGestureController(
+                              0,
+                              inPageView: false,
+                              maxScale: 5.0,
+                              animationMaxScale: 5.5,
+                            ),
+                            fit: BoxFit.contain,
+                            enableSlideOutPage: true,
+                            onDoubleTap: (state) {
+                              _hideUI();
+                              handleDoubleTapZoom(state);
+                            },
+                            failedBuilder: (_, _) => _buildMemoryError(),
+                            progressBuilder: _buildImageLoadingProgress,
+                          ),
                   ),
                   if (hasExplicitOverlay || hasPassiveOverlay)
                     _buildActiveLiveOverlay(passive: hasPassiveOverlay),
@@ -2332,7 +2473,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     required bool hasExplicitOverlay,
     required bool hasPassiveOverlay,
   }) {
-    final isMemory = widget.imageBytes != null;
+    final isMemory = _usesMemory;
     final images = isMemory
         ? const <String>[]
         : (widget.galleryImages ?? [widget.imageUrl!]);
@@ -2342,9 +2483,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         !isMemory &&
         (widget.heroTag != null ||
             (isGallery && (widget.heroTags?.isNotEmpty ?? false)));
-    final onSave = isMemory ? _saveMemoryImage : _saveCurrentImage;
-    final onShare = !isMemory && widget.enableShare && ShareUtils.canShareFiles
-        ? _shareImage
+    final onSave = !_imageToolsAvailable
+        ? null
+        : isMemory ? _saveMemoryImage : _saveCurrentImage;
+    final onShare = _imageToolsAvailable && widget.enableShare && ShareUtils.canShareFiles
+        ? isMemory ? _shareMemoryImage : _shareImage
         : null;
 
     return _wrapDesktopShortcuts(
@@ -2525,14 +2668,25 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         behavior: HitTestBehavior.translucent,
         onSecondaryTapUp: (details) =>
             _showBytesContextMenu(context, position: details.globalPosition),
-        child: RotatedBox(
+        child: _memoryImage == null
+            ? (_memoryLoading
+                ? _buildImageLoadingProgress(context, null)
+                : _buildMemoryError())
+            : RotatedBox(
           quarterTurns: _rotationForPage(0),
           child: GestureImageView(
-            image: MemoryImage(widget.imageBytes!),
+            image: ResizeImage(
+              MemoryImage(_memoryImage!.bytes),
+              width: _viewerMaxDimension,
+              height: _viewerMaxDimension,
+              policy: ResizeImagePolicy.fit,
+            ),
             controller: _obtainGestureController(0, inPageView: false),
             fit: BoxFit.contain,
             enableSlideOutPage: false,
             onDoubleTap: (state) => handleDoubleTapZoom(state),
+            failedBuilder: (_, _) => _buildMemoryError(),
+            progressBuilder: _buildImageLoadingProgress,
             onImageLoaded: (imageInfo) {
               _recordNaturalSize(
                 0,
@@ -2695,7 +2849,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     BuildContext context, {
     required List<String> images,
     required int pageCount,
-    required VoidCallback onSave,
+    required VoidCallback? onSave,
     VoidCallback? onShare,
   }) {
     final l10n = _l10n(context);
@@ -2738,7 +2892,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                             context,
                             icon: Symbols.content_copy_rounded,
                             tooltip: l10n.image_copyImage,
-                            onTap: () => unawaited(_copyActiveContent()),
+                            onTap: _imageToolsAvailable ? () => unawaited(_copyActiveContent()) : null,
                           ),
                           _desktopBarButton(
                             context,
@@ -2747,21 +2901,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                             tooltip: widget.onReply == null
                                 ? l10n.imageUpload_editImage
                                 : l10n.imageViewer_editReply,
-                            onTap: _editCurrentImage,
+                            onTap: _imageToolsAvailable ? _editCurrentImage : null,
                           ),
                           _desktopBarButton(
                             context,
                             icon: Symbols.document_scanner_rounded,
                             active: mode == ImageLiveOverlayMode.liveText,
                             tooltip: l10n.imageViewer_recognizeText,
-                            onTap: _recognizeText,
+                            onTap: _imageToolsAvailable ? _recognizeText : null,
                           ),
                           _desktopBarButton(
                             context,
                             icon: Symbols.translate_rounded,
                             active: mode == ImageLiveOverlayMode.translate,
                             tooltip: l10n.imageViewer_translateImage,
-                            onTap: _translateImage,
+                            onTap: _imageToolsAvailable ? _translateImage : null,
                           ),
                           _desktopBarDivider(),
                           _desktopBarButton(
@@ -2798,7 +2952,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                             tooltip: MaterialLocalizations.of(
                               context,
                             ).moreButtonTooltip,
-                            onTap: _showTools,
+                            onTap: _imageToolsAvailable ? _showTools : null,
                           ),
                           _desktopBarDivider(),
                           _desktopBarButton(
@@ -2989,9 +3143,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     final mode = passive
         ? ImageLiveOverlayMode.liveText
         : _liveOverlayMode.value!;
-    final url = widget.imageBytes == null ? _currentImageUrl : null;
-    final pageIdx = widget.imageBytes != null ? 0 : currentIndex;
-    final sourceKey = widget.imageBytes != null ? 'memory' : '$pageIdx:$url';
+    final url = _usesMemory ? null : _currentImageUrl;
+    final pageIdx = _usesMemory ? 0 : currentIndex;
+    final sourceKey = _usesMemory ? 'memory' : '$pageIdx:$url';
     final isDesktop = PlatformUtils.isDesktop;
     return ImageLiveOverlay(
       key: _liveOverlayKey,
@@ -3050,8 +3204,16 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     key: _controlsKey,
     listenable: _controlChanges,
     builder: (context, _) {
-      if (widget.imageBytes != null) {
-        return _buildControlBar(onSave: _saveMemoryImage);
+      if (_usesMemory) {
+        return _buildControlBar(
+          onSave: _memoryImage == null ? null : _saveMemoryImage,
+          onShare:
+              _memoryImage != null &&
+                  widget.enableShare &&
+                  ShareUtils.canShareFiles
+              ? _shareMemoryImage
+              : null,
+        );
       }
       return _buildControlBar(
         onSave: _saveCurrentImage,
@@ -3065,7 +3227,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   );
 
   Widget _buildControlBar({
-    required VoidCallback onSave,
+    required VoidCallback? onSave,
     VoidCallback? onShare,
     int pageCount = 1,
     String? filename,
@@ -3141,7 +3303,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               top: padding.top + 10,
               left: padding.left + 16,
               right: padding.right + 16,
-              height: 44,
+              height: kMinInteractiveDimension,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -3263,93 +3425,100 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                             horizontal: 6,
                             vertical: 3,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _dockButton(
-                                Symbols.edit_rounded,
-                                _editCurrentImage,
-                                busy: _isEditing.value,
-                                tooltip: widget.onReply == null
-                                    ? l10n.imageUpload_editImage
-                                    : l10n.imageViewer_editReply,
-                              ),
-                              _dockButton(
-                                Symbols.document_scanner_rounded,
-                                _recognizeText,
-                                tooltip: l10n.imageViewer_recognizeText,
-                              ),
-                              _dockButton(
-                                Symbols.translate_rounded,
-                                _translateImage,
-                                tooltip: l10n.imageViewer_translateImage,
-                              ),
-                              if (onShare != null)
-                                _dockButton(
-                                  Symbols.share_rounded,
-                                  onShare,
-                                  busy: _isSharing.value,
-                                  tooltip: l10n.common_shareImage,
-                                ),
-                              _dockButton(
-                                Symbols.save_alt_rounded,
-                                onSave,
-                                busy: _isSaving.value,
-                                tooltip: saveTooltip,
-                              ),
-                              _dockButton(
-                                Symbols.more_vert_rounded,
-                                _showTools,
-                                tooltip: MaterialLocalizations.of(
-                                  context,
-                                ).moreButtonTooltip,
-                              ),
-                              if (showDesktopZoom) ...[
-                                Container(
-                                  width: 1,
-                                  height: 18,
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 4,
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(context)
+                                .copyWith(scrollbars: false),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _dockButton(
+                                    Symbols.edit_rounded,
+                                    _imageToolsAvailable ? _editCurrentImage : null,
+                                    busy: _isEditing.value,
+                                    tooltip: widget.onReply == null
+                                        ? l10n.imageUpload_editImage
+                                        : l10n.imageViewer_editReply,
                                   ),
-                                  color: Colors.white.withValues(alpha: 0.18),
-                                ),
-                                _dockButton(
-                                  Symbols.remove_rounded,
-                                  () => _stepZoom(-0.5),
-                                  iconSize: 18,
-                                ),
-                                InkWell(
-                                  onTap: _resetZoom,
-                                  borderRadius: context.shapes.borderRadius(12),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 8,
+                                  _dockButton(
+                                    Symbols.document_scanner_rounded,
+                                    _imageToolsAvailable ? _recognizeText : null,
+                                    tooltip: l10n.imageViewer_recognizeText,
+                                  ),
+                                  _dockButton(
+                                    Symbols.translate_rounded,
+                                    _imageToolsAvailable ? _translateImage : null,
+                                    tooltip: l10n.imageViewer_translateImage,
+                                  ),
+                                  if (onShare != null)
+                                    _dockButton(
+                                      Symbols.share_rounded,
+                                      onShare,
+                                      busy: _isSharing.value,
+                                      tooltip: l10n.common_shareImage,
                                     ),
-                                    child: Text(
-                                      '${(_zoomScale.value * 100).round()}%',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                  _dockButton(
+                                    Symbols.save_alt_rounded,
+                                    onSave,
+                                    busy: _isSaving.value,
+                                    tooltip: saveTooltip,
+                                  ),
+                                  _dockButton(
+                                    Symbols.more_vert_rounded,
+                                    _imageToolsAvailable ? _showTools : null,
+                                    tooltip: MaterialLocalizations.of(
+                                      context,
+                                    ).moreButtonTooltip,
+                                  ),
+                                  if (showDesktopZoom) ...[
+                                    Container(
+                                      width: 1,
+                                      height: 18,
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      color: Colors.white.withValues(alpha: 0.18),
+                                    ),
+                                    _dockButton(
+                                      Symbols.remove_rounded,
+                                      () => _stepZoom(-0.5),
+                                      iconSize: 18,
+                                    ),
+                                    InkWell(
+                                      onTap: _resetZoom,
+                                      borderRadius: context.shapes.borderRadius(12),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 8,
+                                        ),
+                                        child: Text(
+                                          '${(_zoomScale.value * 100).round()}%',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                                _dockButton(
-                                  Symbols.add_rounded,
-                                  () => _stepZoom(0.5),
-                                  iconSize: 18,
-                                ),
-                              ],
+                                    _dockButton(
+                                      Symbols.add_rounded,
+                                      () => _stepZoom(0.5),
+                                      iconSize: 18,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
+                ),
+              ),
               ],
             ),
           ),
@@ -3362,7 +3531,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   Widget _dockButton(
     IconData icon,
-    VoidCallback action, {
+    VoidCallback? action, {
     bool busy = false,
     String? tooltip,
     double iconSize = 20,
@@ -3374,15 +3543,20 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         onPressed: busy ? null : action,
         icon: busy
             ? const LoadingSpinner(size: 16, color: Colors.white)
-            : Icon(icon, size: iconSize, color: Colors.white),
+            : Icon(
+                icon,
+                size: iconSize,
+                color: action == null ? Colors.white38 : Colors.white,
+              ),
       ),
     );
     return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
   }
 
   bool get _currentImageMayBeAnimated {
-    if (widget.imageBytes != null) return false;
-    final ext = BlobImageCache.httpUrlExtension(_currentImageUrl).toLowerCase();
+    final ext = _usesMemory
+        ? _memoryImage?.extension
+        : BlobImageCache.httpUrlExtension(_currentImageUrl).toLowerCase();
     return ext == 'gif' || ext == 'webp' || ext == 'avif';
   }
 
@@ -3740,15 +3914,25 @@ class _ViewerGlassCircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pill = _ViewerGlassPill(
-      radius: size / 2,
-      child: SizedBox.square(
-        dimension: size,
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          onPressed: onTap,
-          icon: Icon(icon, size: iconSize, color: Colors.white),
-        ),
+    final pill = SizedBox.square(
+      dimension: size < kMinInteractiveDimension ? kMinInteractiveDimension : size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          IgnorePointer(
+            child: _ViewerGlassPill(
+              radius: size / 2,
+              child: SizedBox.square(dimension: size),
+            ),
+          ),
+          Positioned.fill(
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              onPressed: onTap,
+              icon: Icon(icon, size: iconSize, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
     return tooltip != null ? Tooltip(message: tooltip!, child: pill) : pill;

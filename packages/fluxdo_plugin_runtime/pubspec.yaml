@@ -1,0 +1,7 @@
+name: fluxdo_plugin_runtime
+description: FluxDO 插件执行上下文与生命周期协议。
+publish_to: none
+version: 1.0.0
+resolution: workspace
+environment:
+  sdk: ^3.13.0

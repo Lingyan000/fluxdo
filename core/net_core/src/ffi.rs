@@ -183,6 +183,8 @@ fn emit_error(events: &RequestEvents, error: &NetError) {
 /// 宿主发起请求时给出的元信息。
 #[derive(Debug, Deserialize)]
 struct RequestMeta {
+    #[serde(default)]
+    pinned_addresses: Vec<std::net::IpAddr>,
     /// 发起请求所属的事件宿主 id；0 表示兼容旧宿主使用的默认单槽回调。
     #[serde(default)]
     host_id: u64,
@@ -703,6 +705,27 @@ pub unsafe extern "C" fn fluxdo_net_buffer_free(ptr: *mut u8, len: usize) {
 /// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, false, false)
+}
+
+/// 开启固定目标地址的请求。只供宿主传入已经校验的公网地址。
+/// # Safety
+/// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_pinned_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, true, false)
+}
+
+/// 插件出口：代理接收原域名，直连只使用宿主筛选的地址（可含 Fake-IP）。
+/// 空地址列表表示只允许代理出站，不能回退到核心自行解析直连。
+/// # Safety
+/// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_plugin_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, true, true)
+}
+
+fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bool) -> u64 {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(json) = c_str(meta_json) else {
             return 0;
@@ -728,6 +751,16 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
             Some(cb)
         };
 
+        let client = if pinned {
+            if (meta.pinned_addresses.is_empty() && !proxy_resolves_host)
+                || meta.pinned_addresses.len() > 16
+            {
+                return 0;
+            }
+            core.pinned_client(meta.pinned_addresses.clone(), proxy_resolves_host)
+        } else {
+            core.client()
+        };
         let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
         let events = RequestEvents::new(id, host_callback);
         let cancel = CancellationToken::new();
@@ -749,7 +782,6 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
             },
         );
 
-        let client = core.client();
         runtime().spawn(
             async move {
                 let started = std::time::Instant::now();

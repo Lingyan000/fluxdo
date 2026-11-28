@@ -1420,11 +1420,13 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                   trackColor: Colors.white24,
                 ),
               const SizedBox(width: 10),
-              Text(
-                p == null
-                    ? l10n.imageViewer_downloadingOcr
-                    : '${l10n.imageViewer_downloadingOcr} ${(p * 100).round()}%',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+              Flexible(
+                child: Text(
+                  p == null
+                      ? l10n.imageViewer_downloadingOcr
+                      : '${l10n.imageViewer_downloadingOcr} ${(p * 100).round()}%',
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
               ),
               const SizedBox(width: 6),
               _DockIconAction(
@@ -1488,9 +1490,11 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+              Flexible(
+                child: Text(
+                  '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
               ),
               const SizedBox(width: 6),
               _DockTextAction(
@@ -1533,9 +1537,11 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
             children: [
               const LoadingSpinner(size: 16, color: Colors.white),
               const SizedBox(width: 10),
-              Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
               ),
               const SizedBox(width: 6),
               _DockIconAction(

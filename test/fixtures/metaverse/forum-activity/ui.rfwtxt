@@ -1,0 +1,13 @@
+import fluxdo;
+widget Activity = PageLayout(
+  loading: data.loading,
+  onRefresh: event "refresh" {},
+  children: [
+    Label(text: "用户动态"),
+    Label(text: data.error),
+    ...for item in data.items: ListItem(
+      title: item.title,
+      onTap: event "open" {topicId: item.topicId, postNumber: item.postNumber}
+    )
+  ]
+);

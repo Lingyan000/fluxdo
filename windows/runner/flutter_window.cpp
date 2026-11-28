@@ -14,6 +14,7 @@
 #include "mini_app_window.h"
 #include "resource.h"
 #include "windows_update.h"
+#include "plugin_file_activation.h"
 
 namespace {
 HCURSOR ImageZoomCursor(HWND view) {
@@ -77,6 +78,7 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   RegisterImageCursor(flutter_controller_.get());
   RegisterWindowsUpdate(flutter_controller_->engine()->messenger(), GetHandle());
+  RegisterPluginFiles(flutter_controller_->engine()->messenger());
   DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
     auto* child = reinterpret_cast<flutter::FlutterViewController*>(controller);
     RegisterMiniAppWindowPlugins(child->engine());
@@ -89,6 +91,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  DisposePluginFiles();
   // 销毁插件/WebView 子窗口会同步重入父窗口消息。先移出成员，避免
   // MessageHandler 向正在析构、内部 view 已为空的 controller 转发消息。
   auto controller = std::move(flutter_controller_);
@@ -101,6 +104,7 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (ReceivePluginFileMessage(message, lparam)) return 1;
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_ && flutter_controller_->view()) {
     std::optional<LRESULT> result =

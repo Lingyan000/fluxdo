@@ -1,0 +1,631 @@
+import '../plugin/ui/metaverse_expansion_tile.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:collection/collection.dart';
+import 'dart:math';
+
+import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:crypto/crypto.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+import 'package:m3e_ui/m3e_ui.dart';
+import 'package:rfw/formats.dart';
+import 'package:rfw/rfw.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../l10n/s.dart';
+import '../../../pages/image_viewer_page.dart';
+import '../../../widgets/common/captcha_panel.dart';
+import '../plugin/metaverse_captcha_request.dart';
+import '../plugin/ui/metaverse_captcha_sheet.dart';
+import '../../../services/toast_service.dart';
+import '../../../services/ldc_payment_service.dart';
+import '../../../utils/dialog_utils.dart';
+import '../../../utils/link_launcher.dart';
+import '../../ldc_payment/ldc_payment_sheet.dart';
+import '../plugin/ui/metaverse_plugin_dialogs.dart';
+import '../plugin/ui/metaverse_confirmation_sheet.dart';
+import '../plugin/runtime/flutter_js_script_engine.dart';
+import '../plugin/ui/metaverse_widget_library.dart';
+import '../plugin/ui/metaverse_plugin_page.dart';
+import '../plugin/metaverse_component_contract.dart';
+import 'metaverse_api_examples.dart';
+import 'metaverse_development_page.dart';
+import 'metaverse_component_examples.dart';
+
+part 'metaverse_api_playground.dart';
+
+class MetaverseDeveloperPage extends StatelessWidget {
+  const MetaverseDeveloperPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l10n;
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(l.metaverse_developerCenter),
+          actions: [IconButton(tooltip: l.metaverse_devTitle,
+            icon: const Icon(Symbols.developer_mode_rounded),
+            onPressed: () => Navigator.of(context).push<void>(InteractionPageRoute(
+              builder: (_) => const MetaverseDevelopmentPage())),
+          )],
+          bottom: TabBar(
+            tabs: [
+              Tab(text: l.metaverse_developerComponents),
+              Tab(text: l.metaverse_developerApis),
+              Tab(text: l.metaverse_developerGuides),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [_ComponentGallery(), _ApiGallery(), _DeveloperGuides()],
+        ),
+      ),
+    );
+  }
+}
+
+class _ComponentGallery extends StatefulWidget {
+  const _ComponentGallery();
+  @override
+  State<_ComponentGallery> createState() => _ComponentGalleryState();
+}
+
+class _ComponentGalleryState extends State<_ComponentGallery> {
+  String _query = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final examples = metaverseComponentExamples(context.l10n)
+        .where(
+          (e) => '${e.name} ${e.description}'.toLowerCase().contains(
+            _query.trim().toLowerCase(),
+          ),
+        )
+        .toList();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: InputFieldShell(
+            child: TextField(
+              controller: _searchController,
+              textAlignVertical: TextAlignVertical.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                hintText: context.l10n.metaverse_developerSearch,
+                prefixIcon: const Icon(Symbols.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: context.l10n.common_clear,
+                        icon: const Icon(Symbols.close_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            itemCount: examples.length,
+            itemBuilder: (context, index) => SegmentedCardItem(
+              index: index,
+              count: examples.length,
+              gap: 3,
+              color: PageBackgroundScope.contentColor(
+                context,
+                Theme.of(context).colorScheme.surfaceContainerLow,
+              ),
+              child: ListTile(
+                title: Text(
+                  examples[index].name,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                subtitle: Text(
+                  examples[index].description,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                trailing: const Icon(Symbols.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  InteractionPageRoute(
+                    builder: (_) =>
+                        MetaverseComponentPreviewPage(example: examples[index]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class MetaverseComponentPreviewPage extends StatefulWidget {
+  const MetaverseComponentPreviewPage({super.key, required this.example});
+  final MetaverseComponentExample example;
+  @override
+  State<MetaverseComponentPreviewPage> createState() =>
+      _ComponentPreviewState();
+}
+
+class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
+  late final Runtime _widgets;
+  late final DynamicContent _data;
+  late Map<String, Object> _values;
+  final _events = <String>[];
+  int _revision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _values = Map.of(widget.example.parameters);
+    _data = DynamicContent(_values);
+    _widgets = Runtime()
+      ..update(
+        metaverseWidgetLibraryName,
+        createMetaverseWidgetLibrary(loadImage: _previewImage),
+      )
+      ..update(
+        metaversePluginLibraryName,
+        parseLibraryFile(
+          'import fluxdo; widget Preview = ${widget.example.source};',
+        ),
+      );
+  }
+
+  Future<Uint8List> _previewImage(Uri _) async {
+    // 展示应用自带资源，预览组件无需访问网络。
+    final bytes = await rootBundle.load(
+      'assets/images/icon_default_preview.png',
+    );
+    return bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
+  }
+
+  @override
+  void dispose() {
+    _widgets.dispose();
+    super.dispose();
+  }
+
+  void _change(String key, Object value) {
+    setState(() => _values[key] = value);
+    _data.update(key, value);
+  }
+
+  void _event(String name, DynamicMap args) {
+    setState(() {
+      _events.insert(0, '$name ${jsonEncode(args)}');
+      if (_events.length > 50) _events.removeLast();
+    });
+    if (name == 'change' || name == 'quantity') {
+      final value = args['value'];
+      if (value != null) _change('value', value);
+    }
+    if (name == 'select') _change('selected', _values['selected'] != true);
+    if (name == 'refresh') {
+      _change('loading', true);
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _change('loading', false);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l10n;
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.example.name),
+        actions: [
+          IconButton(
+            tooltip: l.metaverse_developerReset,
+            icon: const Icon(Symbols.restart_alt_rounded),
+            onPressed: () {
+              for (final entry in widget.example.parameters.entries) {
+                _data.update(entry.key, entry.value);
+              }
+              setState(() {
+                _values = Map.of(widget.example.parameters);
+                _events.clear();
+                _revision++;
+              });
+            },
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(widget.example.description),
+          if (widget.example.name == 'Image') ...[
+            const SizedBox(height: 8),
+            Text(l.metaverse_developerImagePreview),
+          ],
+          const SizedBox(height: 16),
+          Text(
+            l.metaverse_developerPreview,
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          Card(
+            elevation: 0,
+            color: PageBackgroundScope.contentColor(
+              context,
+              theme.colorScheme.surfaceContainerLow,
+            ),
+            child: SizedBox(
+              height: widget.example.previewHeight,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: RemoteWidget(
+                    key: ValueKey(_revision),
+                    runtime: _widgets,
+                    widget: const FullyQualifiedWidgetName(
+                      metaversePluginLibraryName,
+                      'Preview',
+                    ),
+                    data: _data,
+                    onEvent: _event,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_values.isNotEmpty)
+            Text(
+              l.metaverse_developerParameters,
+              style: theme.textTheme.titleMedium,
+            ),
+          for (final entry in _values.entries)
+            _parameter(entry.key, entry.value),
+          const SizedBox(height: 12),
+          SegmentedCardGroup(children: [ExpansionTile(
+            title: Text(l.metaverse_developerAllParameters),
+            subtitle: Text(l.metaverse_developerContractHint),
+            children: [Padding(padding: const EdgeInsets.all(16),
+              child: SelectableText((metaverseComponentContract[widget.example.name]?['parameters'] as List? ?? const <String>[]).join(', ')),
+            )],
+          )]),
+          const SizedBox(height: 20),
+          _CodeBlock(
+            title: l.metaverse_developerCode,
+            code:
+                'import fluxdo;\nwidget Preview = ${widget.example.source};\n\n// ctx.setData\n${const JsonEncoder.withIndent('  ').convert(_values)}',
+          ),
+          const SizedBox(height: 20),
+          Text(l.metaverse_developerEvents, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          for (final event in _events) SelectableText(event),
+        ],
+      ),
+    );
+  }
+
+  Widget _parameter(String key, Object value) {
+    final options = widget.example.options[key];
+    if (options != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(key),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final option in options)
+                  ChoiceChip(
+                    label: Text(option),
+                    selected: value == option,
+                    onSelected: (_) => _change(key, option),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    if (value is bool) {
+      return M3eSwitchListTile(
+        title: Text(key),
+        value: value,
+        onChanged: (next) => _change(key, next),
+      );
+    }
+    if (value is num) {
+      final (low, high) = widget.example.ranges[key] ?? switch (key) {
+        'masterWidth' => (160.0, 500.0),
+        'minDetailWidth' => (240.0, 800.0),
+        'maxLines' => (1.0, 8.0),
+        'columns' => (0.0, 6.0),
+        'value' => (0.0, 1.0),
+        _ => (0.0, max(160.0, value.toDouble())),
+      };
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$key · ${value is int ? value : value.toStringAsFixed(2)}'),
+          Slider(
+            value: value.toDouble().clamp(low, high),
+            min: low,
+            max: high,
+            divisions: key == 'maxLines' ? 7 : key == 'columns' ? 6 : null,
+            onChanged: (next) =>
+                _change(key, value is int ? next.round() : next),
+          ),
+        ],
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: InputFieldShell(
+        child: TextFormField(
+          key: ValueKey('$key-$_revision'),
+          initialValue: value.toString(),
+          decoration: InputDecoration(
+            labelText: key,
+            contentPadding: const EdgeInsets.all(16),
+          ),
+          onChanged: (next) => _change(key, next),
+        ),
+      ),
+    );
+  }
+}
+
+class _CodeBlock extends StatelessWidget {
+  const _CodeBlock({required this.title, required this.code});
+  final String title, code;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
+          IconButton(
+            tooltip: context.l10n.common_copy,
+            icon: const Icon(Symbols.content_copy_rounded),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: code));
+              ToastService.showSuccess(S.current.common_copiedToClipboard);
+            },
+          ),
+        ],
+      ),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: ShapeDecoration(
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
+        ),
+        child: SelectableText(
+          code,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(fontFamily: 'monospace', height: 1.6),
+        ),
+      ),
+    ],
+  );
+}
+
+class _DeveloperGuides extends StatelessWidget {
+  const _DeveloperGuides();
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l10n;
+    final sections = [
+      (
+        Symbols.description_rounded,
+        'plugin.json',
+        l.metaverse_developerManifestGuide,
+      ),
+      (Symbols.code_rounded, 'src/main.ts → main.js', l.metaverse_developerScriptGuide),
+      (Symbols.storage_rounded, l.metaverse_pluginData, l.metaverse_developerStorageGuide),
+      (Symbols.apps_rounded, l.metaverse_developerNavigationTitle, l.metaverse_developerNavigationGuide),
+      (Symbols.widgets_rounded, 'ui.rfwtxt', l.metaverse_developerUiGuide),
+      (
+        Symbols.security_rounded,
+        l.metaverse_marketPermissions,
+        l.metaverse_developerPermissionGuide,
+      ),
+      (
+        Symbols.bug_report_rounded,
+        l.metaverse_pluginManage,
+        l.metaverse_developerDiagnosticsGuide,
+      ),
+      (
+        Symbols.publish_rounded,
+        '.fluxplugin',
+        l.metaverse_developerPublishGuide,
+      ),
+    ];
+    return ListView(
+      key: const ValueKey('metaverse-developer-guides'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [ListTile(
+            leading: Icon(Symbols.developer_mode_rounded, color: context.emphasis.accent),
+            title: Text(l.metaverse_devTitle),
+            subtitle: Text(l.metaverse_developerConnectGuide),
+            trailing: const Icon(Symbols.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push<void>(InteractionPageRoute(
+              builder: (_) => const MetaverseDevelopmentPage())),
+          )],
+        ),
+        const SizedBox(height: 24),
+        Text(
+          l.metaverse_developerLanguageTitle,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+        Text(l.metaverse_developerLanguageGuide),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerQuickStart, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final step in [
+              (Symbols.create_new_folder_rounded, l.metaverse_developerCreate, l.metaverse_developerCreateGuide),
+              (Symbols.devices_rounded, l.metaverse_developerPreviewStep, l.metaverse_developerPreviewGuide),
+              (Symbols.inventory_2_rounded, l.metaverse_developerPackage, l.metaverse_developerPackageGuide),
+            ]) MetaverseExpansionTile(leading: Icon(step.$1), title: Text(step.$2),
+              children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SelectableText(step.$3))]),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.tonalIcon(icon: const Icon(Symbols.widgets_rounded),
+            label: Text(l.metaverse_developerComponents),
+            onPressed: () => DefaultTabController.of(context).animateTo(0)),
+          FilledButton.tonalIcon(icon: const Icon(Symbols.code_rounded),
+            label: Text(l.metaverse_developerApis),
+            onPressed: () => DefaultTabController.of(context).animateTo(1)),
+        ]),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerConcepts, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            MetaverseExpansionTile(title: const Text('TypeScript / JavaScript'),
+              children: [ListTile(subtitle: Text(l.metaverse_developerTypeScriptGuide))]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerVersions),
+              children: [
+                for (final item in [
+                  ('version', l.metaverse_developerVersionGuide),
+                  ('schema', l.metaverse_developerSchemaGuide),
+                  ('apiVersion', l.metaverse_developerApiVersionGuide),
+                  ('dataVersion', l.metaverse_developerDataVersionGuide),
+                ]) ListTile(title: Text(item.$1), subtitle: Text(item.$2)),
+              ]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerSurface),
+              children: [ListTile(subtitle: Text(l.metaverse_developerSurfaceGuide))]),
+            MetaverseExpansionTile(title: Text(l.metaverse_developerFeatures),
+              children: [ListTile(subtitle: Text(l.metaverse_developerFeaturesGuide))]),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text(l.metaverse_pageChromeTitle, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(l.metaverse_pageChromeGuide),
+        const SizedBox(height: 12),
+        const SizedBox(height: 240, child: _PageChromePreview()),
+        const SizedBox(height: 24),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+          children: [
+            for (final section in sections)
+              MetaverseExpansionTile(
+                leading: Icon(section.$1, color: context.emphasis.accent),
+                title: Text(
+                  section.$2,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                children: [Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(
+                    section.$3,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                )],
+              ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text(l.metaverse_developerTroubleshooting, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final help in [
+              (l.metaverse_developerNetworkHelp, l.metaverse_developerNetworkAnswer),
+              (l.metaverse_developerLayoutHelp, l.metaverse_developerLayoutAnswer),
+              (l.metaverse_developerPairingHelp, l.metaverse_developerPairingAnswer),
+            ]) MetaverseExpansionTile(title: Text(help.$1),
+              children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: Text(help.$2))]),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(context, Theme.of(context).colorScheme.surfaceContainerLow),
+          children: [
+            for (final link in [
+              (l.metaverse_developerGuideLink, 'docs/plugins', 'https://github.com/Lingyan000/fluxdo/blob/dev/docs/plugins/README.md'),
+              (l.metaverse_developerToolsLink, 'Lingyan000/fluxdo-plugin-tools', 'https://github.com/Lingyan000/fluxdo-plugin-tools'),
+              (l.metaverse_marketRepository, 'Lingyan000/fluxdo-plugins', 'https://github.com/Lingyan000/fluxdo-plugins'),
+              (l.metaverse_developerPublishHelp, 'docs/plugins', 'https://github.com/Lingyan000/fluxdo/blob/dev/docs/plugins/publishing-and-troubleshooting.md'),
+            ]) ListTile(title: Text(link.$1),
+              subtitle: Text(link.$2, maxLines: 2, overflow: TextOverflow.ellipsis),
+              trailing: const Icon(Symbols.open_in_new_rounded),
+              onTap: () => launchExternalLink(context, link.$3)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _PageChromePreview extends StatefulWidget {
+  const _PageChromePreview();
+  @override
+  State<_PageChromePreview> createState() => _PageChromePreviewState();
+}
+
+class _PageChromePreviewState extends State<_PageChromePreview> {
+  bool _selected = false;
+  @override
+  Widget build(BuildContext context) => MetaversePluginPageFrame(
+    title: context.l10n.metaverse_pageChromeTitle,
+    workspace: true,
+    actions: IconButton(
+      tooltip: context.l10n.common_confirm,
+      isSelected: _selected,
+      icon: const Icon(Symbols.bookmark_rounded),
+      selectedIcon: const Icon(Symbols.bookmark_rounded, fill: 1),
+      onPressed: () => setState(() => _selected = !_selected),
+    ),
+    child: Center(child: Icon(Symbols.bookmark_rounded, size: 48, fill: _selected ? 1 : 0)),
+  );
+}

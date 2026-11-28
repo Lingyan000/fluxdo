@@ -17,7 +17,8 @@ final ldcUserInfoProvider =
 
 class LdcUserInfoNotifier extends AsyncNotifier<LdcUserInfo?> {
   static const String _cacheKey = 'ldc_user_info';
-  static const String _ldcEnabledKey = 'ldc_enabled';
+  /// 开关状态的存储键。元宇宙页与卡片都按这个键读写。
+  static const String enabledKey = 'ldc_enabled';
   static const String _cacheUserKey = 'ldc_user_info_username';
 
   // 防止 build() 与 refresh() 在 notifier 首次创建时并发触发同接口，
@@ -47,7 +48,7 @@ class LdcUserInfoNotifier extends AsyncNotifier<LdcUserInfo?> {
       await _clearCache(prefs);
       return null;
     }
-    final enabled = prefs.getBool(_ldcEnabledKey) ?? false;
+    final enabled = prefs.getBool(enabledKey) ?? false;
 
     if (!enabled) return null;
 
@@ -96,7 +97,7 @@ class LdcUserInfoNotifier extends AsyncNotifier<LdcUserInfo?> {
   Future<LdcUserInfo?> _doFetchUserInfo() async {
     final generation = _requestGeneration;
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_ldcEnabledKey) ?? false;
+    final enabled = prefs.getBool(enabledKey) ?? false;
 
     if (!enabled) return null;
 
@@ -113,7 +114,7 @@ class LdcUserInfoNotifier extends AsyncNotifier<LdcUserInfo?> {
     );
     if (!ref.mounted ||
         generation != _requestGeneration ||
-        !(prefs.getBool(_ldcEnabledKey) ?? false)) {
+        !(prefs.getBool(enabledKey) ?? false)) {
       return null;
     }
 
@@ -177,7 +178,7 @@ class LdcUserInfoNotifier extends AsyncNotifier<LdcUserInfo?> {
     _inFlightFetch = null;
     ref.read(ldcOAuthServiceProvider).cancelPendingRequests();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_ldcEnabledKey, false);
+    await prefs.setBool(enabledKey, false);
     await _clearCache(prefs);
     state = const AsyncValue.data(null);
   }

@@ -9,6 +9,7 @@ apply(from = "gradle/kotlin_compat.gradle")
 apply(from = "gradle/compile_sdk_compat.gradle")
 
 allprojects {
+    apply(from = rootProject.file("gradle/legacy-process.gradle"))
     repositories {
         google()
         mavenCentral()
@@ -44,6 +45,20 @@ subprojects {
         // 1. 通过反射修改 android extension 的 compileOptions，避免 AGP import 依赖
         extensions.findByName("android")?.let { androidExt ->
             try {
+                // Android 库使用至少与宿主相同的编译 SDK，避免旧插件声明
+                // compileSdk 31 与 Flutter 引入的新 AndroidX AAR 要求冲突。
+                val appAndroid = rootProject.findProject(":app")
+                    ?.extensions?.findByName("android")
+                val appSdk = appAndroid?.javaClass?.getMethod("getCompileSdkVersion")
+                    ?.invoke(appAndroid) as? String
+                val librarySdk = androidExt.javaClass.getMethod("getCompileSdkVersion")
+                    .invoke(androidExt) as? String
+                val appSdkLevel = appSdk?.removePrefix("android-")?.toIntOrNull()
+                val librarySdkLevel = librarySdk?.removePrefix("android-")?.toIntOrNull()
+                if (appSdkLevel != null && librarySdkLevel != null && librarySdkLevel < appSdkLevel) {
+                    androidExt.javaClass.getMethod("compileSdkVersion", String::class.java)
+                        .invoke(androidExt, appSdk)
+                }
                 val compileOptions = androidExt.javaClass
                     .getMethod("getCompileOptions")
                     .invoke(androidExt)

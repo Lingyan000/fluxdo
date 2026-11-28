@@ -1,8 +1,8 @@
 {
   "@@locale": "en",
-  "cdk_balance": "CDK Points",
-  "cdk_points": "Points",
-  "cdk_reAuthHint": "Re-authorize to view points",
+  "cdk_balance": "CDK Score",
+  "cdk_points": "Score",
+  "cdk_reAuthHint": "Re-authorize to view your score",
   "ldc_balance": "LDC Balance",
   "ldc_dailyIncome": "Today's income {amount}",
   "ldc_reAuthHint": "Re-authorize to view balance",

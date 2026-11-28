@@ -1,0 +1,374 @@
+{
+  "schema": 12,
+  "apiVersion": 2,
+  "id": "community.fluxdo.ldstore",
+  "name": "LD士多",
+  "version": "1.0.0",
+  "author": "FluxDO 社区",
+  "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
+  "homepage": "https://ldcstore.com/",
+  "webLogin": "https://ldcstore.com/login",
+  "icon": "storefront",
+  "ui": "ui.rfwtxt",
+  "script": "main.js",
+  "permissions": {
+    "network": [
+      "api2.ldspro.qzz.io",
+      "api1.ldspro.qzz.io",
+      "api.ldspro.qzz.io",
+      "ldcstore.com"
+    ],
+    "publicImages": true,
+    "identity": true,
+    "connect": [
+      "https://api.ldspro.qzz.io/api/auth/callback",
+      "https://api1.ldspro.qzz.io/api/auth/callback",
+      "https://api2.ldspro.qzz.io/api/auth/callback"
+    ],
+    "credentials": {
+      "account": {
+        "requests": [
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop/products",
+            "methods": [
+              "DELETE"
+            ]
+          },
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop/comments",
+            "methods": [
+              "DELETE"
+            ]
+          }
+        ]
+      }
+    },
+    "payments": [
+      "linuxDoCredit"
+    ],
+    "background": true,
+    "notifications": true
+  },
+  "card": {
+    "widget": "Card",
+    "page": "market"
+  },
+  "pages": [
+    {
+      "id": "orders",
+      "widget": "BuyerOrders",
+      "scroll": false,
+      "title": "我的订单",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "order",
+      "widget": "BuyerOrder",
+      "scroll": false,
+      "title": "订单详情",
+      "presentation": "modal",
+      "appBar": {
+        "actions": "OrderActions",
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "market",
+      "widget": "Market",
+      "scroll": false,
+      "title": "LD士多",
+      "appBar": {
+        "actions": "MarketActions",
+        "title": "LocalizedTitle"
+      },
+      "navigation": {
+        "label": "士多",
+        "icon": "storefront"
+      }
+    },
+    {
+      "id": "review",
+      "widget": "Review",
+      "scroll": false,
+      "title": "确认订单",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "product",
+      "widget": "Product",
+      "scroll": false,
+      "title": "商品详情",
+      "presentation": "modal",
+      "appBar": {
+        "actions": "ProductActions",
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "favorites",
+      "widget": "Favorites",
+      "scroll": false,
+      "title": "我的收藏",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "coupons",
+      "widget": "Coupons",
+      "scroll": false,
+      "title": "我的优惠券",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "coupon",
+      "widget": "Coupon",
+      "scroll": false,
+      "title": "领取优惠券",
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "refund",
+      "widget": "Refund",
+      "scroll": false,
+      "title": "退款与售后",
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "comment",
+      "widget": "CommentForm",
+      "scroll": false,
+      "title": "发表评论",
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "merchant",
+      "widget": "Merchant",
+      "scroll": false,
+      "title": "店铺商品",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "filters",
+      "widget": "Filters",
+      "title": "筛选商品",
+      "scroll": false,
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "account",
+      "widget": "Account",
+      "title": "我的士多",
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "messages",
+      "widget": "Messages",
+      "title": "士多消息",
+      "scroll": false,
+      "appBar": {
+        "actions": "MessageActions",
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "reports",
+      "widget": "Reports",
+      "title": "我的举报",
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "report",
+      "widget": "ReportDetail",
+      "title": "举报进度",
+      "scroll": false,
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "chats",
+      "widget": "Chats",
+      "title": "求购洽谈",
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "chat",
+      "widget": "Chat",
+      "title": "求购洽谈",
+      "scroll": false,
+      "appBar": {
+        "actions": "ChatActions",
+        "title": "LocalizedTitle"
+      }
+    }
+  ],
+  "links": [
+    {
+      "host": "ldcstore.com",
+      "path": "/product/:id",
+      "page": "product"
+    },
+    {
+      "host": "ldcstore.com",
+      "path": "/coupon/:token",
+      "page": "coupon"
+    }
+  ],
+  "requiredFeatures": [
+    "confirmationDialog",
+    "virtualGrid",
+    "nativeExecutionLimits",
+    "cardNavigation",
+    "contentPresentation",
+    "runtimePermissions",
+    "modalDismiss",
+    "eventStreams",
+    "pageChrome",
+    "loadingPlaceholders",
+    "navigationReplacement",
+    "credentialClaims",
+    "iconButtonContent",
+    "hostEnvironment",
+    "fileAttachments",
+    "scheduledTasks",
+    "localNotifications",
+    "navigationBadge",
+    "navigationEntries",
+    "notificationStatus",
+    "manifestLocalization",
+    "accountDataMigration",
+    "storageScopes",
+    "extendedPages",
+    "timelinePages",
+    "inputOptions",
+    "timelineAlignment"
+  ],
+  "tasks": [
+    {
+      "id": "messages",
+      "title": "检查士多新消息"
+    }
+  ],
+  "locales": {
+    "en": {
+      "name": "LD Store",
+      "description": "Browse products, sign in, confirm orders, pay with LDC and view delivery details.",
+      "pages.orders.title": "My orders",
+      "pages.order.title": "Order details",
+      "pages.market.title": "LD Store",
+      "pages.market.navigation.label": "Store",
+      "pages.review.title": "Confirm order",
+      "pages.product.title": "Product details",
+      "pages.favorites.title": "Saved products",
+      "pages.coupons.title": "My coupons",
+      "pages.coupon.title": "Claim coupon",
+      "pages.refund.title": "Refunds and support",
+      "pages.comment.title": "Write a comment",
+      "pages.merchant.title": "Store products",
+      "pages.filters.title": "Filter products",
+      "pages.account.title": "My LD Store",
+      "pages.messages.title": "LD Store messages",
+      "pages.reports.title": "My reports",
+      "pages.report.title": "Report progress",
+      "pages.chats.title": "Conversations",
+      "pages.chat.title": "Conversations",
+      "tasks.messages.title": "Check store messages"
+    },
+    "zh_TW": {
+      "name": "LD士多",
+      "description": "瀏覽與搜尋商品，原生登入、確認訂單、使用 LDC 支付並檢視交付內容。",
+      "pages.orders.title": "我的訂單",
+      "pages.order.title": "訂單詳情",
+      "pages.market.title": "LD士多",
+      "pages.market.navigation.label": "士多",
+      "pages.review.title": "確認訂單",
+      "pages.product.title": "商品詳情",
+      "pages.favorites.title": "我的收藏",
+      "pages.coupons.title": "我的優惠券",
+      "pages.coupon.title": "領取優惠券",
+      "pages.refund.title": "退款與售後",
+      "pages.comment.title": "發表評論",
+      "pages.merchant.title": "店鋪商品",
+      "pages.filters.title": "篩選商品",
+      "pages.account.title": "我的士多",
+      "pages.messages.title": "士多訊息",
+      "pages.reports.title": "我的舉報",
+      "pages.report.title": "舉報進度",
+      "pages.chats.title": "求購洽談",
+      "pages.chat.title": "求購洽談",
+      "tasks.messages.title": "檢查士多新訊息"
+    },
+    "zh_HK": {
+      "name": "LD士多",
+      "description": "瀏覽與搜索商品，原生登錄、確認訂單、使用 LDC 支付並查看交付內容。",
+      "pages.orders.title": "我的訂單",
+      "pages.order.title": "訂單詳情",
+      "pages.market.title": "LD士多",
+      "pages.market.navigation.label": "士多",
+      "pages.review.title": "確認訂單",
+      "pages.product.title": "商品詳情",
+      "pages.favorites.title": "我的收藏",
+      "pages.coupons.title": "我的優惠券",
+      "pages.coupon.title": "領取優惠券",
+      "pages.refund.title": "退款與售後",
+      "pages.comment.title": "發表評論",
+      "pages.merchant.title": "店鋪商品",
+      "pages.filters.title": "篩選商品",
+      "pages.account.title": "我的士多",
+      "pages.messages.title": "士多消息",
+      "pages.reports.title": "我的舉報",
+      "pages.report.title": "舉報進度",
+      "pages.chats.title": "求購洽談",
+      "pages.chat.title": "求購洽談",
+      "tasks.messages.title": "檢查士多新消息"
+    }
+  },
+  "storage": {
+    "default": "account",
+    "scopes": [
+      "shared",
+      "account"
+    ]
+  }
+}

@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'package:dio/dio.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../../network_logger.dart';
 import '../../log/log_policy.dart';
@@ -12,6 +13,7 @@ import 'net_core_bindings.dart';
 import '../cookie/csrf_session_trace.dart';
 import '../flux_request_spec.dart';
 import 'network_health_monitor.dart';
+import 'core_request_log_context.dart';
 
 /// [Response.extra] 里网络核心附带的连接信息：
 /// `reused` / `tlsResumed` / `connectMs` / `ttfbMs`。
@@ -22,10 +24,16 @@ const String netCoreConnectionExtraKey = 'netCoreConnection';
 /// 相比旧的本地网关少一跳回环 socket，也不再需要系统网络栈：
 /// 核心按 WebView 的指纹直接出站。
 class NetCoreHttpAdapter implements HttpClientAdapter {
-  NetCoreHttpAdapter({NetCoreBindings? bindings})
-    : _bindings = bindings ?? NetCoreBindings.instance;
+  NetCoreHttpAdapter({
+    NetCoreBindings? bindings,
+    this.pinnedOnly = false,
+    this.pluginRequests = false,
+  }) : assert(!pinnedOnly || !pluginRequests),
+       _bindings = bindings ?? NetCoreBindings.instance;
 
   final NetCoreBindings _bindings;
+  final bool pinnedOnly;
+  final bool pluginRequests;
 
   /// 在途请求：核心的事件按 id 投递到这里。
   static final Map<int, _PendingRequest> _pending = {};
@@ -45,7 +53,9 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
   /// 每个 isolate 注册一次独立事件宿主；同进程多个 isolate 互不覆盖回调。
   static int _ensureCallback(NetCoreBindings bindings) {
     if (_callback != null) return _hostId;
-    final callback = NativeCallable<NetCoreEventCallback>.listener(_onEvent);
+    final callback = Zone.root.run(
+      () => NativeCallable<NetCoreEventCallback>.listener(_onEvent),
+    );
     if (bindings.supportsEventHosts) {
       final hostId = bindings.registerEventHost(callback.nativeFunction);
       if (hostId == 0) {
@@ -88,16 +98,18 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       if (ptr != nullptr) NetCoreBindings.instance.bufferFree(ptr, length);
       return;
     }
-    switch (kind) {
-      case NetCoreEventKind.head:
-        pending.onHead(_takeString(ptr, length));
-      case NetCoreEventKind.data:
-        pending.onData(_takeBytes(ptr, length));
-      case NetCoreEventKind.done:
-        pending.onDone();
-      case NetCoreEventKind.error:
-        pending.onError(_takeString(ptr, length));
-    }
+    pending.zone.run(() {
+      switch (kind) {
+        case NetCoreEventKind.head:
+          pending.onHead(_takeString(ptr, length));
+        case NetCoreEventKind.data:
+          pending.onData(_takeBytes(ptr, length));
+        case NetCoreEventKind.done:
+          pending.onDone();
+        case NetCoreEventKind.error:
+          pending.onError(_takeString(ptr, length));
+      }
+    });
   }
 
   /// 读走载荷并归还核心分配的缓冲区。
@@ -144,7 +156,9 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
 
     options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
     options.extra.putIfAbsent('attemptId', LogPolicy.newTraceId);
-    final trace = CsrfSessionTrace.captureDispatch(options);
+    final trace = pinnedOnly || pluginRequests
+        ? null
+        : CsrfSessionTrace.captureDispatch(options);
     if (trace != null) {
       trace['sentBodyBytes'] = 0;
       trace['sentBodyChunks'] = 0;
@@ -154,6 +168,8 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
     final meta = jsonEncode({
       if (hostId != 0) 'host_id': hostId,
       'method': options.method.toUpperCase(),
+      if (pinnedOnly || pluginRequests)
+        'pinned_addresses': options.extra['pinnedAddresses'],
       'url': options.uri.toString(),
       'headers': _headerPairs(options.headers),
       'has_body': requestStream != null,
@@ -163,7 +179,11 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       'receive_timeout_ms': ?options.receiveTimeout?.inMilliseconds,
       'send_timeout_ms': ?options.sendTimeout?.inMilliseconds,
     });
-    final id = _bindings.requestStart(meta);
+    final id = pluginRequests
+        ? _bindings.pluginRequestStart(meta)
+        : pinnedOnly
+        ? _bindings.pinnedRequestStart(meta)
+        : _bindings.requestStart(meta);
     options.extra['coreRequestId'] = id;
     if (id == 0) {
       throw DioException.connectionError(
@@ -172,6 +192,12 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       );
     }
 
+    CoreRequestLogContext.instance.register(id, {
+      ...?PluginExecutionContext.current?.fields,
+      'traceId': options.extra['traceId'].toString(),
+      'attemptId': options.extra['attemptId'].toString(),
+    });
+
     final pending = _PendingRequest(
       options,
       onPause: () => _bindings.requestPause(id),
@@ -179,6 +205,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       // 消费方不要响应体了：连同上游请求一起中止，放掉连接上的流
       onAbandon: () => _bindings.requestCancel(id),
       onFinished: () {
+        CoreRequestLogContext.instance.complete(id);
         _pending.remove(id);
         _ownedRequests.remove(id);
       },
@@ -323,6 +350,7 @@ class _PendingRequest {
   }
 
   final RequestOptions options;
+  final Zone zone = Zone.current;
   late final CoreRequestObservation observation;
 
   /// 终态（完成、出错、被放弃）时调用一次，用于移出在途表。

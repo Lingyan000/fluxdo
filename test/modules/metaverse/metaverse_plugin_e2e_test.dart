@@ -1,0 +1,1978 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:app_icons/app_icons.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' as content;
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_test/flutter_test.dart';
+import '../../support/material_ui_finders.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
+import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
+import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/providers/core_providers.dart';
+import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_capabilities.dart';
+import 'package:fluxdo/services/navigation/app_route_observer.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
+import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
+import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/services/storage/secret_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// 用真实 JS 引擎跑 docs/examples/metaverse-plugin 里的示例插件。
+///
+/// 网络是假的（固定响应），其余——清单、界面描述、脚本、宿主桥、界面渲染
+/// ——都是真实实现。原生库通过 native assets 构建，缺失时应使测试失败。
+const _dir = 'docs/examples/metaverse-plugin';
+
+class _TestUser extends CurrentUserNotifier {
+  @override
+  Future<User?> build() async => null;
+}
+
+class _MemorySecrets implements SecretStore {
+  @override
+  Future<Map<String, String>> readScope(SecretScope scope) async => {
+    for (final entry in values.entries)
+      if (entry.key.startsWith(scope.storagePrefix)) entry.key: entry.value,
+  };
+  final values = <String, String>{};
+
+  @override
+  Future<String?> read(SecretKey key) async => values[key.storageKey];
+
+  @override
+  Future<void> write(SecretKey key, String value) async =>
+      values[key.storageKey] = value;
+
+  @override
+  Future<void> delete(SecretKey key) async => values.remove(key.storageKey);
+
+  @override
+  Future<void> deleteScope(SecretScope scope) async {}
+
+  @override
+  Future<SecretStoreAvailability> checkAvailability() async =>
+      SecretStoreAvailability.available;
+}
+
+class _Api implements HttpClientAdapter {
+  final requests = <RequestOptions>[];
+  int balance = 128;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(options);
+    final body = options.uri.path.startsWith('/v1/orders/')
+        ? {
+            'status': '已发货',
+            'items': [
+              {'name': '机械键盘', 'price': '¥399'},
+              {'name': '键帽', 'price': '¥59'},
+            ],
+          }
+        : {'balance': balance};
+    return ResponseBody.fromString(
+      jsonEncode(body),
+      200,
+      headers: {
+        'content-type': ['application/json; charset=utf-8'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// 从发布目录读取插件文件。商品接口返回固定数据，不创建订单。
+class _ShopApi extends _Api {
+  // 业务请求计数继续检查原流程，实时连接使用独立记录并显式返回停止状态。
+  final notificationRequests = <RequestOptions>[];
+  bool connectTimeout = false;
+  bool expired = false;
+  String orderStatus = 'completed';
+  String orderFormat = 'snake';
+  Map<String, Object?> productFields = {};
+  bool includeBestCoupon = true;
+  bool simulateCheckout = false;
+  bool checkoutSucceeds = false;
+  bool lookupExists = false;
+  Completer<void>? waitQuote;
+  Completer<void>? waitExternalLink;
+  String externalLink = 'https://merchant.example.org/redeem/item';
+  int externalStatus = 200;
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final uri = options.uri;
+    if (uri.path == '/api/shop/notifications/stream') {
+      notificationRequests.add(options);
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      expect(options.headers['Accept'], 'text/event-stream');
+      return ResponseBody.fromString('', 204);
+    }
+    requests.add(options);
+    if (uri.path == '/api/auth/init') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'state': 'fixture-state',
+            'auth_url': 'https://connect.linux.do/oauth2/authorize?redirect_uri=https%3A%2F%2Fapi.ldspro.qzz.io%2Fapi%2Fauth%2Fcallback&state=fixture-state',
+          },
+        }),
+        200,
+      );
+    }
+    if (uri.path.endsWith('/payment-url') ||
+        uri.path.endsWith('/refresh') ||
+        uri.path.endsWith('/cancel')) {
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      expect(
+        options.method,
+        uri.path.endsWith('/payment-url') ? 'GET' : 'POST',
+      );
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'paymentUrl': 'https://credit.linux.do/paying?order_no=fixture',
+            'status': orderStatus,
+          },
+        }),
+        200,
+      );
+    }
+    if (connectTimeout) {
+      throw DioException.connectionTimeout(
+        timeout: const Duration(seconds: 5),
+        requestOptions: options,
+      );
+    }
+    if (uri.host == 'packages.example.org') {
+      final file = File('test/fixtures/metaverse/ld-store/${uri.pathSegments.last}');
+      return ResponseBody.fromString(file.readAsStringSync(), 200);
+    }
+    if (uri.path.endsWith('/external-link')) {
+      expect(options.method, 'GET');
+      await waitExternalLink?.future;
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': externalStatus == 200,
+          'data': {'paymentLink': externalLink},
+        }),
+        externalStatus,
+      );
+    }
+    if (uri.path.endsWith('/comments')) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'commentEnabled': true,
+            'comments': [
+              {
+                'id': '1',
+                'username': '买家',
+                'content': '商品评论测试',
+                'ratingValue': 5,
+              },
+            ],
+            'pagination': {'page': 1, 'totalPages': 1},
+          },
+        }),
+        200,
+      );
+    }
+    if (uri.path == '/api/shop/orders/quote') {
+      expect(options.method, 'POST');
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      final payload = jsonDecode(options.data as String);
+      final q = payload['quantity'] as int;
+      if (waitQuote != null) await waitQuote!.future;
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'productId': payload['productId'],
+            'quantity': q,
+            'productSubtotal': 12 * q,
+            'payableAmount': 12 * q,
+            'coupons': [
+              {
+                'claimId': 9,
+                'eligible': true,
+                'payableAmount': 5 * q,
+                'campaign': {'name': '普通券'},
+              },
+              if (includeBestCoupon)
+                {
+                  'claimId': 8,
+                  'eligible': true,
+                  'payableAmount': q,
+                  'campaign': {'name': '模拟券'},
+                },
+            ],
+          },
+        }),
+        200,
+      );
+    }
+    if (simulateCheckout &&
+        uri.path == '/api/shop/orders' &&
+        options.method == 'POST') {
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      if (checkoutSucceeds) {
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'data': {'order_no': 'FIX-1'},
+          }),
+          201,
+        );
+      }
+      throw DioException.receiveTimeout(
+        timeout: const Duration(seconds: 1),
+        requestOptions: options,
+      );
+    }
+    if (simulateCheckout &&
+        uri.path.startsWith('/api/shop/order-submissions/')) {
+      expect(options.method, 'GET');
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'exists': lookupExists,
+            if (lookupExists) 'order': {'orderNo': 'FIX-1'},
+          },
+        }),
+        200,
+      );
+    }
+    if (uri.path.startsWith('/api/shop/orders')) {
+      expect(options.method, 'GET');
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      expect(uri.queryParameters['role'], 'buyer');
+      if (expired) return ResponseBody.fromString('{}', 401);
+      final page = int.tryParse(uri.queryParameters['page'] ?? '1') ?? 1;
+      final camelOrder = {
+        'orderNo': 'FIX-$page',
+        'productName': '买家商品 $page',
+        'status': orderStatus,
+        'amount': 0,
+        'deliveryType': 'auto',
+        'deliveryContent': '仅用于离线测试的交付说明',
+      };
+      // 公开订单协议用例中的原始字段，尚未经过网页服务层的驼峰转换。
+      final snakeOrder = {
+        'order_no': 'FIX-$page',
+        'product_name': '买家商品 $page',
+        'status': orderStatus,
+        'total_price': 0,
+        'delivery_type': 'auto',
+        'delivery_content': '仅用于离线测试的交付说明',
+      };
+      final row = switch (orderFormat) {
+        'camel' => camelOrder,
+        'mixed' => {
+          ...snakeOrder,
+          'order_no': '错误的别名',
+          'product_name': '错误的别名',
+          ...camelOrder,
+          'delivery_content': '错误的别名',
+          'displayStatus': null,
+          'display_status': 'failed',
+        },
+        _ => snakeOrder,
+      };
+      final data = uri.path == '/api/shop/orders'
+          ? {
+              'orders': [row],
+              'pagination': {
+                orderFormat == 'snake' ? 'total_pages' : 'totalPages': 2,
+              },
+            }
+          : {'order': row};
+      return ResponseBody.fromString(
+        jsonEncode({'success': true, 'data': data}),
+        200,
+      );
+    }
+    final product = {
+      'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec',
+      'name': '测试商品',
+      'price': 12,
+      'availableStock': 3,
+      'category_name': '咨询',
+      'description': '测试说明',
+      'canPurchase': true,
+      ...productFields,
+    };
+    final data = switch (uri.path) {
+      '/api/shop/categories' => {
+        'categories': [
+          {'id': 4, 'name': '咨询'},
+        ],
+      },
+      '/api/shop/products' => {
+        'products': [product],
+        'pagination': {'totalPages': 1},
+      },
+      '/api/shop/products/d553779c-83ef-48e4-98c5-a8446c78d5ec' => {
+        'product': product,
+      },
+      _ => throw StateError('意外请求：${uri.path}'),
+    };
+    return ResponseBody.fromString(
+      jsonEncode({'success': true, 'data': data}),
+      200,
+    );
+  }
+}
+
+class _Delegate extends MetaversePluginHostDelegate {
+  final opened = <String>[];
+  final pages = <String>[];
+  final pageArguments = <Map<String, Object?>>[];
+  final suspended = <String>[];
+  int authRequests = 0;
+  int? accountId;
+  @override
+  int? currentAccountId() => accountId;
+  final payments = <String>[];
+  void Function()? onPayment;
+  Object? paymentResult = const {'state': 'checking'};
+
+  @override
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) async {confirmations.add(options);return await onConfirm?.call() ?? true;}
+  final confirmations=<Map<String,Object?>>[];
+  Future<bool> Function()? onConfirm;
+
+  @override
+  Future<String?> authorizeConnect(
+    BuildContext context,
+    Uri authorization,
+  ) async {
+    authRequests++;
+    return null;
+  }
+
+  @override
+  Future<Object?> requestPayment(
+    BuildContext context, {
+    required MetaversePaymentProvider provider,
+    required Uri url,
+    required String reference,
+    required Object amount,
+  }) async {
+    expect(provider, MetaversePaymentProvider.linuxDoCredit);
+    expect(url.host, 'credit.linux.do');
+    payments.add('pay:$reference');
+    onPayment?.call();
+    return paymentResult;
+  }
+
+  @override
+  String? currentUsername() => 'alice';
+
+  @override
+  Future<bool> requestCredential(BuildContext context, String name) async {
+    authRequests++;
+    return true;
+  }
+
+  @override
+  Future<bool> requestAuth(BuildContext context, _) async => false;
+
+  @override
+  void openPage(BuildContext context, _, String page, Map<String, Object?> p) {
+    pages.add(page);
+    pageArguments.add(p);
+  }
+
+  @override
+  void replacePage(BuildContext context, _, String page, Map<String, Object?> p) {
+    pages.add('replace:$page');
+    pageArguments.add(p);
+  }
+
+  @override
+  Future<void> openUrl(BuildContext context, Uri url) async =>
+      opened.add(url.toString());
+
+  @override
+  Future<void> openWebSession(BuildContext context, Uri url) async {
+    opened.add(url.toString());
+    browserOpened.add(url.toString());
+  }
+
+  final browserOpened = <String>[];
+
+  @override
+  void toast(String message, String type) {}
+
+  @override
+  void onSuspended(String pluginId, String reason) => suspended.add(reason);
+}
+
+Future<void> main() async {
+  final manifest = MetaversePluginManifest.parse(
+    jsonDecode(File('$_dir/plugin.json').readAsStringSync()),
+    reservedHosts: const ['linux.do'],
+  );
+  final ui = File('$_dir/ui.rfwtxt').readAsStringSync();
+
+  group('示例插件端到端', () {
+    late Directory root;
+    late MetaversePluginStore store;
+    late _Api api;
+    late _Delegate delegate;
+    late MetaversePluginHost host;
+    final engines = <IsolateScriptEngine>[];
+
+    Future<IsolateScriptEngine> engine({Duration timeout = const Duration(seconds: 5)}) async {
+      final value = await IsolateScriptEngine.spawn(timeout: timeout);
+      engines.add(value);
+      return value;
+    }
+
+    Future<void> stopEngines() async {
+      for (final engine in engines) {
+        engine.dispose();
+      }
+      await Future.wait(engines.map((engine) => engine.terminated))
+          .timeout(const Duration(seconds: 5));
+      engines.clear();
+    }
+
+    Future<void> install({String? script}) async {
+      await store.writeCode(manifest.id, (
+        ui: ui,
+        script: script ?? File('$_dir/main.js').readAsStringSync(),
+      ));
+    }
+
+    MetaversePluginHost createHost({
+      Duration timeout = const Duration(seconds: 5),
+      DateTime Function()? clock,
+      MetaversePluginManifest? pluginManifest,
+    }) => MetaversePluginHost(
+      manifest: pluginManifest ?? manifest,
+      store: store,
+      network: MetaversePluginNetwork(
+        dio: Dio(BaseOptions(validateStatus: (_) => true))
+          ..httpClientAdapter = api,
+        lookup: (_) async => [InternetAddress('93.184.216.34')],
+      ),
+      engineFactory: () => engine(timeout: timeout),
+      delegate: delegate,
+      clock: clock ?? DateTime.now,
+    );
+
+    setUp(() async {
+      TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.localeTestValue = const Locale('zh');
+      SharedPreferences.setMockInitialValues({});
+      root = Directory.systemTemp.createTempSync('metaverse_plugin_test');
+      store = MetaversePluginStore(
+        preferences: await SharedPreferences.getInstance(),
+        secretStore: _MemorySecrets(),
+        rootDirectory: () async => root,
+      );
+      api = _Api();
+      delegate = _Delegate();
+      await install();
+      await store.writeCredential(manifest.id, 'account',
+          MetaverseCredential('k-123', accountId: delegate.accountId),
+          revision: store.credentialRevision(manifest.id, 'account'),
+          isActive: () => true);
+      host = createHost();
+    });
+
+    tearDown(() async {
+      host.shutdown();
+      await stopEngines();
+      TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.clearLocaleTestValue();
+      try {
+        root.deleteSync(recursive: true);
+      } catch (_) {
+        // Windows 上刚关闭的文件偶尔仍被占用，临时目录交给系统清理。
+      }
+    });
+
+    Widget app(Widget child) {
+      if (child is MetaversePluginSurfaceView && child.page != null && child.builder == null) {
+        final source = child;
+        final page = source.host.manifest.page(source.page!);
+        child = MetaversePluginSurfaceView(key:source.key, host:source.host, kind:source.kind,
+          page:source.page,params:source.params,navigationId:source.navigationId,
+          builder:(context,content,render)=>MetaversePluginPageFrame(title:page!.title,workspace:true,
+            actions:render!=null && page.appBarActions!=null ? render(page.appBarActions!) : null,
+            child:content),
+        );
+      }
+      return TranslationProvider(
+      child: MaterialApp(
+        navigatorObservers: [appRouteObserver],
+        home: Scaffold(body: child is MetaversePluginSurfaceView && child.page != null ? child : SingleChildScrollView(child: child)),
+      ),
+      );
+    }
+
+    /// 等插件界面到达某个状态。
+    ///
+    /// testWidgets 跑在假时钟里，而文件读写、引擎 isolate 的消息是真实事件：
+    /// 每一跳都要先放真实事件循环跑一下（runAsync），再推进假时钟把它的后续
+    /// 步骤冲出来（pump），所以这里交替进行。
+    Future<void> settle(WidgetTester tester, bool Function() done) async {
+      for (var i = 0; i < 400 && !done(); i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        );
+        await tester.pump(const Duration(milliseconds: 5));
+      }
+      await tester.pump();
+      expect(done(), isTrue, reason: '等待插件界面就绪超时');
+    }
+
+    /// 测试体结束后卸载界面并停掉插件，再把看门狗、空闲释放等定时器走完——
+    /// 框架不允许测试结束时还留着未触发的定时器。
+    void pluginTest(String name, Future<void> Function(WidgetTester) body) {
+      testWidgets(name, (tester) async {
+        try { await body(tester); }
+        finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          host.shutdown();
+          // 原生退出消息到达真实事件循环，Future 的续接仍在测试假时钟中。
+          var stopped = false;
+          final stopping = stopEngines().then((_) => stopped = true);
+          for (var i = 0; i < 150 && !stopped; i++) {
+            await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+            await tester.pump(const Duration(milliseconds: 1));
+          }
+          expect(stopped, isTrue, reason: '等待原生引擎正常释放');
+          await stopping;
+          await tester.pump(const Duration(seconds: 3));
+        }
+      });
+    }
+
+    pluginTest('卡片：脚本取数 → 原生组件渲染 → 点击事件回到脚本', (tester) async {
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.card,
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('128').evaluate().isNotEmpty);
+
+      // 界面是宿主的 Flutter 组件，不是 WebView。
+      expect(find.text('当前积分'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '刷新'), findsOneWidget);
+      // 凭证由宿主附带；脚本没有传任何请求头。
+      final request = api.requests.single;
+      expect(request.uri.toString(), 'https://api.example.com/v1/balance');
+      expect(request.headers['Authorization'], 'Bearer k-123');
+
+      api.balance = 256;
+      await tester.tap(find.text('刷新'));
+      await settle(tester, () => find.text('256').evaluate().isNotEmpty);
+      expect(api.requests, hasLength(2));
+    });
+
+    pluginTest('页面：链接捕获的参数进入脚本，列表数据驱动循环渲染', (tester) async {
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'order',
+            params: const {'id': '42'},
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('机械键盘').evaluate().isNotEmpty);
+
+      expect(find.text('订单 #42'), findsOneWidget);
+      expect(find.text('已发货'), findsOneWidget);
+      expect(find.text('¥59'), findsOneWidget);
+      expect(api.requests.single.uri.path, '/v1/orders/42');
+    });
+
+    pluginTest('标题栏和正文共用数据与点击来源，页面只初始化一次', (tester) async {
+      await tester.runAsync(() => store.writeCode(manifest.id, (
+        ui: '''import fluxdo;
+widget Card = SizedBoxShrink();
+widget OrderPage = Label(text:data.count);
+widget PageTitle = Label(text:data.title);
+widget PageActions = IconButton(icon:"add",tooltip:"增加",onPressed:event "increase" {});
+''',
+        script: '''let opens=0;
+fluxdo.on('page.open',ctx=>{ctx.setData('count',String(++opens));ctx.setData('title','标题 '+opens);});
+fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','标题 2');await ctx.api.navigate('order',{id:'bar'});});''',
+      )));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host, kind: MetaversePluginSurfaceKind.page, page: 'order',
+        builder: (context, content, render) => MetaversePluginPageFrame(
+          title: '页面', workspace:true, customTitle: render?.call('PageTitle'),
+          actions: render?.call('PageActions'), child: content,
+        ),
+      )));
+      await settle(tester, () => find.text('标题 1').evaluate().isNotEmpty);
+      expect(find.text('1'), findsOneWidget);
+      await tester.tap(findMaterialTooltip('增加'));
+      await settle(tester, () => delegate.pages.isNotEmpty);
+      expect(find.text('标题 2'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(delegate.pages, ['order']);
+      expect(delegate.pageArguments.single['id'], 'bar');
+      expect(tester.takeException(), isNull);
+    });
+
+    Future<void> authorizeShop() => store.writeCredential(
+      host.id,
+      'account',
+      const MetaverseCredential('fixture-session', accountId: 42),
+      revision: store.credentialRevision(host.id, 'account'),
+      isActive: () => true,
+    );
+
+    Future<void> openShop(
+      MetaverseAddressLookup lookup, {
+      _ShopApi? primary,
+      MetaversePluginNetwork? alternate,
+      bool idleScript = false,
+    }) async {
+      delegate.accountId = 42;
+      final shop = MetaversePluginManifest.parse(
+        jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
+        reservedHosts: const ['linux.do'],
+      );
+      await store.writeCode(shop.id, (
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync(),
+      ));
+      host = MetaversePluginHost(
+        manifest: shop,
+        store: store,
+        network: MetaversePluginNetwork(
+          dio: Dio(BaseOptions(validateStatus: (_) => true))
+            ..httpClientAdapter = primary ?? _ShopApi(),
+          lookup: lookup,
+        ),
+        dohNetwork: alternate,
+        canSuggestDoh: () => true,
+        engineFactory: engine,
+        delegate: delegate,
+        codeLoader: idleScript ? () async => (ui:File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),script:'') : null,
+      );
+    }
+
+    test('仅 IPv6 超时后，手动切换只影响本插件该域名的公开读取', () async {
+      final first = _ShopApi()..connectTimeout = true;
+      final retry = _ShopApi();
+      final alternate = MetaversePluginNetwork(
+        dio: Dio()..httpClientAdapter = retry,
+        lookup: (_) async => [InternetAddress('8.8.8.8')],
+      );
+      addTearDown(alternate.dispose);
+      await openShop(
+        (_) async => [InternetAddress('2606:4700:4700::1111')],
+        primary: first,
+        alternate: alternate,
+        idleScript: true,
+      );
+      await host.open(kind:'card');
+      const domain = 'api2.ldspro.qzz.io';
+      const read = {'url': 'https://$domain/api/shop/products'};
+      await expectLater(
+        host.call('fetch', read),
+        throwsA(isA<MetaverseIpv6ReadTimeout>()),
+      );
+      expect(host.dnsRetryHost.value, domain);
+      host.enableDohForFailedHost('other.example');
+      expect(host.dnsRetryHost.value, domain);
+      host.enableDohForFailedHost(domain);
+      expect(retry.requests, isEmpty);
+      expect((await host.call('fetch', read) as Map)['status'], 200);
+      await expectLater(
+        host.call('fetch', {...read, 'method': 'POST'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(first.requests, hasLength(2));
+      expect(retry.requests.single.method, 'GET');
+      host.shutdown();
+      await host.open(kind:'card');
+      await expectLater(
+        host.call('fetch', read),
+        throwsA(isA<MetaverseIpv6ReadTimeout>()),
+      );
+    });
+
+    pluginTest('Fake-IP 出口读取失败时，广场与商品详情均可手动转到官网', (tester) async {
+      await tester.runAsync(
+        () => openShop(
+          (_) async => [InternetAddress('198.18.0.2')],
+          primary: _ShopApi()..connectTimeout = true,
+        ),
+      );
+      const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
+      for (final (page, label, path) in [
+        ('market', '在网页中浏览士多', '/'),
+        ('product', '在网页中查看商品', '/product/$id'),
+      ]) {
+        final opened = delegate.opened.length;
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              key: ValueKey(page),
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: page,
+              params: const {'id': id},
+            ),
+          ),
+        );
+        final button = find.text(label);
+        await settle(tester, () => button.evaluate().isNotEmpty);
+        expect(delegate.opened, hasLength(opened));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await settle(tester, () => delegate.opened.length == opened + 1);
+        expect(delegate.opened.last, 'https://ldcstore.com$path');
+      }
+    });
+
+    test('切换论坛账号后旧士多会话不能读订单或恢复建单', () async {
+      final service = _ShopApi();
+      await openShop(
+        (_) async => [InternetAddress('8.8.8.8')],
+        primary: service,
+        idleScript: true,
+      );
+      await host.open(kind:'card');
+      await authorizeShop();
+      delegate.accountId = 43;
+      await expectLater(
+        host.call('credentials.status', {'name': 'account'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await expectLater(
+        host.call('fetch', {
+          'url': 'https://api2.ldspro.qzz.io/api/shop/orders',
+          'credential': 'account',
+        }),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(service.requests, isEmpty);
+      host.shutdown();await host.open(kind:'card');
+      expect((await host.call('credentials.status', {'name':'account'}) as Map)['authorized'],false);
+    });
+
+    pluginTest('待支付订单仅在点击后调用宿主付款或取消，并回查原单', (tester) async {
+      final service = _ShopApi()..orderStatus = 'pending';
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await authorizeShop();
+      });
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'order',
+            params: const {'no': 'FIX-1'},
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      expect(delegate.payments, isEmpty);
+      await expectLater(
+        host.call('checkout.pay', {'orderNo': 'FIX-1'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(
+        tester,
+        () => delegate.payments.length == 1 && service.requests.length == 5 &&
+            tester.widget<TextButton>(find.widgetWithText(TextButton, '取消订单')).onPressed != null,
+      );
+      await settle(tester, () => find.text('取消订单').evaluate().isNotEmpty);
+      await tester.ensureVisible(find.text('取消订单'));
+      expect(service.requests.where((r)=>r.uri.path.endsWith('/cancel')),isEmpty);
+      await tester.tap(find.text('取消订单'));
+      await settle(tester, () => delegate.confirmations.any((c)=>c['title']=='取消订单'));
+      // 通用确认由测试 delegate 明确同意，取消请求在确认返回后才发生。
+      await settle(tester, () => service.requests.length == 7);
+      expect(
+        service.requests.where((r) => r.uri.path.endsWith('/cancel')),
+        hasLength(1),
+      );
+      expect(delegate.payments, ['pay:FIX-1']);
+      expect(delegate.opened, isEmpty);
+      delegate.paymentResult = null;
+      await settle(tester, () => tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '立即支付')).onPressed != null);
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(
+        tester,
+        () =>
+            delegate.payments.length == 2 &&
+            tester
+                    .widget<FilledButton>(
+                      find.widgetWithText(FilledButton, '立即支付'),
+                    )
+                    .onPressed !=
+                null,
+      );
+      expect(service.requests, hasLength(9));
+      expect(service.notificationRequests, isNotEmpty);
+    });
+
+    pluginTest('未登录入口调用宿主原生授权，取消后保留页面并可重新授权', (tester) async {
+      await tester.runAsync(
+        () => openShop((_) async => [InternetAddress('8.8.8.8')]),
+      );
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'account',
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('登录士多').evaluate().isNotEmpty);
+      await settle(tester, () => host.canApplyDevelopmentUpdate);
+      await expectLater(
+        host.call('credentials.request', {'name': 'account'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登录士多'));
+      await settle(tester, () => delegate.authRequests == 1);
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            key: const ValueKey('orders'),
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'orders',
+          ),
+        ),
+      );
+      await settle(
+        tester,
+        () => find.text('登录士多后查看订单和交付内容').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登录士多'));
+      await settle(tester, () => delegate.authRequests == 2);
+      expect(delegate.opened, isEmpty);
+    });
+
+    for (final authorized in [false, true]) {
+      pluginTest('链接商品直接读取兑换地址并打开，授权状态 $authorized', (tester) async {
+        final service = _ShopApi()
+          ..productFields = {'productType': 'link'}
+          ..waitExternalLink = Completer<void>();
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          if (authorized) await authorizeShop();
+        });
+        await tester.pumpWidget(app(MetaversePluginSurfaceView(
+          host: host,
+          kind: MetaversePluginSurfaceKind.page,
+          page: 'product',
+          params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+        )));
+        final action = find.text('查看兑换方式');
+        await settle(tester, () => action.evaluate().isNotEmpty);
+        expect(find.text('立即兑换'), findsNothing);
+        await tester.tap(action);
+        await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+        final request = service.requests.where((r) => r.path.endsWith('/external-link')).single;
+        expect(request.headers['Authorization'], authorized ? 'Bearer fixture-session' : isNull);
+        expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '查看兑换方式')).onPressed, isNull);
+        expect(delegate.opened, isEmpty);
+        service.waitExternalLink!.complete();
+        await settle(tester, () => delegate.opened.isNotEmpty);
+        expect(delegate.opened, [service.externalLink]);
+        expect(delegate.pages, isEmpty);
+        expect(delegate.payments, isEmpty);
+        expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(1));
+        expect(service.requests.every((r) => r.method == 'GET'), isTrue);
+      });
+    }
+
+    pluginTest('链接商品失败或地址无效时原地反馈，重试成功', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..externalStatus = 503;
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'review',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      final action = find.text('查看兑换方式');
+      await settle(tester, () => action.evaluate().isNotEmpty);
+      await tester.tap(action);
+      await settle(tester, () => find.text('读取兑换地址失败（HTTP 503）').evaluate().isNotEmpty);
+      expect(delegate.opened, isEmpty);
+      service.externalStatus = 200;
+      service.externalLink = 'javascript:alert(1)';
+      await tester.tap(action);
+      await settle(tester, () => find.text('士多返回的兑换地址无效').evaluate().isNotEmpty);
+      expect(delegate.opened, isEmpty);
+      service.externalLink = 'https://merchant.example.org/redeem/item';
+      await tester.tap(action);
+      await settle(tester, () => delegate.opened.isNotEmpty);
+      expect(delegate.opened, [service.externalLink]);
+      expect(find.text('士多返回的兑换地址无效'), findsNothing);
+      expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(3));
+    });
+
+    pluginTest('链接商品读取期间离开页面后不打开晚到地址', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..waitExternalLink = Completer<void>();
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'product',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      await settle(tester, () => find.text('查看兑换方式').evaluate().isNotEmpty);
+      await tester.tap(find.text('查看兑换方式'));
+      await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+      await tester.pumpWidget(app(const Text('已返回')));
+      service.waitExternalLink!.complete();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
+      await tester.pump();
+      expect(delegate.opened, isEmpty);
+      expect(delegate.pages, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    pluginTest('链接商品读取期间后台恢复忽略旧结果，再次点击可打开', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..waitExternalLink = Completer<void>();
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'product',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      final action = find.widgetWithText(FilledButton, '查看兑换方式');
+      await settle(tester, () => action.evaluate().isNotEmpty);
+      await tester.tap(action);
+      await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      service.waitExternalLink!.complete();
+      await settle(tester, () => tester.widget<FilledButton>(action).onPressed != null);
+      expect(delegate.opened, isEmpty);
+      await tester.tap(action);
+      await settle(tester, () => delegate.opened.isNotEmpty);
+      expect(delegate.opened, [service.externalLink]);
+      expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(2));
+      expect(service.requests.where((r) => r.path.endsWith('/d553779c-83ef-48e4-98c5-a8446c78d5ec')), hasLength(1));
+    });
+
+    pluginTest('匿名兑换预览采用实际可用库存，零库存不会被原始不限库存覆盖', (tester) async {
+      for (final stock in [-1, 0]) {
+        final service = _ShopApi()
+          ..productFields = {'stock': -1, 'availableStock': stock};
+        await tester.runAsync(
+          () => openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          ),
+        );
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              key: ValueKey(stock),
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'product',
+              params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+            ),
+          ),
+        );
+        await settle(tester, () => find.text(stock == -1 ? '登录后兑换' : '已售罄').evaluate().isNotEmpty);
+        expect(
+          tester
+                  .widget<FilledButton>(
+                    find.widgetWithText(FilledButton, stock == -1 ? '登录后兑换' : '已售罄'),
+                  )
+                  .onPressed !=
+              null,
+          stock == -1,
+        );
+        expect(service.requests.every((r)=>r.method=='GET'),isTrue);
+        expect(
+          service.requests.any((r)=>r.headers.containsKey('Authorization')),
+          isFalse,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        host.shutdown();
+      }
+    });
+
+    pluginTest('不限库存按账号剩余额度限量，报价随数量失效且不会创建订单', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {
+          'availableStock': -1,
+          'purchaseLimit': {
+            'mode': 'per_user',
+            'quantity': 5,
+            'remainingQuantity': 2,
+          },
+        };
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await authorizeShop();
+      });
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'review',
+            params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+          ),
+        ),
+      );
+      final quote = find.text('刷新报价');
+      await settle(tester, () => quote.evaluate().isNotEmpty);
+      expect(find.textContaining('当前可购 2 件'), findsOneWidget);
+      await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
+      final none = find.widgetWithText(ListTile, '不使用优惠券');
+      await tester.ensureVisible(none);
+      await tester.tap(none);
+      await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
+      final delayed = Completer<void>();
+      service.waitQuote = delayed;
+      await tester.ensureVisible(quote);
+      await tester.tap(quote);
+      await settle(
+        tester,
+        () => service.requests.where((r) => r.method == 'POST').length == 2,
+      );
+      await tester.ensureVisible(find.byIcon(Symbols.add_rounded));
+      await tester.tap(find.byIcon(Symbols.add_rounded));
+      await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
+      delayed.complete();
+      // 改数量后重新查价，保留用户主动选择的「不用券」。
+      await settle(
+        tester,
+        () =>
+            find.widgetWithText(ListTile, '不使用优惠券').evaluate().isNotEmpty &&
+            find.descendant(of:find.widgetWithText(ListTile, '不使用优惠券'),matching:find.byIcon(Symbols.check_circle_rounded)).evaluate().isNotEmpty,
+      );
+      expect(find.text('2.00 LDC'), findsNothing);
+      final best = find.text('模拟券 · 2.00 LDC');
+      await tester.ensureVisible(best);
+      await tester.tap(best);
+      await settle(tester, () => find.text('2.00 LDC').evaluate().isNotEmpty);
+      service.includeBestCoupon = false;
+      await tester.ensureVisible(quote);
+      await tester.tap(quote);
+      await settle(
+        tester,
+        () => find.textContaining('优惠券已不可用').evaluate().isNotEmpty,
+      );
+      expect(find.widgetWithText(ListTile, '不使用优惠券'), findsOneWidget);
+      expect(find.text('24.00 LDC'), findsNWidgets(2));
+      final posted = service.requests.where((r) => r.method == 'POST').toList();
+      expect(posted.map((r) => jsonDecode(r.data)['quantity']), [1, 1, 2, 2]);
+      expect(
+        posted.every((r) => r.uri.path == '/api/shop/orders/quote'),
+        isTrue,
+      );
+      expect(delegate.opened, isEmpty);
+    });
+
+    pluginTest('确认订单后台恢复保留数量和商品内容，不自动查价或下单', (tester) async {
+      const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
+      final service = _ShopApi();
+      await tester.runAsync(
+        () => openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        ),
+      );
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'review',
+            params: const {'id': id},
+          ),
+        ),
+      );
+      await settle(tester, () => find.byIcon(Symbols.add_rounded).evaluate().isNotEmpty);
+      await tester.tap(find.byIcon(Symbols.add_rounded));
+      await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
+      void resume() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      }
+
+      service.productFields = {'price': 10};
+      resume();
+      await tester.pumpAndSettle();
+      expect(find.text('24.00 LDC'), findsOneWidget);
+      await expectLater(
+        host.call('session.login', {}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      service.productFields = {'price': 8, 'availableStock': 1};
+      resume();
+      await tester.pumpAndSettle();
+      expect(find.text('2'), findsOneWidget);
+      expect(
+        tester
+            .widget<IconButton>(find.ancestor(of:find.byIcon(Symbols.add_rounded),matching:find.byType(IconButton)))
+            .onPressed,
+        isNotNull,
+      );
+      expect(service.requests, hasLength(1));
+      expect(
+        service.requests.every(
+          (r) => r.method == 'GET' && r.uri.path == '/api/shop/products/$id',
+        ),
+        isTrue,
+      );
+      expect(delegate.opened, isEmpty);
+    });
+
+    for (final immediate in [true, false]) {
+      pluginTest('建单成功自动打开订单，超时恢复保持原号，立即成功=$immediate', (tester) async {
+        const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
+        final service = _ShopApi()
+          ..simulateCheckout = true
+          ..checkoutSucceeds = immediate;
+        Future<void> start() => openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await tester.runAsync(() async {
+          await start();
+          await authorizeShop();
+        });
+        final prefs = await SharedPreferences.getInstance();
+        Future<void> mount() => tester.pumpWidget(
+          ProviderScope(
+            overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+            child: app(
+              MetaversePluginSurfaceView(
+                host: host,
+                kind: MetaversePluginSurfaceKind.page,
+                page: 'review',
+                params: const {'id': id},
+              ),
+            ),
+          ),
+        );
+        Future<void> click(String label) async {
+          final button = find.text(label);
+          await settle(tester, () {
+            final control = find.ancestor(
+              of: button,
+              matching: find.bySubtype<ButtonStyleButton>(),
+            );
+            return control.evaluate().isNotEmpty &&
+                tester.widget<ButtonStyleButton>(control).onPressed != null;
+          });
+          await tester.ensureVisible(button);
+          await tester.tap(button);
+        }
+
+        final submit = service.requests.where(
+          (r) => r.uri.path == '/api/shop/orders' && r.method == 'POST',
+        );
+        final lookups = service.requests.where(
+          (r) => r.uri.path.startsWith('/api/shop/order-submissions/'),
+        );
+        await mount();
+        await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
+        expect(submit, isEmpty);
+        await click('确认兑换');
+        if (immediate) {
+          await settle(tester, () => delegate.pages.contains('replace:order'));
+          expect(delegate.pages, ['replace:order']);
+          expect(delegate.pageArguments, [
+            {'no': 'FIX-1'},
+          ]);
+          expect(submit, hasLength(1));
+          expect(delegate.payments, isEmpty);
+          expect(delegate.opened, isEmpty);
+          return;
+        }
+        await settle(
+          tester,
+          () => find.text('查询提交结果').evaluate().isNotEmpty && submit.length == 1,
+        );
+        final first = jsonDecode(submit.single.data as String);
+        expect(first['productId'], id);
+        expect(first['couponClaimId'], '8');
+        expect(first['expectedAmount'], 1);
+        expect(first['quantity'], 1);
+        expect(
+          first['submissionToken'],
+          matches(RegExp(r'^ord_[0-9a-f]{32}$')),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        host.shutdown();
+        await tester.runAsync(start);
+        await mount();
+        await click('查询提交结果');
+        await settle(tester, () => find.text('用原提交号重试').evaluate().isNotEmpty);
+        expect(lookups.single.uri.pathSegments.last, first['submissionToken']);
+        expect(submit, hasLength(1));
+        await click('用原提交号重试');
+        await settle(
+          tester,
+          () => submit.length == 2 && find.text('查询提交结果').evaluate().isNotEmpty,
+        );
+        expect(jsonDecode(submit.last.data as String), first);
+        service.lookupExists = true;
+        await click('查询提交结果');
+        await settle(tester, () => delegate.pages.contains('replace:order'));
+        expect(delegate.pages, ['replace:order']);
+        expect(delegate.pageArguments, [
+          {'no': 'FIX-1'},
+        ]);
+        expect(delegate.payments, isEmpty);
+        expect(submit, hasLength(2));
+        expect(delegate.opened, isEmpty);
+        expect(
+          service.requests.any((r) => r.uri.path.contains('payment')),
+          isFalse,
+        );
+      });
+    }
+
+    for (final page in ['orders', 'product', 'review']) {
+      pluginTest('$page 普通返回保留内容、分页和优惠券选择', (tester) async {
+        final service = _ShopApi();
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          await authorizeShop();
+        });
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: navigator,
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: MetaversePluginSurfaceView(
+                    host: host,
+                    kind: MetaversePluginSurfaceKind.page,
+                    page: page,
+                    params: const {
+                      'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec',
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        if (page == 'orders') {
+          await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+          await tester.ensureVisible(find.text('更多'));
+        await tester.tap(find.text('更多'));
+          await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
+        } else if (page == 'review') {
+          await settle(
+            tester,
+            () => find.text('1.00 LDC').evaluate().isNotEmpty,
+          );
+          final none = find.widgetWithText(ListTile, '不使用优惠券');
+          await tester.ensureVisible(none);
+          await tester.tap(none);
+          await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
+        } else {
+          await settle(tester, () => find.text('立即兑换').evaluate().isNotEmpty);
+          await settle(tester, () => find.text('商品评论测试').evaluate().isNotEmpty);
+        }
+        final count = service.requests.length;
+        final content = tester
+            .widgetList<Text>(find.byType(Text))
+            .map((text) => text.data)
+            .toList();
+        final route = InteractionPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('详情')),
+        );
+        unawaited(navigator.currentState!.push(route));
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+        expect(service.requests, hasLength(count));
+        expect(
+          tester.widgetList<Text>(find.byType(Text)).map((text) => text.data),
+          content,
+        );
+      });
+    }
+
+    pluginTest('详情付款后更新已有订单行，返回列表保留分页且不发请求', (tester) async {
+      final service = _ShopApi()..orderStatus = 'pending';
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await authorizeShop();
+      });
+      final navigator = GlobalKey<NavigatorState>();
+      Widget surface(String page) => Scaffold(
+        body: SingleChildScrollView(
+          child: MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: page,
+            params: const {'no': 'FIX-1'},
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(navigatorKey: navigator, home: surface('orders')),
+        ),
+      );
+      await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+      unawaited(
+        navigator.currentState!.push(
+          InteractionPageRoute<void>(builder: (_) => surface('order')),
+        ),
+      );
+      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      delegate.onPayment = () => service.orderStatus = 'delivered';
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
+      expect(
+        service.requests.where((r) => r.uri.path == '/api/shop/orders'),
+        hasLength(1),
+      );
+      final count = service.requests.length;
+      navigator.currentState!.pop();
+      await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
+      expect(service.requests, hasLength(count));
+      expect(service.requests.where((r) => r.uri.path == '/api/shop/orders'), hasLength(1));
+      expect(
+        service.requests.where((r) => r.uri.path == '/api/shop/orders/FIX-1'),
+        hasLength(3),
+      );
+      expect(delegate.payments, ['pay:FIX-1']);
+    });
+
+    pluginTest('内层订单被根路由覆盖时不查单，后台恢复保留当前订单内容', (tester) async {
+      final service = _ShopApi()..orderStatus = 'pending';
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await authorizeShop();
+      });
+      final root = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: root,
+            navigatorObservers: [appRouteObserver],
+            home: Navigator(
+              onGenerateRoute: (_) => InteractionPageRoute(
+                builder: (_) => Scaffold(
+                  body: SingleChildScrollView(
+                    child: MetaversePluginSurfaceView(
+                      host: host,
+                      kind: MetaversePluginSurfaceKind.page,
+                      page: 'order',
+                      params: const {'no': 'FIX-1'},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('待付款').evaluate().isNotEmpty);
+      final next = InteractionPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('离开订单页')),
+      );
+      unawaited(root.currentState!.push(next));
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(service.requests, hasLength(1));
+      root.currentState!.removeRoute(next);
+      await settle(
+        tester,
+        () =>
+            service.requests.length == 1 &&
+            find.text('待付款').evaluate().isNotEmpty,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(service.requests, hasLength(1));
+      service.orderStatus = 'delivered';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('待付款'), findsWidgets);
+      expect(service.requests, hasLength(1));
+      expect(
+        service.requests.every(
+          (r) => r.method == 'GET' && r.uri.path == '/api/shop/orders/FIX-1',
+        ),
+        isTrue,
+      );
+      await expectLater(
+        host.call('session.login', {}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(delegate.opened, isEmpty);
+    });
+
+    for (final format in ['snake', 'camel', 'mixed']) {
+      pluginTest('订单 $format 字段支持原生列表分页、详情、交付和会话过期', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(360, 780);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final service = _ShopApi()..orderFormat = format;
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          await authorizeShop();
+        });
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'orders',
+            ),
+          ),
+        );
+        await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+        await tester.ensureVisible(find.text('更多'));
+        await tester.tap(find.text('更多'));
+        await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
+        expect(find.text('买家商品 1'), findsOneWidget);
+        await tester.tap(find.text('买家商品 1'));
+        await settle(tester, () => delegate.pages.contains('order'));
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              key: const ValueKey('order'),
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'order',
+              params: const {'no': 'FIX-1'},
+            ),
+          ),
+        );
+        await settle(tester, () => find.text('自动发货').evaluate().isNotEmpty);
+        expect(find.text('0.00 LDC'), findsWidgets);
+        expect(find.text('仅用于离线测试的交付说明'), findsNothing);
+        await tester.ensureVisible(find.text('查看交付内容'));
+        await tester.tap(find.text('查看交付内容'));
+        await settle(
+          tester,
+          () => find.text('仅用于离线测试的交付说明').evaluate().isNotEmpty,
+        );
+        service.expired = true;
+        await tester.tap(findMaterialTooltip('刷新订单'));
+        await settle(tester, () => find.text('士多会话已失效。').evaluate().isNotEmpty);
+        expect(find.text('FIX-1'), findsNothing);
+        expect(find.text('仅用于离线测试的交付说明'), findsNothing);
+        expect(delegate.opened, isEmpty);
+        expect(service.requests, hasLength(4));
+      });
+    }
+
+    pluginTest('双栈 Fake-IP 下远端安装士多、渲染广场并从帖子打开商品详情', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.reset);
+      final shop = _ShopApi();
+      final network = MetaversePluginNetwork(
+        dio: Dio()..httpClientAdapter = shop,
+        lookup: (_) async => [
+          InternetAddress('2001:2::6'),
+          InternetAddress('198.18.0.6'),
+        ],
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [
+          currentUserProvider.overrideWith(_TestUser.new),
+          metaverseScriptEngineFactoryProvider.overrideWithValue(engine),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          metaversePluginStoreProvider.overrideWithValue(store),
+          metaversePluginNetworkProvider.overrideWithValue(network),
+        ],
+      );
+      final installed = await tester.runAsync(() async {
+        final package = await MetaversePluginInstaller(network: network)
+            .fetch('https://packages.example.org/plugin.json');
+        final controller = container.read(metaversePluginsProvider.notifier);
+        await controller.install(package);
+        await controller.setEnabled(package.manifest.id, enabled: true);
+        return controller.byId(package.manifest.id)!;
+      });
+      final pluginHost = container
+          .read(metaversePluginHostsProvider)
+          .hostFor(installed!);
+      const link =
+          'https://ldcstore.com/product/d553779c-83ef-48e4-98c5-a8446c78d5ec';
+      try {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: app(
+            MetaversePluginSurfaceView(
+              host: pluginHost,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'market',
+              builder: (context, content, render) => Column(
+                children: [
+                  TextButton(
+                    onPressed: () => openMetaverseLink(context, link),
+                    child: const Text('帖子链接'),
+                  ),
+                  Expanded(child: MetaversePluginPageFrame(
+                    title: 'LD士多', workspace: true,
+                    actions: render?.call('MarketActions'), child: content,
+                  )),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('测试商品').evaluate().isNotEmpty);
+      expect(
+        shop.requests.where((r) => r.uri.host == 'packages.example.org'),
+        hasLength(3),
+      );
+      await tester.tap(findMaterialTooltip('筛选商品'));
+      final low = find.text('低价');
+      await settle(tester, () => low.evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(low);
+      await tester.tap(low);
+      await tester.tap(find.text('查看结果'));
+      await tester.pumpAndSettle();
+      await settle(
+        tester,
+        () =>
+            find.text('全部 · 低价').evaluate().isNotEmpty &&
+            shop.requests.any(
+              (r) => r.uri.queryParameters['sortOrder'] == 'ASC',
+            ),
+      );
+      await settle(tester, () => find.widgetWithText(ChoiceChip, '低价').evaluate().isEmpty && find.text('测试商品').evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ChoiceChip, '低价'), findsNothing);
+      final productReads = shop.requests
+          .where((r) => r.uri.path == '/api/shop/products')
+          .length;
+      for (final width in [390.0, 800.0]) {
+        tester.view.physicalSize = Size(width, 844);
+        await tester.pump();
+        await tester.ensureVisible(find.text('帖子链接'));
+        await tester.tap(find.text('帖子链接'));
+        await settle(tester, () => find.byType(content.FluxdoRender).evaluate().isNotEmpty);
+        expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
+        expect(find.text('登录后兑换'), findsOneWidget);
+        final shell = find.byType(AppSheetScaffold);
+        expect(
+          tester.widget<AppSheetScaffold>(shell).showDragHandle,
+          width < 600,
+        );
+        if (width < 600) {
+          await tester.dragFrom(
+            tester.getTopLeft(shell) + Offset(width / 2, 12),
+            const Offset(0, 700),
+          );
+        } else {
+          await tester.tap(
+            findMaterialTooltip(
+              MaterialLocalizations.of(tester.element(shell))
+                  .modalBarrierDismissLabel,
+            ),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('帖子链接'), findsOneWidget);
+        expect(find.byType(content.FluxdoRender), findsNothing);
+      }
+      expect(find.text('全部 · 低价'), findsOneWidget);
+      expect(
+        shop.requests.where((r) => r.uri.path == '/api/shop/products'),
+        hasLength(productReads),
+      );
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(() async => container.dispose());
+      }
+    });
+
+    pluginTest('脚本不能自行跳转：没有用户点击时 openUrl / navigate / credentials.request 被拒', (
+      tester,
+    ) async {
+      await tester.runAsync(
+        () => install(
+          script: '''
+        fluxdo.on('card.load', async (ctx) => {
+          const tried = [];
+          for (const run of [
+            () => fluxdo.openUrl('https://evil.example.org/phish'),
+            () => fluxdo.browser.open('https://example.org'),
+            () => fluxdo.navigate('order', {id: '1'}),
+            () => fluxdo.prepareNavigation('order'),
+            () => fluxdo.credentials.request('account'),
+          ]) {
+            try { await run(); tried.push('ok'); } catch (e) { tried.push('denied'); }
+          }
+          ctx.setData('balance', tried.join(','));
+        });
+        fluxdo.on('refresh', async (ctx) => {
+          await fluxdo.browser.open('https://example.com/a', {mode:'inApp'});
+          try { await fluxdo.openUrl('https://example.com/b'); }
+          catch (e) { ctx.setData('balance', 'second-denied'); }
+        });
+      ''',
+        ),
+      );
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.card,
+          ),
+        ),
+      );
+      await settle(
+        tester,
+        () => find.text('denied,denied,denied,denied,denied').evaluate().isNotEmpty,
+      );
+      expect(delegate.opened, isEmpty);
+      expect(delegate.pages, isEmpty);
+      expect(delegate.authRequests, 0);
+
+      // 一次点击只换一次界面操作。
+      await tester.tap(find.text('刷新'));
+      await settle(
+        tester,
+        () => find.text('second-denied').evaluate().isNotEmpty,
+      );
+      expect(delegate.opened, ['https://example.com/a']);
+      expect(delegate.browserOpened, ['https://example.com/a']);
+    });
+
+    for (final invalidation in ['none', 'cancel', 'account', 'background', 'close']) {
+      pluginTest('原生确认续接用户操作 $invalidation', (tester) async {
+        await tester.runAsync(() => install(script: ''));
+        final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+        await tester.pumpWidget(app(const SizedBox()));
+        host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+        const options = {'title':'确认','message':'请确认操作','confirmLabel':'继续'};
+        await expectLater(host.call('dialogs.confirm', options), throwsA(isA<MetaversePluginCallException>()));
+        delegate.onConfirm = () async {
+          if (invalidation == 'account') delegate.accountId = 999;
+          if (invalidation == 'background') host.setSurfaceForeground(surface, false, appForeground: false);
+          if (invalidation == 'close') host.close(surface);
+          return invalidation != 'cancel';
+        };
+        host.dispatchUserEvent(surface, 'refresh', const {});
+        await host.call('dialogs.confirm', options);
+        if (invalidation == 'none') {
+          await host.call('navigate', {'page':'order'});
+          expect(delegate.pages, ['order']);
+        }
+        await expectLater(host.call('navigate', {'page':'order'}), throwsA(isA<MetaversePluginCallException>()));
+      });
+    }
+
+    pluginTest('导航预约在异步操作后只使用一次，并消耗本次点击', (tester) async {
+      var now = DateTime.utc(2026, 11, 12);
+      final manifestJson = jsonDecode(
+        File('$_dir/plugin.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      (manifestJson['pages'] as List).add({
+        'id': 'other',
+        'widget': 'OrderPage',
+        'title': '其他页面',
+      });
+      host = createHost(
+        clock: () => now,
+        pluginManifest: MetaversePluginManifest.parse(manifestJson),
+      );
+      await tester.runAsync(() => install(script: ''));
+      final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+      await tester.pumpWidget(app(const SizedBox()));
+      host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final token = await host.call('navigation.prepare', {'page': 'order'});
+      await host.call('credentials.request', {'name': 'account'});
+      now = now.add(const Duration(minutes: 1));
+      await expectLater(
+        host.call('navigate', {'page': 'other', 'continuation': token}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await host.call('navigate', {
+        'page': 'order',
+        'params': {'no': 'FIX-1'},
+        'continuation': token,
+      });
+      expect(delegate.pages, ['order']);
+      await expectLater(
+        host.call('navigate', {'page': 'order', 'continuation': token}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final next = await host.call('navigation.prepare', {'page': 'order'});
+      await host.call('navigate', {'page': 'order', 'continuation': next});
+      await expectLater(
+        host.call('navigate', {'page': 'order'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(delegate.pages, ['order', 'order']);
+    });
+
+    pluginTest('替换导航绑定预约方式并消耗一次用户点击', (tester) async {
+      await tester.runAsync(() => install(script: ''));
+      final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+      await tester.pumpWidget(app(const SizedBox()));
+      host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final token = await host.call('navigation.prepare', {'page':'order','replace':true});
+      await host.call('navigate', {'page':'order','replace':true,'continuation':token});
+      expect(delegate.pages,['replace:order']);
+      await expectLater(host.call('navigate',{'page':'order','replace':true}),
+        throwsA(isA<MetaversePluginCallException>()));
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final next = await host.call('navigation.prepare', {'page':'order'});
+      await expectLater(host.call('navigate',{'page':'order','replace':true,'continuation':next}),
+        throwsA(isA<MetaversePluginCallException>()));
+      expect(delegate.pages,['replace:order']);
+    });
+
+    for (final invalidate in [
+      'route',
+      'background',
+      'account',
+      'click',
+      'close',
+    ]) {
+      pluginTest('导航预约在 $invalidate 后失效', (tester) async {
+        await tester.runAsync(() => install(script: ''));
+        final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+        await tester.pumpWidget(app(const SizedBox()));
+        host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+        host.dispatchUserEvent(surface, 'refresh', const {});
+        final token = await host.call('navigation.prepare', {'page': 'order'});
+        switch (invalidate) {
+          case 'route':
+            host.setSurfaceForeground(surface, false);
+            host.setSurfaceForeground(surface, true);
+          case 'background':
+            host.setSurfaceForeground(surface, false, appForeground: false);
+            host.setSurfaceForeground(surface, true);
+          case 'account':
+            delegate.accountId = 2;
+          case 'click':
+            host.dispatchUserEvent(surface, 'refresh', const {});
+          case 'close':
+            host.close(surface);
+        }
+        await expectLater(
+          host.call('navigate', {'page': 'order', 'continuation': token}),
+          throwsA(isA<MetaversePluginCallException>()),
+        );
+        expect(delegate.pages, isEmpty);
+      });
+    }
+
+    pluginTest('脚本读不到清单外的能力：站点域名、未声明页面、他人存储', (tester) async {
+      await tester.runAsync(
+        () => install(
+          script: '''
+        fluxdo.on('card.load', async (ctx) => {
+          const out = [];
+          const attempt = async (label, run) => {
+            try { await run(); out.push(label + ':ok'); }
+            catch (e) { out.push(label + ':denied'); }
+          };
+          await attempt('site', () => fluxdo.fetch('https://linux.do/session/current.json'));
+          await attempt('other', () => fluxdo.fetch('https://evil.example.org/x'));
+          await attempt('cookie', () => fluxdo.fetch('https://api.example.com/x', {headers: {Cookie: '_t=1'}}));
+          await attempt('user', () => fluxdo.user.get());
+          await fluxdo.storage.set('k', {n: 1});
+          out.push('stored:' + (await fluxdo.storage.get('k')).n);
+          ctx.setData('balance', out.join(' '));
+        });
+      ''',
+        ),
+      );
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.card,
+          ),
+        ),
+      );
+      await settle(
+        tester,
+        () => find.textContaining('stored:1').evaluate().isNotEmpty,
+      );
+      expect(
+        find.text('site:denied other:denied cookie:denied user:ok stored:1'),
+        findsOneWidget,
+      );
+      expect(api.requests, isEmpty);
+      expect(await tester.runAsync(() => store.readStorage(manifest.id)), {
+        'k': {'n': 1},
+      });
+    });
+
+    pluginTest('脚本死循环：界面不冻结，插件被挂起', (tester) async {
+      await tester.runAsync(
+        () => install(
+          script: "fluxdo.on('card.load', () => { while (true) {} });",
+        ),
+      );
+      host = createHost(timeout: const Duration(milliseconds: 500));
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.card,
+          ),
+        ),
+      );
+      await settle(tester, () => delegate.suspended.isNotEmpty);
+      expect(delegate.suspended.single, contains('超时'));
+      expect(host.isRunning, isFalse);
+    });
+
+    pluginTest('脚本塞入超大数据时被拒收，界面保持可用', (tester) async {
+      await tester.runAsync(
+        () => install(
+          script: '''
+        fluxdo.on('card.load', (ctx) => {
+          ctx.setData('balance', 'ready');
+          ctx.setData('items', new Array(200000).fill({a: 1}));
+        });
+      ''',
+        ),
+      );
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.card,
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('ready').evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}

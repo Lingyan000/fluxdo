@@ -1,8 +1,8 @@
 {
   "@@locale": "zh",
-  "cdk_balance": "CDK 积分",
-  "cdk_points": "积分",
-  "cdk_reAuthHint": "请重新授权以查看积分",
+  "cdk_balance": "CDK 评分",
+  "cdk_points": "评分",
+  "cdk_reAuthHint": "请重新授权以查看评分",
   "ldc_balance": "LDC 余额",
   "ldc_dailyIncome": "今日收入 {amount}",
   "@ldc_dailyIncome": {

@@ -1,276 +1,324 @@
+import 'package:app_icons/app_icons.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
-import '../providers/theme_provider.dart';
-import '../services/ldc_oauth_service.dart';
-import '../services/cdk_oauth_service.dart';
 import '../l10n/s.dart';
+import '../navigation/navigation_activity_scope.dart';
+import '../navigation/nav_action_bus.dart';
+import '../modules/metaverse/market/metaverse_market_provider.dart';
+import '../modules/metaverse/market/metaverse_update_provider.dart';
+import '../modules/metaverse/core/metaverse_service.dart';
+import '../modules/metaverse/metaverse_registry.dart';
+import '../modules/metaverse/plugin/metaverse_plugin_installer.dart';
+import '../modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
+import '../modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import '../modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
+import '../modules/metaverse/market/metaverse_market_page.dart';
 import '../services/toast_service.dart';
-import '../providers/ldc_providers.dart';
-import '../providers/cdk_providers.dart';
-import '../widgets/ldc_balance_card.dart';
-import '../widgets/cdk_balance_card.dart';
-import '../modules/ldc_reward/ldc_reward.dart';
 
+/// 元宇宙：官方服务与第三方插件服务的统一入口。
+///
+/// 页面本身不认识任何具体服务，只遍历 [metaverseServicesProvider]；新增官方
+/// 服务或安装第三方插件都不需要改这里。
 class MetaversePage extends ConsumerStatefulWidget {
-  const MetaversePage({super.key});
+  const MetaversePage({super.key, this.workspace = false});
+  final bool workspace;
 
   @override
   ConsumerState<MetaversePage> createState() => _MetaversePageState();
 }
 
 class _MetaversePageState extends ConsumerState<MetaversePage> {
-  static const String _ldcEnabledKey = 'ldc_enabled';
-  static const String _cdkEnabledKey = 'cdk_enabled';
-  bool _ldcEnabled = false;
-  bool _cdkEnabled = false;
-  bool _ldcProcessing = false;
-  bool _cdkProcessing = false;
+  /// 正在开启/停用/授权的服务。
+  final _processing = <String>{};
+  bool _installing = false;
+  bool _refreshing = false;
+  int _tabIndex = 0;
+  final _servicesScroll = ScrollController();
+  final _marketScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _servicesScroll.dispose();
+    _marketScroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshServices() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      ref.read(metaversePluginHostsProvider).refreshVisibleCards();
+      final container = _container;
+      await Future.wait([
+        for (final service in ref.read(metaverseServicesProvider))
+          service.refresh(container, isActive: () => mounted && _tabIndex == 0 && NavigationActivityScope.isActive(context)),
+      ]);
+    } finally { _refreshing = false; }
+  }
+
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(context, listen: false);
 
   @override
   void initState() {
     super.initState();
-    final prefs = ref.read(sharedPreferencesProvider);
-    _ldcEnabled = prefs.getBool(_ldcEnabledKey) ?? false;
-    _cdkEnabled = prefs.getBool(_cdkEnabledKey) ?? false;
-
-    // 每次进入页面时刷新已启用服务的数据
-    _refreshEnabledServices();
-  }
-
-  /// 先等 build() 完成，再调 refresh()，避免并发导致 build() 结果覆盖 refresh() 的错误状态
-  Future<void> _refreshEnabledServices() async {
-    if (_ldcEnabled) {
-      await ref.read(ldcUserInfoProvider.future).catchError((_) => null);
-      if (!mounted) return;
-      ref.read(ldcUserInfoProvider.notifier).refresh();
-    }
-    if (_cdkEnabled) {
-      await ref.read(cdkUserInfoProvider.future).catchError((_) => null);
-      if (!mounted) return;
-      ref.read(cdkUserInfoProvider.notifier).refresh();
+    // 每次进入页面时刷新已开启服务的数据。
+    final container = ProviderScope.containerOf(context, listen: false);
+    for (final service in ref.read(metaverseServicesProvider)) {
+      service.refresh(container, isActive: () => mounted);
     }
   }
 
-  Future<void> _toggleLdc(bool value) async {
-    if (_ldcProcessing) return;
-    setState(() => _ldcProcessing = true);
+  /// 串行化同一服务上的操作，并统一处理提示。
+  Future<void> _run(
+    MetaverseService service,
+    Future<String?> Function() action,
+  ) async {
+    if (_processing.contains(service.id)) return;
+    setState(() => _processing.add(service.id));
     try {
-      if (value) {
-        await _enableLdc();
-      } else {
-        await _disableLdc();
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _ldcProcessing = false);
-      }
-    }
-  }
-
-  Future<void> _enableLdc() async {
-    try {
-      final service = LdcOAuthService();
-      final result = await service.authorize(context);
-
-      if (result && mounted) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_ldcEnabledKey, true);
-        if (!mounted) return;
-        setState(() => _ldcEnabled = true);
-        await ref.read(ldcUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_ldcAuthSuccess);
-        }
-      }
+      final message = await action();
+      if (message != null && mounted) ToastService.showSuccess(message);
     } catch (e) {
       if (mounted) {
         ToastService.showError(S.current.metaverse_authFailed(e.toString()));
       }
+    } finally {
+      if (mounted) setState(() => _processing.remove(service.id));
     }
   }
 
-  Future<void> _disableLdc() async {
-    final notifier = ref.read(ldcUserInfoProvider.notifier);
-    try {
-      final service = LdcOAuthService();
-      await service.logout();
-    } catch (e) {
-      // 忽略登出错误
-    }
-    await notifier.disable();
-    if (mounted) setState(() => _ldcEnabled = false);
-  }
+  Future<void> _enable(MetaverseService service) => _run(service, () async {
+    final enabled = await service.enable(context, _container);
+    return enabled ? service.enabledMessage() : null;
+  });
 
-  Future<void> _toggleCdk(bool value) async {
-    if (_cdkProcessing) return;
-    setState(() => _cdkProcessing = true);
+  Future<void> _disable(MetaverseService service) => _run(service, () async {
+    await service.disable(_container);
+    return null;
+  });
+
+  Future<void> _reauthorize(MetaverseService service) =>
+      _run(service, () async {
+        final done = await service.reauthorize(context, _container);
+        return done ? service.reauthorizedMessage() : null;
+      });
+
+  Future<void> _remove(MetaverseService service) => _run(service, () async {
+    await service.remove(_container);
+    return null;
+  });
+
+  Future<void> _installPlugin() async {
+    if (_installing) return;
+    setState(() => _installing = true);
     try {
-      if (value) {
-        await _enableCdk();
+      final installer = MetaversePluginInstaller(
+        network: ref.read(metaversePluginNetworkProvider),
+        reservedHosts: ref.read(metaversePluginStoreProvider).reservedHosts,
+      );
+      final MetaversePluginPackage package;
+      final choice = await showMetaversePluginPicker(context);
+      if (choice == null || !mounted) return;
+      if (choice.url case final String address) {
+        package = await installer.fetch(address);
       } else {
-        await _disableCdk();
+        final file = await FilePicker.pickFile();
+        if (file == null) return;
+        package = await installer.importBundle(file.readAsByteStream());
+      }
+      if (!mounted) return;
+      final controller = ref.read(metaversePluginsProvider.notifier);
+      final choices = await showMetaversePluginInstallSheet(
+        context,
+        package.manifest,
+        package: package, previous: controller.byId(package.manifest.id),
+        isUpdate: controller.byId(package.manifest.id) != null,
+        initialBlocked: controller.reviewPermissions(package),
+      );
+      if (choices == null) return;
+      await controller.install(package, choices: choices);
+      if (mounted) {
+        ToastService.showSuccess(
+          S.current.metaverse_pluginInstalled(package.manifest.name),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.showError(
+          S.current.metaverse_pluginInstallFailed(e.toString()),
+        );
       }
     } finally {
-      if (mounted) {
-        setState(() => _cdkProcessing = false);
-      }
+      if (mounted) setState(() => _installing = false);
     }
-  }
-
-  Future<void> _enableCdk() async {
-    try {
-      final service = CdkOAuthService();
-      final result = await service.authorize(context);
-
-      if (result && mounted) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_cdkEnabledKey, true);
-        if (!mounted) return;
-        setState(() => _cdkEnabled = true);
-        await ref.read(cdkUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_cdkAuthSuccess);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.metaverse_authFailed(e.toString()));
-      }
-    }
-  }
-
-  Future<void> _disableCdk() async {
-    final notifier = ref.read(cdkUserInfoProvider.notifier);
-    try {
-      final service = CdkOAuthService();
-      await service.logout();
-    } catch (e) {
-      // 忽略登出错误
-    }
-    await notifier.disable();
-    if (mounted) setState(() => _cdkEnabled = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final active = NavigationActivityScope.isActive(context);
+    ref.listen(navActionBusProvider, (_, event) {
+      if (!widget.workspace || !active || event?.targetId != NavEntryIds.metaverse ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
+      final scroll = _tabIndex == 0 ? _servicesScroll : _marketScroll;
+      if (scroll.hasClients) {
+        scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      }
+      if (event!.action == NavAction.refresh) {
+        if (_tabIndex == 0) {
+          _refreshServices();
+        } else {
+          ref.read(metaverseMarketProvider.notifier).refresh(force: true);
+        }
+      }
+    });
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final services = ref.watch(metaverseServicesProvider);
+    final cardLayout = ref.watch(metaverseCardLayoutProvider);
+    final attention = ref.watch(metaverseAttentionProvider);
+    final container = _container;
 
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar.large(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+          appBar: AppBar(
             title: Text(context.l10n.metaverse_title),
             centerTitle: false,
+            automaticallyImplyLeading: !widget.workspace,
+            actions: [
+              IconButton(
+                icon: Badge.count(count: attention.length, isLabelVisible: attention.isNotEmpty,
+                  child: const Icon(Symbols.extension_rounded)),
+                tooltip: context.l10n.metaverse_pluginManage,
+                onPressed: () => Navigator.of(context).push(InteractionPageRoute(
+                  builder: (_) => const MetaversePluginManagementPage(),
+                )),
+              ),
+            ],
+            bottom: TabBar(tabs: [
+              Tab(text: context.l10n.metaverse_myServices),
+              Tab(text: context.l10n.metaverse_market),
+            ]),
           ),
+      body: Builder(builder: (context) {
+        final tabs = DefaultTabController.of(context);
+        final active = NavigationActivityScope.isActive(context);
+        return AnimatedBuilder(animation: tabs, builder: (context, _) {
+        _tabIndex = tabs.index;
+        return TabBarView(children: [
+        NavigationActivityScope(active: active && tabs.index == 0, child: CustomScrollView(
+        key: const PageStorageKey('metaverse-services'),
+        controller: _servicesScroll,
+        slivers: [
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // 服务列表标题
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16, top: 8),
                   child: Text(
-                    context.l10n.metaverse_myServices,
+                    context.l10n.metaverse_builtinServices,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
                 ),
-                // LDC 服务卡片
-                _buildLdcServiceItem(theme),
-                const SizedBox(height: 16),
-                // CDK 服务卡片
-                _buildCdkServiceItem(theme),
-                const SizedBox(height: 16),
-                // LDC 打赏配置（仅在 LDC 已开启时显示）
-                if (_ldcEnabled) ...[
-                  const LdcRewardConfigTile(),
-                  const SizedBox(height: 16),
+                for (final service in services.where((s) => !s.isThirdParty))
+                  ..._buildService(context, service, container),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+                  child: Text(
+                    context.l10n.metaverse_thirdPartyServices,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                for (final item in cardLayout.where((item) => item.visible))
+                  for (final service in services.where((s) => s.isThirdParty && s.id == item.id))
+                    ..._buildService(context, service, container),
+                if (!services.any((service) => service.isThirdParty)) ...[
+                  SegmentedCardGroup(
+                    color: PageBackgroundScope.contentColor(context, theme.colorScheme.surfaceContainerLow),
+                    children: [ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: Icon(Symbols.explore_rounded, color: context.emphasis.accent),
+                      title: Text(context.l10n.metaverse_discoverPlugins),
+                      subtitle: Text(context.l10n.metaverse_discoverPluginsNote),
+                      trailing: const Icon(Symbols.chevron_right_rounded),
+                      onTap: () => tabs.animateTo(1),
+                    )],
+                  ),
+                  const SizedBox(height: 12),
                 ],
-                // 更多服务占位符
-                _buildComingSoonItem(theme),
-                const SizedBox(height: 100), // 底部留白
+                _buildAddServiceItem(theme),
+                SizedBox(height: 24 + MediaQuery.paddingOf(context).bottom),
               ]),
             ),
           ),
         ],
       ),
+      ),
+      MetaverseMarketPage(scrollController: _marketScroll),
+      ]); });
+      }),
+      ),
     );
   }
 
-  Future<void> _reauthorizeLdc() async {
-    if (_ldcProcessing) return;
-    setState(() => _ldcProcessing = true);
-    try {
-      final service = LdcOAuthService();
-      if (!mounted) return;
-      final result = await service.reauthorize(context);
-      if (result && mounted) {
-        await ref.read(ldcUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_ldcReauthSuccess);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.metaverse_authFailed(e.toString()));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _ldcProcessing = false);
-      }
+  List<Widget> _buildService(
+    BuildContext context,
+    MetaverseService service,
+    ProviderContainer container,
+  ) {
+    final isProcessing = _installing || _processing.contains(service.id);
+    if (!service.isEnabled(container)) {
+      return [
+        _buildConnectCard(context, service, isProcessing),
+        const SizedBox(height: 16),
+      ];
     }
-  }
-
-  Future<void> _reauthorizeCdk() async {
-    if (_cdkProcessing) return;
-    setState(() => _cdkProcessing = true);
-    try {
-      final service = CdkOAuthService();
-      if (!mounted) return;
-      final result = await service.reauthorize(context);
-      if (result && mounted) {
-        await ref.read(cdkUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.metaverse_cdkReauthSuccess);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.metaverse_authFailed(e.toString()));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _cdkProcessing = false);
-      }
-    }
-  }
-
-  Widget _buildLdcServiceItem(ThemeData theme) {
-    if (_ldcEnabled) {
-      return LdcBalanceCard(
-        isProcessing: _ldcProcessing,
-        onDisable: () => _toggleLdc(false),
-        onReauthorize: _reauthorizeLdc,
-      );
-    }
-
-    // 未开启状态：展示连接卡片
-    return Card(
-      color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
-      child: InkWell(
-        onTap: _ldcProcessing ? null : () => _toggleLdc(true),
-        customBorder: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(24),
+    final extras = service.buildExtras(context);
+    return [
+      KeyedSubtree(
+        key: ValueKey('metaverse-service-${service.id}'),
+        child: service.buildCard(
+          context,
+          MetaverseCardHost(
+            isProcessing: isProcessing,
+            onDisable: () => _disable(service),
+            onReauthorize: () => _reauthorize(service),
+            onRemove: service.canRemove ? () => _remove(service) : null,
+          ),
         ),
+      ),
+      const SizedBox(height: 16),
+      if (extras != null) ...[extras, const SizedBox(height: 16)],
+    ];
+  }
+
+  /// 未开启状态：展示连接卡片。
+  Widget _buildConnectCard(
+    BuildContext context,
+    MetaverseService service,
+    bool isProcessing,
+  ) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(24),
+    );
+    return Card(
+      color: scheme.surfaceContainerHigh,
+      shape: shape,
+      child: InkWell(
+        onTap: isProcessing ? null : () => _enable(service),
+        customBorder: shape,
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -279,15 +327,19 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                 width: 64,
                 height: 64,
                 decoration: ShapeDecoration(
-                  color: theme.colorScheme.primaryContainer,
+                  color: service.useTertiaryTone
+                      ? scheme.tertiaryContainer
+                      : scheme.primaryContainer,
                   shape: RoundedSuperellipseBorder(
                     borderRadius: context.shapes.borderRadius(16),
                   ),
                 ),
                 child: Icon(
-                  Symbols.storefront_rounded,
+                  service.icon,
                   size: 32,
-                  color: theme.colorScheme.onPrimaryContainer,
+                  color: service.useTertiaryTone
+                      ? scheme.onTertiaryContainer
+                      : scheme.onPrimaryContainer,
                 ),
               ),
               const SizedBox(width: 16),
@@ -296,33 +348,43 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      context.l10n.metaverse_ldcService,
+                      service.title(context),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      context.l10n.metaverse_ldcDesc,
+                      service.isThirdParty
+                          ? '${context.l10n.metaverse_thirdParty} · '
+                                '${service.description(context)}'
+                          : service.description(context),
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              if (_ldcProcessing)
+              if (isProcessing)
                 const LoadingSpinner(size: 24)
-              else
+              else ...[
+                if (service.canRemove)
+                  IconButton(
+                    tooltip: context.l10n.common_remove,
+                    icon: const Icon(Symbols.delete_rounded),
+                    onPressed: () => _confirmRemove(service),
+                  ),
                 FilledButton(
-                  onPressed: () => _toggleLdc(true),
+                  onPressed: () => _enable(service),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     visualDensity: VisualDensity.compact,
                   ),
                   child: Text(context.l10n.common_enable),
                 ),
+              ],
             ],
           ),
         ),
@@ -330,58 +392,54 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     );
   }
 
-  Widget _buildCdkServiceItem(ThemeData theme) {
-    if (_cdkEnabled) {
-      return CdkBalanceCard(
-        isProcessing: _cdkProcessing,
-        onDisable: () => _toggleCdk(false),
-        onReauthorize: _reauthorizeCdk,
-      );
+  Future<void> _confirmRemove(MetaverseService service) async {
+    final plugin = ref.read(metaversePluginsProvider.notifier).byId(service.id);
+    if (plugin == null) return;
+    if (await showMetaversePluginRemoveDialog(context, plugin.manifest)) {
+      await _remove(service);
     }
+  }
 
-    // 未开启状态：展示连接卡片
+  /// 添加第三方服务的入口。
+  Widget _buildAddServiceItem(ThemeData theme) {
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(16),
+    );
     return Card(
-      color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
+      margin: EdgeInsets.zero,
+      color: PageBackgroundScope.contentColor(
+        context,
+        theme.colorScheme.surfaceContainerLow,
+      ),
+      shape: shape,
       child: InkWell(
-        onTap: _cdkProcessing ? null : () => _toggleCdk(true),
-        customBorder: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(24),
-        ),
+        onTap: _installing ? null : _installPlugin,
+        customBorder: shape,
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: ShapeDecoration(
-                  color: theme.colorScheme.tertiaryContainer,
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(16),
-                  ),
+              if (_installing)
+                const LoadingSpinner(size: 24)
+              else
+                Icon(
+                  Symbols.add_circle_rounded,
+                  size: 28,
+                  color: context.emphasis.accent,
                 ),
-                child: Icon(
-                  Symbols.token_rounded,
-                  size: 32,
-                  color: theme.colorScheme.onTertiaryContainer,
-                ),
-              ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      context.l10n.metaverse_cdkService,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      context.l10n.metaverse_addService,
+                      style: theme.textTheme.titleSmall,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
-                      context.l10n.metaverse_cdkDesc,
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                      context.l10n.metaverse_addServiceDesc,
+                      style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -389,45 +447,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (_cdkProcessing)
-                const LoadingSpinner(size: 24)
-              else
-                FilledButton(
-                  onPressed: () => _toggleCdk(true),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: Text(context.l10n.common_enable),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildComingSoonItem(ThemeData theme) {
-    return Card(
-      color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(
-                Symbols.hub_rounded,
-                size: 32,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                context.l10n.metaverse_comingSoon,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              ),
+              const Icon(Symbols.chevron_right_rounded, size: 20),
             ],
           ),
         ),

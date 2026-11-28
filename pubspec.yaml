@@ -25,6 +25,7 @@ workspace:
   - packages/fluxdo_js_runtime
   - packages/fluxdo_ocr
   - packages/fluxdo_render
+  - packages/fluxdo_plugin_runtime
   - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
@@ -45,6 +46,16 @@ dependencies:
   synchronized: ^3.6.1+1
   dio: ^5.11.1
   http: ^1.6.0
+  local_auth: ^3.0.2
+  local_auth_android: ^2.3.0
+  local_auth_darwin: ^2.0.5
+  # 第三方插件使用可原生中断且限制内存的独立 QuickJS 运行时。
+  qjs:
+    path: packages/qjs
+  flutter_staggered_grid_view: ^0.7.0
+  # 元宇宙第三方插件的原生界面:插件下发声明式界面描述,由宿主预置的
+  # Flutter 组件渲染(区别于 WebView 小程序);插件逻辑跑在独立 QuickJS 运行时里
+  rfw: ^2.0.0
   dio_cookie_manager: ^3.5.0
   cookie_jar: ^4.0.9
   # Android 旧版曾用 9.x 保存凭据；保留 10.x 的迁移能力，支持跨版本升级。
@@ -107,6 +118,9 @@ dependencies:
     path: packages/paper_shaders
   fluxdo_render:
     path: packages/fluxdo_render
+  fluxdo_plugin_runtime:
+    path: packages/fluxdo_plugin_runtime
+  sqlite3: ^3.9.1 # 插件任务与数据跨引擎事务
   flutter_local_notifications: ^23.0.2
   jovial_svg: ^1.1.31
   # kroki.io mermaid 出图的 zlib+base64url 编码(纯 Dart,web 可用;
@@ -224,6 +238,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  analyzer: ^14.7.0 # 从实际组件实现生成插件参数契约
   jovial_svg_transformer: ^1.0.5
   melos: ^8.6.0
   dart_console: ^5.1.2

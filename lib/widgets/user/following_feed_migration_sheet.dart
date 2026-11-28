@@ -1,8 +1,10 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 
 import '../../l10n/s.dart';
+import '../../services/toast_service.dart';
 import '../../pages/user_profile_page.dart';
 import '../common/app_bottom_sheet.dart';
 import '../common/smart_avatar.dart';
@@ -73,6 +75,19 @@ Future<void> showFollowingFeedLegacyUsers(
   final username = await AppBottomSheet.show<String>(
     context: context,
     title: context.l10n.followingFeed_legacyUsers,
+    footer: Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      child: FilledButton.icon(
+        icon: const Icon(Symbols.content_copy_rounded),
+        label: Text(context.l10n.followingFeed_copyLegacyUsers),
+        onPressed: users.isEmpty ? null : () async {
+          await Clipboard.setData(ClipboardData(text: users.join('\n')));
+          if (context.mounted) {
+            ToastService.showSuccess(context.l10n.common_copiedToClipboard);
+          }
+        },
+      ),
+    ),
     builder: (context) => ListView.builder(
       shrinkWrap: true,
       itemCount: users.length + 1,

@@ -288,7 +288,7 @@ void main() {
 
   test('日志导出文件无法生成时留下独立的生成阶段异常', () async {
     final blocked = Directory(
-      p.join(sandbox.path, 'logs', 'app_log_share.jsonl'),
+      p.join(sandbox.path, 'logs', 'app_log_all_share.jsonl'),
     );
     blocked.createSync();
     await expectLater(
@@ -299,7 +299,7 @@ void main() {
       (entry) => entry['tag'] == 'LogExport',
     );
     expect(failure['stage'], 'writeExportFile');
-    expect(failure['sourcePath'], blocked.path);
+    expect(p.normalize(failure['sourcePath'] as String), blocked.path);
     expect(failure['osErrorCode'], isNotNull);
     expect(failure['stackTrace'], isNotEmpty);
     expect(nativeCalls, isEmpty);

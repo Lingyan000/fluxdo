@@ -12,7 +12,9 @@ import '../../../theme/app_colors.dart';
 
 /// LDC 打赏凭证配置卡片（元宇宙页面用）
 class LdcRewardConfigTile extends ConsumerWidget {
-  const LdcRewardConfigTile({super.key});
+  const LdcRewardConfigTile({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -20,6 +22,27 @@ class LdcRewardConfigTile extends ConsumerWidget {
     final credentialsAsync = ref.watch(ldcRewardCredentialsProvider);
 
     final isConfigured = credentialsAsync.value != null;
+
+    if (embedded) {
+      return ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+        leading: Icon(
+          Symbols.volunteer_activism_rounded,
+          color: context.emphasis.accent,
+        ),
+        title: Text(context.l10n.reward_title),
+        subtitle: Text(
+          isConfigured
+              ? context.l10n.reward_configured
+              : context.l10n.reward_notConfigured,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
+        onTap: () => _showConfigDialog(context, ref, isConfigured),
+      );
+    }
 
     return Card(
       elevation: 0,

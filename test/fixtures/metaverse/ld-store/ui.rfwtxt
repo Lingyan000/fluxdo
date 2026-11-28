@@ -1,0 +1,486 @@
+import fluxdo;
+
+widget TextSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", children: [
+  SkeletonBox(width: 140, height: 20), Gap(size: 12), SkeletonBox(height: 16),
+  Gap(size: 8), FractionallySizedBox(widthFactor: 0.65, alignment: "centerLeft", child: SkeletonBox(height: 16)),
+]));
+widget SummarySkeleton = Skeleton(child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
+  Row(children: [SkeletonBox(width: 72, height: 72, radius: 12), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "stretch", children: [SkeletonBox(height: 20), Gap(size: 12), SkeletonBox(width: 96, height: 16)]))]),
+  Gap(size: 24), SkeletonBox(height: 18), Gap(size: 20), SkeletonBox(height: 18), Gap(size: 20), SkeletonBox(height: 18),
+])));
+widget ProductSkeleton = Column(crossAxisAlignment: "stretch", children: [
+  Skeleton(child: AspectRatio(aspectRatio: 1.35, child: SkeletonBox(height: 240, radius: 16))),
+  Gap(size: 20), TextSkeleton(), Gap(size: 24), SummarySkeleton(),
+]);
+widget ReviewSkeleton = Column(crossAxisAlignment: "stretch", children: [SummarySkeleton(), Gap(size: 24), TextSkeleton()]);
+widget RowsSkeleton = Column(crossAxisAlignment: "stretch", children: [
+  Surface(child: TextSkeleton()), Gap(size: 12), Surface(child: TextSkeleton()), Gap(size: 12), Surface(child: TextSkeleton()),
+]);
+widget TileSkeleton = Skeleton(child: Surface(padding: [0.0], child: Column(crossAxisAlignment: "stretch", children: [
+  AspectRatio(aspectRatio: 1.4, child: SkeletonBox(height: 128, radius: 0)),
+  Padding(padding: [10.0], child: Column(crossAxisAlignment: "stretch", children: [SkeletonBox(height: 18), Gap(size: 10), SkeletonBox(width: 80, height: 22), Gap(size: 10), SkeletonBox(height: 14)])),
+])));
+widget GridSkeleton = TileGrid(layout: "equalHeight", minTileWidth: 156, children: [TileSkeleton(), TileSkeleton(), TileSkeleton(), TileSkeleton()]);
+
+
+widget Card = Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+  Statistics(items: data.stats, loading: data.overviewInitialLoading),
+  switch data.overviewError {"": SizedBoxShrink(), default: Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant")},
+]);
+
+widget MarketActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "tune", tooltip: data.i18n.s1209094cb006abd9, onPressed: event "filters" {}),
+  IconButton(icon: "person", tooltip: data.i18n.se4422147cb5f43ab, onPressed: event "account" {},
+    child: switch data.authorized {true: Avatar(label: data.accountName, url: data.accountAvatar, size: 28), default: Symbol(name: "person")}),
+]);
+widget ProductActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "favorite", selected: data.favorited, tooltip: data.favoriteLabel,
+    enabled: data.ready, loading: data.buyerBusy, onPressed: event "favorite" {}),
+  IconButton(icon: "flag", tooltip: data.i18n.sa2f105eb28a119ee, enabled: data.ready, onPressed: event "reportProduct" {}),
+  IconButton(icon: "open_in_new", tooltip: data.i18n.s7f281f3b43f16289, onPressed: event "webProduct" {}),
+]);
+widget OrderActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "history", tooltip: data.i18n.sfe50ca8078f7c44b, enabled: data.ready, onPressed: event "refund" {}),
+  IconButton(icon: "refresh", tooltip: data.i18n.s2629d5778dd57bbb, loading: data.loading, onPressed: event "ordersRefresh" {}),
+]);
+widget MessageActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "mail", tooltip: data.i18n.s76d90cc920c904c8, onPressed: event "chats" {}),
+  IconButton(icon: "done_all", tooltip: data.i18n.s231cbc4337c5a60c, enabled: data.unread, loading: data.buyerBusy, onPressed: event "messagesReadAll" {}),
+  IconButton(icon: "open_in_new", tooltip: data.i18n.s7881bea001a5cf2a, onPressed: event "webMessages" {}),
+]);
+
+widget Market = GridPage(loadingPlaceholder: GridSkeleton(), layout: "equalHeight", minTileWidth: 156,
+  hasMore: data.more, loadingMore: data.loadingMore, onLoadMore: event "more" {},
+  loading: data.loading, error: data.message, emptyTitle: data.i18n.s87ad624a17ddd445,
+  onRefresh: event "refresh" {}, onRetry: event "marketRetry" {},
+  toolbar: Column(crossAxisAlignment: "stretch", children: [
+    SearchInput(value: data.search, hint: data.i18n.s98c2fe486054cba8, onChanged: event "input" {field: "search"}, onSubmitted: event "apply" {}),
+    Gap(size: 8),
+    SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [
+      ...for c in data.categories: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: c.name, selected: c.selected, onSelected: event "select" {cat: c.id, label: c.name})),
+    ])),
+  ]),
+  header: Wrap(spacing: 12.0, runSpacing: 4.0, children: [
+    Label(text: data.total, style: "titleSmall"), Label(text: data.selection, style: "bodySmall", color: "onSurfaceVariant"),
+    switch data.categoryMessage {"": SizedBoxShrink(), default: Label(text: data.categoryMessage, style: "bodySmall", color: "error")},
+  ]),
+  actions: switch data.webFallback {true: Button(label: data.i18n.s5842a1b334e25391, variant: "text", onPressed: event "webMarket" {}), default: SizedBoxShrink()},
+  items: [...for item in data.rows: ProductTile(item: item)],
+);
+
+widget ProductTile = switch args.item.hiddenItem {true: Surface(padding: [0.0], child: Column(crossAxisAlignment: "stretch", children: [TileContent(item: args.item), Button(label: data.i18n.s142d98f2cd299938, variant: "text", onPressed: event "restoreProduct" {id: args.item.id})])), default: Surface(padding: [0.0], onTap: event "product" {id: args.item.id}, child: TileContent(item: args.item))};
+widget TileContent = Column(crossAxisAlignment: "stretch", children: [
+  AspectRatio(aspectRatio: 1.4, child: Surface(padding: [0.0], radius: 0.0, color: "surfaceContainerHighest", child: switch args.item.image {"": Center(child: Symbol(name: args.item.typeIcon, size: 32, color: "onSurfaceVariant")), default: Image(url: args.item.image, fit: "cover")})),
+  Padding(padding: [10.0], child: Column(crossAxisAlignment: "stretch", children: [
+    switch args.item.listingNote {"": SizedBoxShrink(), default: Label(text: args.item.listingNote, style: "labelSmall", color: "primary")},
+    Label(text: args.item.title, style: "titleSmall", maxLines: 2), Gap(size: 6),
+    Amount(value: args.item.value, unit: "LDC", original: args.item.original, style: "titleMedium"),
+    switch args.item.discount {"": SizedBoxShrink(), default: Padding(padding: [0.0, 2.0, 0.0, 0.0], child: Wrap(spacing: 8.0, runSpacing: 2.0, children: [
+      Label(text: args.item.discount, style: "labelSmall", color: "primary"),
+    ]))},
+    Gap(size: 6), Wrap(spacing: 8.0, runSpacing: 2.0, children: [
+      Label(text: args.item.stock, style: "labelSmall", color: "onSurfaceVariant"),
+      Label(text: args.item.sold, style: "labelSmall", color: "onSurfaceVariant"),
+    ]),
+    switch args.item.availability {"": SizedBoxShrink(), default: Label(text: args.item.availability, style: "labelSmall", color: "primary")},
+    Gap(size: 4), Row(children: [
+      Symbol(name: args.item.typeIcon, size: 14.0, color: "onSurfaceVariant"), Gap(size: 4),
+      Expanded(child: Label(text: args.item.typeLabel, style: "labelSmall", color: "onSurfaceVariant", maxLines: 1)),
+      switch args.item.sellerName {"": SizedBoxShrink(), default: Flexible(child: Row(mainAxisSize: "min", children: [
+        switch args.item.sellerAvatar {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 4.0, 0.0], child: Avatar(label: args.item.sellerName, url: args.item.sellerAvatar, size: 18))},
+        Flexible(child: Label(text: args.item.sellerName, style: "labelSmall", color: "onSurfaceVariant", maxLines: 1, align: "end")),
+      ]))},
+    ]),
+    switch args.item.preferenceTime {"": SizedBoxShrink(), default: Wrap(spacing: 4.0, children: [Label(text: switch args.item.hiddenItem {true: data.i18n.s404b8693416b46b7, default: data.i18n.s012a274f36559018}, style: "labelSmall", color: "onSurfaceVariant"), RelativeTime(value: args.item.preferenceTime)])},
+  ])),
+]);
+
+widget Filters = PageLayout(loading: false, footer: Row(children: [
+  Button(label: data.i18n.scb5d682bac3d1a2d, variant: "text", onPressed: event "resetFilters" {}), Gap(size: 12),
+  Expanded(child: Button(label: data.i18n.sd06bc6efdd8cd7e2, onPressed: event "applyFilters" {})),
+]), children: [
+  Label(text: data.i18n.sa96c9a854190874d, style: "titleSmall"), Gap(size: 12),
+  Wrap(spacing: 8.0, runSpacing: 8.0, children: [...for o in data.sorts: Choice(label: o.label, selected: o.selected, onSelected: event "select" {sort: o.sort, direction: o.direction, label: o.label})]),
+  Gap(size: 24), Label(text: data.i18n.s30dd299ea738185b, style: "titleSmall"), Gap(size: 12),
+  Row(children: [Expanded(child: TextInput(value: data.min, label: data.i18n.s6126a4897fa07b4f, onChanged: event "input" {field: "min"})), Gap(size: 16), Expanded(child: TextInput(value: data.max, label: data.i18n.s632a5d8a277e99ea, onChanged: event "input" {field: "max"}))]),
+  Gap(size: 24), ListItem(title: data.i18n.sbd83436d082ee571, trailing: Toggle(value: data.stock, onChanged: event "stock" {})),
+  Gap(size: 16), Label(text: data.filterError, color: "error"),
+]);
+
+widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
+  hasMore: data.commentsMore, loadingMore: data.commentsLoading, loadMoreError: data.commentsError, onLoadMore: event "commentsMore" {},
+  footer: switch data.ready {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+    ExternalFeedback(),
+    switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.loginError, color: "error"))},
+    switch data.restockAvailable {true: Button(label: data.restockLabel, icon: "notifications", enabled: switch data.restockSubscribed {true: false, default: true}, loading: data.restockLoading, variant: "tonal", onPressed: event "subscribeRestock" {}), default: SizedBoxShrink()},
+    switch data.restockError {"": SizedBoxShrink(), default: ListItem(title: data.restockError, trailing: Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "restockRetry" {}))},
+    Row(children: [Expanded(child: Amount(value: data.value, unit: "LDC")), Gap(size: 12),
+      Expanded(flex: 2, child: switch data.linkProduct {
+        true: Button(fullWidth: true, label: data.buyLabel, icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
+        default: switch data.authorized {true: Button(fullWidth: true, label: data.buyLabel, enabled: data.buy, onPressed: event "review" {}), default: Button(fullWidth: true, label: switch data.buy {true: data.i18n.sf25d787df4bff6d2, default: data.buyLabel}, enabled: data.buy, loading: data.loggingIn, onPressed: event "login" {})},
+      }),
+    ]),
+  ]), default: SizedBoxShrink()},
+  children: [
+    switch data.initialLoading {true: ProductSkeleton(), default: SizedBoxShrink()},
+    switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+      switch data.image {"": SizedBoxShrink(), default: Surface(padding: [0.0], child: AspectRatio(aspectRatio: 1.35, child: Image(url: data.image, fit: "contain", preview: true)))},
+      Gap(size: 20), Amount(value: data.value, unit: "LDC", original: data.original, style: "headlineMedium"),
+      Gap(size: 12), Label(text: data.title, style: "titleLarge", bold: true), Gap(size: 12),
+      Wrap(spacing: 8.0, runSpacing: 8.0, children: [Chip(label: data.typeLabel),
+        switch data.category {"": SizedBoxShrink(), default: Chip(label: data.category)},
+        switch data.discount {"": SizedBoxShrink(), default: Chip(label: data.discount)},
+      ]),
+      Gap(size: 20), Surface(child: Statistics(items: data.metrics)),
+      Gap(size: 12), Surface(padding: [0.0], child: ListItem(title: data.sellerName, subtitle: data.i18n.s3d43be34e14fae36,
+        leading: Avatar(label: data.sellerName, url: data.sellerAvatar, size: 40), trailing: switch data.sellerProfileAvailable {true: IconButton(icon: "person", tooltip: data.i18n.sf5e765cb4d828b14, onPressed: event "sellerProfile" {}), default: Symbol(name: "chevron_right")}, onTap: event "seller" {})),
+      Gap(size: 12), Label(text: data.listedAt, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(),
+      ...for rule in data.rules: Padding(padding: [0.0, 4.0, 0.0, 4.0], child: Row(crossAxisAlignment: "start", children: [Symbol(name: "info", size: 18.0, color: "onSurfaceVariant"), Gap(size: 8), Expanded(child: Label(text: rule, color: "onSurfaceVariant"))])),
+      Gap(size: 24), SectionTitle(title: data.i18n.s64717955bcfdb7ca), Gap(size: 12), Markdown(text: data.description, onLink: event "contentLink" {}),
+      Gap(size: 28), ProductComments(),
+    ]), default: SizedBoxShrink()},
+    switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: ActionBar(actions: [Button(label: data.i18n.sb8784c8dd5636ff2, onPressed: event "retry" {}), Button(label: data.i18n.s7f281f3b43f16289, variant: "text", onPressed: event "webProduct" {})]))},
+  ],
+);
+
+widget ProductComments = Column(crossAxisAlignment: "stretch", children: [
+  Wrap(spacing: 16.0, runSpacing: 8.0, crossAxisAlignment: "center", children: [
+    SectionTitle(title: data.i18n.s68fe685324cbdee2),
+    switch data.canComment {true: Button(label: data.i18n.s1d345684bc1e9c7f, icon: "edit", variant: "text", onPressed: event "comment" {}), default: SizedBoxShrink()},
+  ]), Gap(size: 16),
+  switch data.commentStatsReady {true: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Surface(child: Statistics(items: data.commentStats))), default: SizedBoxShrink()},
+  ...for comment in data.comments: Padding(padding: [0.0, 4.0, 0.0, 20.0], child: Column(crossAxisAlignment: "stretch", children: [
+    CommentBody(item: comment),
+    Wrap(spacing: 4.0, runSpacing: 8.0, children: [
+      switch comment.interactive {true: Wrap(spacing: 2.0, runSpacing: 8.0, crossAxisAlignment: "center", children: [IconButton(icon: "thumb_up", tooltip: data.i18n.se27882c866cfb391, selected: comment.votedUp, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "up"}), Label(text: comment.upLabel), IconButton(icon: "thumb_down", tooltip: data.i18n.s25be83fba61bb37d, selected: comment.votedDown, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "down"}), Label(text: comment.downLabel), Button(label: data.i18n.scf945e21ddefbb46, variant: "text", onPressed: event "reply" {id: comment.id}), IconButton(icon: "flag", tooltip: data.i18n.s4899a3328d1fa181, onPressed: event "reportComment" {id: comment.id})]), default: SizedBoxShrink()},
+      switch comment.canDelete {true: IconButton(icon: "delete", tooltip: data.i18n.sdd75eaf740e691db, onPressed: event "commentDelete" {id: comment.id}), default: SizedBoxShrink()},
+    ]),
+    switch comment.repliesOpen {true: Padding(padding: [20.0, 12.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [
+      ...for reply in comment.replies: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: CommentBody(item: reply)),
+      switch comment.repliesEmpty {true: Padding(padding: [0.0, 8.0, 0.0, 8.0], child: Label(text: data.i18n.s1eb1a110e96f31ca, style: "bodySmall", color: "onSurfaceVariant")), default: SizedBoxShrink()},
+      switch comment.repliesError {"": switch comment.repliesMore {true: Button(label: data.i18n.s6d1cc8074d748015, variant: "text", loading: comment.repliesLoading, onPressed: event "commentReplies" {id: comment.id, more: true}), default: switch comment.repliesLoading {true: TextSkeleton(), default: SizedBoxShrink()}}, default: Column(crossAxisAlignment: "stretch", children: [Label(text: comment.repliesError, color: "error"), Gap(size: 8), Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "commentReplies" {id: comment.id, more: comment.repliesMore})])},
+    ])), default: switch comment.replyLabel {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Button(label: comment.replyLabel, variant: "text", onPressed: event "commentReplies" {id: comment.id}))}},
+  ])),
+  CommentsStatus(),
+]);
+widget CommentsSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", children: [
+  Row(children: [SkeletonBox(width: 32, height: 32, radius: 16), Gap(size: 12), SkeletonBox(width: 112, height: 16)]),
+  Gap(size: 16), SkeletonBox(height: 16), Gap(size: 8),
+  FractionallySizedBox(widthFactor: 0.65, alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(height: 16)),
+  Gap(size: 12), Align(alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(width: 80, height: 12)), Gap(size: 20),
+]));
+widget CommentsStatus = switch data.commentsInitialLoading {
+  true: CommentsSkeleton(),
+  default: switch data.commentsLoading {
+    true: Padding(padding: [0.0, 16.0, 0.0, 16.0], child: Center(child: Spinner())),
+    default: switch data.commentsError {
+      "": switch data.commentsMessage {
+        "": switch data.commentsMore {true: Padding(padding: [0.0, 8.0, 0.0, 8.0], child: Button(label: data.i18n.s6394005b5e43f108, variant: "text", onPressed: event "commentsMore" {})), default: SizedBoxShrink()},
+        default: EmptyState(icon: "mail", title: data.commentsMessage),
+      },
+      default: EmptyState(icon: "error", title: data.commentsError, action: Button(label: data.i18n.se856ce979d5683fa, variant: "text", onPressed: event "commentsRetry" {})),
+    },
+  },
+};
+widget CommentBody = Column(crossAxisAlignment: "stretch", children: [
+  Row(children: [Avatar(label: args.item.author, url: args.item.avatar, size: 32), Gap(size: 10), Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: args.item.author, style: "titleSmall"), switch args.item.handle {"": SizedBoxShrink(), default: Label(text: args.item.handle, style: "labelSmall", color: "onSurfaceVariant")} ])), Label(text: args.item.rating, style: "labelSmall", color: "primary")]),
+  Gap(size: 8), SelectableLabel(text: args.item.content), Gap(size: 6), Wrap(spacing: 8.0, runSpacing: 4.0, children: [
+    switch args.item.badge {"": SizedBoxShrink(), default: Label(text: args.item.badge, style: "labelSmall", color: "primary")},
+    switch args.item.moderation {"": SizedBoxShrink(), default: Label(text: args.item.moderation, style: "labelSmall", color: "onSurfaceVariant")},
+    RelativeTime(value: args.item.time),
+  ]),
+]);
+widget SectionTitle = Label(text: args.title, style: "titleMedium", bold: true);
+widget ProductSummary = Row(crossAxisAlignment: "start", children: [
+  switch args.image {"": switch args.loading {true: Padding(padding: [0.0, 0.0, 12.0, 0.0], child: Skeleton(child: SkeletonBox(width: 72, height: 72, radius: 12))), default: SizedBoxShrink()}, default: Padding(padding: [0.0, 0.0, 12.0, 0.0], child: Image(url: args.image, width: 72, height: 72, radius: 12))},
+  Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: args.title, style: "titleSmall", maxLines: 3), Gap(size: 6), Label(text: args.subtitle, style: "bodySmall", color: "onSurfaceVariant")]))
+]);
+widget Review = PageLayout(loading: data.loading, onRefresh: event "retry" {}, footer: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [ExternalFeedback(), ReviewAction()]), children: [
+  switch data.initialLoading {true: ReviewSkeleton(), default: SizedBoxShrink()},
+  switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      ProductSummary(image: data.image, title: data.title, subtitle: data.seller), Gap(size: 20),
+      DetailRow(label: data.i18n.saf05b87cf68d5a3a, value: data.price), Gap(size: 16),
+      Row(children: [Expanded(child: Label(text: data.i18n.s5e29d121dda011c5)), QuantityInput(value: data.quantityValue, max: data.quantityMax, enabled: data.buy, onChanged: event "quantity" {})]),
+      Gap(size: 16), DetailRow(label: data.i18n.se6c79dcfa0e277d9, value: data.estimate),
+    ])),
+    Gap(size: 12), Label(text: data.conditions, style: "bodySmall", color: "onSurfaceVariant"),
+    Gap(size: 24), SectionTitle(title: data.i18n.s548698f65a7ee317), Gap(size: 12),
+    switch data.quoteInitialLoading {true: Skeleton(child: Surface(child: Column(crossAxisAlignment: "stretch", children: [SkeletonBox(height: 20), Gap(size: 24), SkeletonBox(height: 20)]))), default: SizedBoxShrink()},
+    switch data.quoteReady {true: Surface(padding: [0.0], child: Column(crossAxisAlignment: "stretch", children: [
+      ...for c in data.couponRows: ListItem(title: c.label, subtitle: c.subtitle, trailing: switch c.selected {true: Symbol(name: "check_circle", color: "primary"), default: Symbol(name: "gift", color: "onSurfaceVariant")}, onTap: event "quoteCoupon" {id: c.id}),
+      ListItem(title: data.i18n.s62f82dbf90e2261c, trailing: switch data.noCoupon {true: Symbol(name: "check_circle", color: "primary"), default: SizedBoxShrink()}, onTap: event "quoteCoupon" {id: ""}),
+      ...for c in data.unavailableCoupons: ListItem(title: c.label, subtitle: c.reason, leading: Symbol(name: "info", color: "onSurfaceVariant")),
+    ])), default: SizedBoxShrink()},
+    switch data.canQuote {true: Button(label: data.i18n.s4d7c423e3f207066, enabled: switch data.quoting {true: false, default: true}, variant: "text", onPressed: event "quote" {}), default: SizedBoxShrink()},
+    Label(text: data.quoteNote, color: "error"), Gap(size: 16), Row(children: [Expanded(child: Label(text: data.i18n.sb734dcee3fe05d10, color: "onSurfaceVariant")), switch data.quoteInitialLoading {true: Skeleton(child: SkeletonBox(width: 104, height: 24)), default: Label(text: data.payable, style: "titleMedium")}]),
+  ]), default: SizedBoxShrink()},
+  switch data.nativeOrder {true: Column(crossAxisAlignment: "stretch", children: [
+    switch data.orderState {
+      "pending": SubmissionRecovery(),
+      "missing": Column(children: [SubmissionRecovery(), Button(label: data.i18n.s2c29ca57e91b35b8, variant: "outlined", loading: data.orderBusy, onPressed: event "retrySubmission" {})]),
+      "created": Surface(child: Column(crossAxisAlignment: "stretch", children: [
+        SectionTitle(title: data.i18n.sc3b71cac9531042d), Gap(size: 12), Label(text: data.orderSummary), Gap(size: 8), SelectableLabel(text: data.orderNo),
+        Gap(size: 16), Button(label: data.i18n.s752d28f376e7e568, icon: "payments", onPressed: event "createdOrder" {}), Button(label: data.i18n.s312df1d94869a0b7, variant: "text", onPressed: event "finishSubmission" {}),
+      ])),
+      "unavailable": Label(text: data.i18n.s302a580b360cf4f3), default: SizedBoxShrink(),
+    }, Label(text: data.orderNote, color: "error"),
+  ]), default: SizedBoxShrink()},
+  switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: Button(label: data.i18n.sb8784c8dd5636ff2, onPressed: event "retry" {}))},
+]);
+widget ReviewAction = switch data.ready {true: switch data.nativeOrder {
+  true: switch data.orderState {"idle": Button(fullWidth: true, label: data.i18n.s8aad9cb2c74870c1, enabled: data.canSubmit, loading: data.orderBusy, onPressed: event "submitOrder" {}), default: SizedBoxShrink()},
+  default: switch data.linkProduct {true: Button(label: data.i18n.s5b3fc0b4aab278b0, enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}), default: LoginButton()},
+}, default: SizedBoxShrink()};
+widget SubmissionRecovery = Surface(child: Column(crossAxisAlignment: "stretch", children: [
+  SectionTitle(title: data.i18n.sc05f158a78b4dd8b), Gap(size: 12), Label(text: data.orderSummary), Gap(size: 8),
+  Label(text: data.i18n.s5a81eab27ec5cfa4), Gap(size: 16),
+  Button(label: data.i18n.s1463dfab073b8d92, variant: "tonal", loading: data.orderBusy, onPressed: event "lookupSubmission" {}),
+]));
+
+widget BuyerOrders = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  onLoadMore: event "ordersMore" {}, error: data.error, onRetry: event "ordersRetry" {}, onRefresh: event "ordersRefresh" {}, emptyTitle: data.i18n.s7ecfc6324003a374,
+  toolbar: SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [
+    ...for filter in data.orderFilters: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: filter.label, selected: filter.selected, onSelected: event "ordersFilter" {status: filter.status, name: filter.name})),
+  ])),
+  header: BuyerLogin(),
+  items: [...for order in data.rows: Surface(padding: [16.0], onTap: event "order" {no: order.no}, child: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Expanded(child: Label(text: order.seller, style: "labelMedium", color: "onSurfaceVariant")), Label(text: order.state, style: "labelMedium", color: "primary")]), Gap(size: 12),
+    ProductSummary(image: order.image, loading: order.imageLoading, title: order.title, subtitle: order.quantity), Gap(size: 12),
+    Row(children: [Expanded(child: RelativeTime(value: order.time)), Label(text: order.amount, style: "titleMedium", bold: true), Gap(size: 8), Symbol(name: "chevron_right", size: 18.0)]),
+  ]))],
+);
+
+widget BuyerOrder = PageLayout(loading: data.loading, onRefresh: event "ordersRefresh" {}, footer: switch data.ready {true: ActionBar(actions: [
+  switch data.canCancel {true: Button(label: data.cancelLabel, variant: "text", enabled: data.paymentAvailable, onPressed: event "cancelOrder" {}), default: SizedBoxShrink()},
+  switch data.canPay {true: Button(label: data.i18n.s23fca5e0cf735421, icon: "payments", loading: data.paymentBusy, onPressed: event "payOrder" {}), default: switch data.canRepurchase {true: Button(label: data.i18n.sd9b9458b1f9aeb95, variant: "tonal", onPressed: event "repurchase" {}), default: SizedBoxShrink()}},
+]), default: SizedBoxShrink()}, children: [
+  switch data.initialLoading {true: ReviewSkeleton(), default: SizedBoxShrink()},
+  switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+    Label(text: data.state, style: "headlineSmall", bold: true, color: "primary"), Gap(size: 8),
+    Label(text: data.statusNote, color: "onSurfaceVariant"), Gap(size: 24),
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      ProductSummary(image: data.orderImage, loading: data.orderImageLoading, title: data.orderTitle, subtitle: ""), Gap(size: 20),
+      ...for row in data.fields: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
+    ])),
+    switch data.hasDelivery {true: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      Row(children: [Expanded(child: SectionTitle(title: data.i18n.s2013cc3e7da92777)), Button(label: data.deliveryAction, icon: "visibility", variant: "text", onPressed: event "delivery" {})]),
+      switch data.deliveryText {"": Label(text: data.i18n.s883c8ac33813aa48, style: "bodySmall", color: "onSurfaceVariant"), default: Column(crossAxisAlignment: "stretch", children: [Gap(size: 12), SelectableLabel(text: data.deliveryText), CopyButton(text: data.deliveryText, label: data.i18n.sc05a5ec1dcd01f0e)])},
+    ]))), default: SizedBoxShrink()},
+    switch data.usage {"": SizedBoxShrink(), default: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [SectionTitle(title: data.i18n.scb4ba40bf823511d), Gap(size: 12), Markdown(text: data.usage, onLink: event "contentLink" {})]))},
+    Gap(size: 24), SectionTitle(title: data.i18n.sea747b67dc72a371), Gap(size: 12),
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      DetailRow(label: data.i18n.s93191de5ef4c9d51, value: data.delivery), Gap(size: 12),
+      Row(crossAxisAlignment: "center", children: [Expanded(child: Label(text: data.i18n.s977f0f7e3be0f674, color: "onSurfaceVariant")), Gap(size: 16), Expanded(flex: 2, child: Row(crossAxisAlignment: "center", children: [Expanded(child: Align(alignment: {x: 1.0, y: 0.0}, child: SelectableLabel(text: data.orderNo))), CopyButton(text: data.orderNo, iconOnly: true)]))]),
+      switch data.tradeNo {"": SizedBoxShrink(), default: Column(crossAxisAlignment: "stretch", children: [Label(text: data.i18n.sf64372f7124dd37a, style: "labelMedium", color: "onSurfaceVariant"), SelectableLabel(text: data.tradeNo), Gap(size: 12)])},
+      ...for row in data.times: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
+    ])),
+    Gap(size: 24), SectionTitle(title: data.i18n.s58ab796c884b3be6), Gap(size: 12),
+    ...for entry in data.orderEvents: TimelineEntry(entry: entry),
+    Label(text: data.paymentNote, color: "error"),
+    switch data.canCheck {true: Button(label: data.i18n.scf47f68aa081cd42, loading: data.paymentBusy, icon: "sync", variant: "text", onPressed: event "checkPayment" {}), default: SizedBoxShrink()},
+  ]), default: SizedBoxShrink()}, OrderFeedback(),
+]);
+widget TimelineEntry = Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Row(crossAxisAlignment: "start", children: [
+  Symbol(name: "check_circle", size: 18.0, color: "onSurfaceVariant"), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "stretch", children: [
+    Label(text: args.entry.title, style: "titleSmall"), Gap(size: 4), Label(text: args.entry.time, style: "bodySmall", color: "onSurfaceVariant"),
+    switch args.entry.message {"": SizedBoxShrink(), default: Padding(padding: [0.0, 6.0, 0.0, 0.0], child: Label(text: args.entry.message))},
+  ])),
+]));
+widget DetailRow = Row(crossAxisAlignment: "start", children: [
+  Expanded(child: Label(text: args.label, color: "onSurfaceVariant")), Gap(size: 16),
+  Expanded(flex: 2, child: Label(text: args.value, align: "end", style: "bodyMedium")),
+]);
+widget OrderFeedback = switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "history", title: data.error, action: switch data.needsSession {
+  true: LoginButton(), default: Button(label: data.i18n.sc7506e73058704ad, variant: "outlined", onPressed: event "ordersRefresh" {}),
+})};
+widget ExternalFeedback = switch data.externalError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.externalError, color: "error"))};
+widget LoginButton = switch data.authorized {true: SizedBoxShrink(), default: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+  Button(label: data.i18n.sb55f062234929621, icon: "person", variant: "tonal", loading: data.loggingIn, onPressed: event "login" {}),
+  switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Label(text: data.loginError, style: "bodySmall", color: "error"))},
+])};
+widget BuyerFeedback = switch data.buyerError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 12.0], child: Label(text: data.buyerError, color: "error"))};
+widget BuyerLogin = switch data.needsSession {true: LoginButton(), default: SizedBoxShrink()};
+
+widget Account = ListPage(loading: data.overviewLoading, onRefresh: event "overviewRefresh" {},
+  header: Column(crossAxisAlignment: "stretch", children: [
+    switch data.accountName {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 20.0], child: Row(children: [Avatar(label: data.accountName, url: data.accountAvatar, size: 48), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: data.accountName, style: "titleLarge", bold: true), Label(text: data.accountMeta, style: "bodySmall", color: "onSurfaceVariant")]))]))},
+    Statistics(items: data.stats, loading: data.overviewInitialLoading),
+    switch data.overviewError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant"))},
+    switch data.authorized {true: SizedBoxShrink(), default: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: LoginButton())}]),
+  items: [
+    ListItem(title: data.i18n.s7c7dea47f57597f4, subtitle: data.i18n.s7c2fda7ef4a1229c, leading: Symbol(name: "history"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {}),
+    switch data.hasRefundAttention {true: ListItem(title: data.refundHint, leading: Symbol(name: "info"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {status: "refund_pending,refunded,refund_failed"}), default: SizedBoxShrink()},
+    ListItem(title: data.i18n.s9385bfefca5882f1, leading: Symbol(name: "favorite"), trailing: Symbol(name: "chevron_right"), onTap: event "favorites" {}),
+    ListItem(title: data.i18n.s731c8bf2f14a1505, subtitle: data.couponHint, leading: Symbol(name: "gift"), trailing: Symbol(name: "chevron_right"), onTap: event "coupons" {}),
+    ListItem(title: data.i18n.s29d8e8ee6822135d, leading: Symbol(name: "flag"), trailing: Symbol(name: "chevron_right"), onTap: event "reports" {}),
+    switch data.authorized {true: ListItem(title: data.i18n.s03671d6ddf237f70, leading: Symbol(name: "notifications"), trailing: Symbol(name: "chevron_right"), onTap: event "reminders" {}), default: SizedBoxShrink()},
+    switch data.remindersOpen {true: Padding(padding: [16.0], child: Reminders()), default: SizedBoxShrink()},
+    ListItem(title: data.i18n.s76d90cc920c904c8, leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "chats" {}),
+    ListItem(title: data.i18n.sb3761fb805dae671, leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "messages" {}),
+    switch data.authorized {true: ListItem(title: data.i18n.s06662ffb634d236a, subtitle: data.spendingSummary, leading: Symbol(name: "payments"), trailing: Label(text: switch data.spendingOpen {true: data.i18n.safd4b783536b8297, default: data.i18n.s00bd3960fea8ea98}, style: "labelMedium", color: "primary"), onTap: event "spending" {}), default: SizedBoxShrink()},
+    switch data.spendingOpen {true: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
+      switch data.spendingLoading {true: TextSkeleton(), default: SizedBoxShrink()},
+      ...for row in data.spendingRows: DetailRow(label: row.label, value: row.value),
+      switch data.spendingEmpty {true: Label(text: data.i18n.sc851b18ea7468bf2, style: "bodySmall", color: "onSurfaceVariant"), default: SizedBoxShrink()},
+      switch data.spendingError {"": SizedBoxShrink(), default: Column(children: [Label(text: data.spendingError, color: "error"), Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "spendingRetry" {})])},
+    ])), default: SizedBoxShrink()},
+    switch data.hasRecentOrders {true: Padding(padding: [16.0, 16.0, 16.0, 4.0], child: SectionTitle(title: data.i18n.s12eef4bda73517ed)), default: SizedBoxShrink()},
+    ...for recent in data.recentOrders: ListItem(title: recent.title, subtitle: recent.subtitle, leading: Symbol(name: "history"), trailing: Symbol(name: "chevron_right"), onTap: event "order" {no: recent.no}),
+  ], actions: switch data.authorized {true: Button(label: data.i18n.s385b320ec821e694, variant: "text", onPressed: event "signOut" {}), default: SizedBoxShrink()},
+);
+
+widget Favorites = GridPage(loadingPlaceholder: GridSkeleton(), layout: "equalHeight", minTileWidth: 156, loading: data.loading, loadingMore: data.loadingMore,
+  hasMore: data.more, error: data.error, emptyTitle: data.collectionEmpty, onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  toolbar: Column(crossAxisAlignment: "stretch", children: [SearchInput(value: data.search, hint: data.collectionHint, onChanged: event "favoriteSearch" {}, onSubmitted: event "buyerRefresh" {}), Gap(size: 8), Wrap(spacing: 8.0, children: [...for tab in data.collections: Choice(label: tab.label, selected: tab.selected, onSelected: event "collectionTab" {id: tab.id})])]), header: Column(children: [BuyerLogin(), BuyerFeedback()]),
+  items: [...for item in data.rows: ProductTile(item: item)],
+);
+widget Coupons = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more, error: data.error, emptyTitle: data.i18n.s505300b3e94d139b,
+  onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  toolbar: SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [...for tab in data.tabs: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: tab.label, selected: tab.selected, onSelected: event "couponTab" {value: tab.value}))])),
+  header: BuyerLogin(), items: [...for coupon in data.rows: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
+    CouponInfo(coupon: coupon), switch coupon.action {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Button(label: coupon.action, variant: "tonal", onPressed: event "couponUse" {id: coupon.id}))},
+  ]))],
+);
+widget CouponInfo = Column(crossAxisAlignment: "stretch", children: [
+  Label(text: args.coupon.rule, style: "headlineSmall", color: "primary", bold: true), Gap(size: 12),
+  Label(text: args.coupon.title, style: "titleMedium", bold: true), Gap(size: 4),
+  Label(text: args.coupon.seller, style: "bodySmall", color: "onSurfaceVariant"), Gap(size: 16),
+  DetailRow(label: data.i18n.s40781b5ae18a7791, value: args.coupon.scope), Gap(size: 8), DetailRow(label: data.i18n.s70ef22633d147df5, value: args.coupon.minimum),
+  Gap(size: 8), DetailRow(label: data.i18n.s9ca4b75d03266b03, value: args.coupon.expires),
+  switch args.coupon.usedAt {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: DetailRow(label: data.i18n.s4f36b7386724d9ed, value: args.coupon.usedAt))},
+  switch args.coupon.actualDiscount {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: DetailRow(label: data.i18n.s62a1ed5fddc26e97, value: args.coupon.actualDiscount))},
+  switch args.coupon.state {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Label(text: args.coupon.state, style: "labelMedium", color: "primary"))},
+]);
+widget Coupon = PageLayout(loading: data.loading, onRefresh: event "buyerRefresh" {}, footer: switch data.ready {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [BuyerFeedback(),
+  switch data.claimed {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [switch data.coupon.action {"": SizedBoxShrink(), default: Button(label: data.coupon.action, onPressed: event "couponUse" {})}, Button(label: data.i18n.s7f74393abb0c15c0, variant: "text", onPressed: event "coupons" {})]), default: switch data.authorized {
+    true: Button(label: data.claimLabel, enabled: data.canClaim, loading: data.buyerBusy, onPressed: event "claimCoupon" {}), default: LoginButton(),
+  }},
+]), default: SizedBoxShrink()}, children: [
+  switch data.initialLoading {true: SummarySkeleton(), default: SizedBoxShrink()},
+  switch data.ready {true: Surface(child: Column(crossAxisAlignment: "stretch", children: [CouponInfo(coupon: data.coupon), Gap(size: 16), Label(text: data.description), Gap(size: 12), DetailRow(label: data.i18n.sd2b84e4a68d0bd59, value: data.coupon.starts),switch data.coupon.quantity {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: DetailRow(label: data.i18n.s36740655c7a6d33e, value: data.coupon.quantity))}])), default: SizedBoxShrink()},
+  switch data.error {"": SizedBoxShrink(), default: EmptyState(title: data.error, action: Button(label: data.i18n.sb8784c8dd5636ff2, onPressed: event "buyerRefresh" {}))},
+]);
+widget CommentForm = switch data.composeMode {"report": CommunityForm(), "reply": ReplyForm(), default: ProductCommentForm()};
+widget ProductCommentForm = switch data.commentSubmitted {
+  true: DetailPage(sections: [EmptyState(icon: "check_circle", title: data.commentResult)]),
+  default: switch data.canComment {
+    true: FormPage(loading: data.buyerBusy, submitLabel: data.i18n.se267d0400c5a542d, fields: data.fields, header: Column(crossAxisAlignment: "stretch", children: [Label(text: data.i18n.s3100cd7e8ee297e3, color: "onSurfaceVariant"), BuyerFeedback()]), onSubmit: event "postComment" {}),
+    default: DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {}, sections: [BuyerLogin()]),
+  },
+};
+widget RefundSummary = Column(crossAxisAlignment: "stretch", children: [
+  Label(text: data.refundState, style: "titleLarge", bold: true, color: "primary"), Gap(size: 12),
+  switch data.refundAmount {"": SizedBoxShrink(), default: Label(text: data.refundAmount, style: "headlineSmall")},
+  Label(text: data.refundMessage), Gap(size: 8), Label(text: data.deadline, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(),
+]);
+widget Refund = switch data.canApply {
+  true: FormPage(loading: data.buyerBusy, submitLabel: data.i18n.s3a72664b94dd8b6b, fields: data.refundFields, header: RefundSummary(), onSubmit: event "applyRefund" {}),
+  default: DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {}, onRefresh: event "buyerRefresh" {},
+    actions: ActionBar(actions: [switch data.hasGuide {true: Button(label: data.i18n.se65a563bd197b5af, variant: "text", onPressed: event "refundGuide" {}), default: SizedBoxShrink()}, Button(label: data.i18n.sd4f1dfe69b992741, variant: "tonal", onPressed: event "buyerRefresh" {})]),
+    sections: [BuyerLogin(), RefundSummary(), ...for row in data.refundDetails: DetailRow(label: row.label, value: row.value), SelectableLabel(text: data.reason), ...for entry in data.events: TimelineEntry(entry: entry)],
+  ),
+};
+widget Merchant = GridPage(loadingPlaceholder: GridSkeleton(), layout: "equalHeight", minTileWidth: 156, loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: data.i18n.sf89453d5f5ae6e3a, onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  header: switch data.merchantReady {true: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Avatar(label: data.merchantTitle, url: data.merchantAvatar, size: 48), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "start", children: [SectionTitle(title: data.merchantTitle), Label(text: data.merchantMeta, style: "bodySmall", color: "onSurfaceVariant")]))]),
+    Gap(size: 12), Statistics(items: data.merchantStats),
+  ]), default: SizedBoxShrink()}, items: [...for item in data.rows: ProductTile(item: item)],
+);
+
+widget Messages = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: data.i18n.sb7979a6ddc595bd0, onRefresh: event "messagesRefresh" {}, onRetry: event "messagesRetry" {}, onLoadMore: event "messagesMore" {},
+  toolbar: Column(crossAxisAlignment: "stretch", children: [
+    SearchInput(value: data.search, hint: data.i18n.s675cdf65d059a70b, onChanged: event "favoriteSearch" {}, onSubmitted: event "messagesRefresh" {}), Gap(size: 8),
+    Wrap(spacing: 8.0, children: [...for tab in data.tabs: Choice(label: tab.label, selected: tab.selected, onSelected: event "messageTab" {value: tab.value})]),
+  ]), header: Column(crossAxisAlignment: "stretch", children: [BuyerLogin(), BuyerFeedback(),
+    switch data.messagesChanged {true: Button(label: data.i18n.s8a081cf0f6700a98, variant: "tonal", onPressed: event "messagesRefresh" {}), default: SizedBoxShrink()},
+  ]),
+  items: [...for message in data.rows: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Expanded(child: Label(text: message.title, style: "titleMedium", bold: true)),
+      switch message.read {false: Chip(label: data.i18n.s4d0680f9efaef147), default: SizedBoxShrink()},
+    ]), Gap(size: 8), SelectableLabel(text: message.content), Gap(size: 12), Wrap(spacing: 8.0, children: [Label(text: message.type, color: "onSurfaceVariant", style: "labelSmall"), RelativeTime(value: message.time)]),
+    ActionBar(actions: [switch message.read {false: Button(label: data.i18n.s71ef3f727b039321, variant: "text", enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "messageRead" {id: message.id}), default: SizedBoxShrink()},
+      switch message.link {"": SizedBoxShrink(), default: Button(label: data.i18n.sa748cc074f78de00, variant: "tonal", onPressed: event "messageOpen" {id: message.id})},
+    ]),
+  ]))],
+);
+
+widget CommunityForm = switch data.reportSubmitted {
+  true: EmptyState(icon: "check_circle", title: data.i18n.s93e263e95fd87cc5, message: data.i18n.s188aa3bd1defffc6, action: Button(label: data.i18n.s1e9603e7ce911612, onPressed: event "reportDetail" {})),
+  default: switch data.ready {true: FormPage(fields: data.communityFields, loading: data.buyerBusy, submitLabel: data.i18n.s16b0eccf6ef89f98, header: Column(crossAxisAlignment: "stretch", children: [Label(text: data.communityTitle, maxLines: 3), Gap(size: 12), Label(text: data.i18n.sc387350be02b0559, color: "onSurfaceVariant"), BuyerFeedback()]), onSubmit: event "submitReport" {}), default: CommunityPending()}
+};
+widget ReplyForm = switch data.replySubmitted {
+  true: EmptyState(icon: "check_circle", title: data.replyResult),
+  default: switch data.ready {true: FormPage(fields: data.communityFields, loading: data.buyerBusy, submitLabel: data.i18n.s83f08c796de74e01, header: Column(crossAxisAlignment: "stretch", children: [Label(text: data.communityTitle), BuyerFeedback()]), onSubmit: event "postReply" {}), default: CommunityPending()}
+};
+widget CommunityPending = DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {}, sections: [BuyerLogin()]);
+widget Reports = ListPage(loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more, error: data.error, onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {}, emptyTitle: data.i18n.s11172f6108a171b2,
+  toolbar: SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [...for tab in data.reportTabs: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: tab.label, selected: tab.selected, onSelected: event "reportTab" {value: tab.value}))])),
+  header: Column(children: [BuyerLogin(), Statistics(items: data.reportStats)]),
+  items: [...for report in data.rows: ContentRow(title: report.title, summary: report.reason, meta: report.category, detail: Label(text: report.state), onTap: event "reportDetail" {id: report.id})]
+);
+widget ReportDetail = switch data.ready {
+  true: FormPage(fields: data.communityFields, loading: data.buyerBusy, submitLabel: data.followupLabel, onSubmit: event "supplementReport" {}, header: Column(crossAxisAlignment: "stretch", children: [
+    Label(text: data.report.title, style: "titleLarge"), Gap(size: 12), Wrap(children: [Chip(label: data.report.state)]), Gap(size: 16),
+    DetailRow(label: data.i18n.s6b6cde10fd0fb7d2, value: data.report.category), RelativeTime(value: data.report.time), Gap(size: 16), SelectableLabel(text: data.report.reason),
+    switch data.hasReportOutcome {true: Column(crossAxisAlignment: "stretch", children: [Gap(size: 20), SectionTitle(title: data.i18n.sf62360f6e574f0b5), Label(text: data.report.decision), SelectableLabel(text: data.report.note), Label(text: data.report.next)]), default: SizedBoxShrink()},
+    switch data.snapshot {"": SizedBoxShrink(), default: Column(crossAxisAlignment: "stretch", children: [Gap(size: 16), SectionTitle(title: data.i18n.s3e307948d45152c8), SelectableLabel(text: data.snapshot)])},
+    Gap(size: 16), Label(text: data.reportHint, color: "onSurfaceVariant"),
+    ...for file in data.evidence: ListItem(title: file.label, leading: Symbol(name: "image"), onTap: event "evidenceOpen" {id: file.id}),
+    switch data.canAddEvidence {true: Button(label: data.i18n.s698c04db83fdd5d9, variant: "tonal", enabled: switch data.evidenceBusy {true: false, default: true}, onPressed: event "evidencePick" {}), default: SizedBoxShrink()},
+    switch data.attachmentReady {true: Column(crossAxisAlignment: "stretch", children: [Label(text: data.attachmentName), ActionBar(actions: [Button(label: data.i18n.s13d61fea9f174905, variant: "text", onPressed: event "evidencePreview" {}), Button(label: data.i18n.s664110c1c5f011a7, loading: data.evidenceBusy, onPressed: event "evidenceUpload" {})])]), default: SizedBoxShrink()},
+    switch data.evidenceBusy {true: Column(children: [ProgressBar(value: data.evidenceProgress),Button(label: data.i18n.sa2483633300e4949, variant: "text", onPressed: event "evidenceCancel" {})]), default: SizedBoxShrink()},
+    Label(text: data.evidenceError, color: "error"),
+    Gap(size: 20), SectionTitle(title: data.i18n.sa00b23e3dbc3f545), ...for entry in data.events: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [Label(text: entry.title, style: "titleSmall"), Label(text: entry.message), Label(text: entry.time, style: "labelSmall", color: "onSurfaceVariant")])), Gap(size: 16), BuyerFeedback(),
+  ])), default: CommunityPending()
+};
+
+widget Reminders = Column(crossAxisAlignment: "stretch", children: [
+  Label(text: data.reminderNote, color: "onSurfaceVariant"), Gap(size: 16),
+  ListItem(title: data.i18n.sd2086c154211d5bf, subtitle: data.i18n.s53aacd5473b56fb9, trailing: Toggle(value: data.reminderEnabled, onChanged: event "reminderToggle" {}), onTap: event "reminderToggle" {}),
+  ListItem(title: data.i18n.sc26692150916e776, trailing: Toggle(value: data.reminderNotify, onChanged: event "reminderNotify" {}), onTap: event "reminderNotify" {}),
+  switch data.reminderBlocked {true: Label(text: data.i18n.s6c640cd379fd4033, color: "error"), default: SizedBoxShrink()},
+  switch data.reminderSettings {true: Button(label: data.i18n.s6e8a57892e5bdb78, variant: "text", onPressed: event "reminderSettings" {}), default: SizedBoxShrink()},
+  Label(text: data.reminderError, color: "error"),
+]);
+
+
+widget Chats = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: data.i18n.s67ae84e7d6e725ce, onRefresh: event "chatsRefresh" {}, onRetry: event "chatsRefresh" {}, onLoadMore: event "chatsMore" {},
+  toolbar: SearchInput(value: data.search, hint: data.i18n.sfeb95554de093549, onChanged: event "chatsSearch" {}, onSubmitted: event "chatsRefresh" {}),
+  header: Column(children: [BuyerLogin(), switch data.chatsChanged {true: Button(label: data.i18n.s5fb4d306840d8230, variant: "tonal", onPressed: event "chatsRefresh" {}), default: SizedBoxShrink()}]),
+  items: [...for row in data.rows: ContentRow(title: row.title, summary: row.summary, meta: row.name, leading: Avatar(label: row.name),
+    detail: Column(mainAxisSize: "min", children: [Chip(label: row.state), switch row.unread {true: Label(text: data.i18n.s4d0680f9efaef147, color: "primary", style: "labelSmall"), default: SizedBoxShrink()}]), onTap: event "chatOpen" {id: row.id})]
+);
+widget ChatActions = Row(mainAxisSize: "min", children: [IconButton(icon: "refresh", tooltip: data.i18n.sa4298ff38b78934f, loading: data.loading, onPressed: event "chatRefresh" {})]);
+widget ChatSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", children: [
+  Align(alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(width: 220, height: 72, radius: 16)), Gap(size: 16),
+  Align(alignment: {x: 1.0, y: 0.0}, child: SkeletonBox(width: 160, height: 56, radius: 16)),
+]));
+widget Chat = TimelinePage(shortContentAlignment: "start", identity: data.chatIdentity, itemKeys: data.chatKeys,
+  loading: data.loading, loadingPlaceholder: ChatSkeleton(), emptyTitle: data.i18n.se29432d115e1ae1a, error: data.chatError,
+  onRetry: event "chatRefresh" {}, hasMore: data.chatMore, loadingMore: data.loadingMore,
+  moreLabel: data.i18n.s5bf3f2d2f4f7ad09, onLoadMore: event "chatOlder" {}, endRevision: data.chatEndRevision,
+  header: Column(crossAxisAlignment: "stretch", children: [BuyerLogin(), Wrap(spacing: 8.0, crossAxisAlignment: "center", children: [
+    switch data.chatReady {true: Chip(label: data.chatState), default: SizedBoxShrink()},
+    switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}])]),
+  footer: switch data.canSend {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+    switch data.chatDraftError {"": SizedBoxShrink(), default: Label(text: data.chatDraftError, style: "bodySmall", color: "error")},
+    Row(crossAxisAlignment: "end", children: [
+    Expanded(child: TextInput(value: data.chatDraft, hint: data.i18n.sa410452649b38b31, variant: "filled", minLines: 1, maxLines: 4,
+      maxLength: 500, showCounter: false, readOnly: data.chatSending, onChanged: event "chatInput" {})), Gap(size: 8),
+    Button(label: data.i18n.sedecf0ae6e5144f9, enabled: data.chatSendEnabled, loading: data.chatSending, onPressed: event "chatSend" {})])]), default: SizedBoxShrink()},
+  items: [
+    ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: {x: switch message.system {true: 0.0, default: switch message.mine {true: 1.0, default: -1.0}}, y: 0.0}, child:
+      FractionallySizedBox(widthFactor: 0.88, alignment: {x: switch message.mine {true: 1.0, default: -1.0}, y: 0.0}, child:
+        Align(alignment: {x: switch message.mine {true: 1.0, default: -1.0}, y: 0.0}, child:
+          Surface(padding: [14.0, 10.0], color: switch message.mine {true: "secondaryContainer", default: "surfaceContainerLow"}, child: Column(mainAxisSize: "min", crossAxisAlignment: "start", children: [
+            switch message.system {true: SizedBoxShrink(), default: switch message.mine {true: SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 4.0], child: Label(text: message.author, style: "labelMedium", color: "onSurfaceVariant"))}},
+            SelectableLabel(text: message.content), Gap(size: 6), RelativeTime(value: message.time)
+          ]))))))
+  ]
+);
+
+widget LocalizedTitle = Label(text: data.pageTitle, style: "titleLarge", maxLines: 1);

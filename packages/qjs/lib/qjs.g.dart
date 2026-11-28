@@ -512,6 +512,11 @@ external void qjs_runtime_clear_deadline(
   ffi.Pointer<QJSABIRuntime> rt,
 );
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<QJSABIRuntime>)>()
+external bool qjs_runtime_deadline_exceeded(
+  ffi.Pointer<QJSABIRuntime> rt,
+);
+
 @ffi.Native<ffi.Pointer<QJSABIRuntime> Function(QJSABIRuntimeConfig)>()
 external ffi.Pointer<QJSABIRuntime> qjs_runtime_create(
   QJSABIRuntimeConfig config,

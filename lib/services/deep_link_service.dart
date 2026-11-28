@@ -14,6 +14,7 @@ import '../pages/webview_login_page.dart';
 import '../pages/webview_page.dart';
 import '../constants.dart';
 import '../modules/mini_apps/mini_app_navigation.dart';
+import '../modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import '../utils/discourse_url_parser.dart';
 import 'discourse/discourse_service.dart';
 import 'user_api_key_login_flow.dart';
@@ -82,6 +83,17 @@ class DeepLinkService {
 
   /// 处理链接
   Future<void> _handleLink(Uri uri) async {
+    final now = DateTime.now();
+    if (_lastHandledUri == uri &&
+        _lastHandledTime != null &&
+        now.difference(_lastHandledTime!).inSeconds < 1) {
+      return;
+    }
+    if (MetaversePluginFileService.instance.handleUri(uri)) {
+      _lastHandledUri = uri;
+      _lastHandledTime = now;
+      return;
+    }
     if (_navigatorContext == null) {
       debugPrint('DeepLinkService: 导航 context 未就绪');
       return;
@@ -96,13 +108,6 @@ class DeepLinkService {
     }
 
     // 防重复：1秒内相同链接不重复处理
-    final now = DateTime.now();
-    if (_lastHandledUri == uri &&
-        _lastHandledTime != null &&
-        now.difference(_lastHandledTime!).inSeconds < 1) {
-      debugPrint('DeepLinkService: 忽略重复链接 $uri');
-      return;
-    }
     _lastHandledUri = uri;
     _lastHandledTime = now;
 

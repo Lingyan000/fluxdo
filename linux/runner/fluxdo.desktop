@@ -1,10 +1,10 @@
 [Desktop Entry]
 Name=FluxDO
 Comment=Linux.do 客户端
-Exec=fluxdo %u
+Exec=fluxdo %U
 Icon=fluxdo
 Terminal=false
 Type=Application
 Categories=Network;
-MimeType=x-scheme-handler/fluxdo;x-scheme-handler/discourse;x-scheme-handler/https;
+MimeType=x-scheme-handler/fluxdo;x-scheme-handler/discourse;x-scheme-handler/https;application/vnd.fluxdo.plugin+json;
 StartupWMClass=fluxdo

@@ -7,11 +7,15 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
+import 'package:fluxdo/services/local_notification_service.dart' show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/common/hero_image.dart';
 import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   final imageBytes = base64Decode(
@@ -51,23 +55,39 @@ void main() {
       );
     });
 
-    navigator = GlobalKey<NavigatorState>();
+    navigator = navigatorKey;
     late BuildContext homeContext;
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
-        child: MaterialApp(
-          navigatorKey: navigator,
-          builder: (context, child) => ImmersiveInsetsHoldScope(child: child!),
-          home: Builder(
-            builder: (context) {
-              homeContext = context;
-              return Scaffold(body: homeBody);
-            },
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigator,
+            builder: (context, child) => ImmersiveInsetsHoldScope(child: child!),
+            home: Builder(
+              builder: (context) {
+                homeContext = context;
+                return Scaffold(body: homeBody);
+              },
+            ),
           ),
         ),
       ),
     );
     if (open == null) {
+      await tester.runAsync(
+        () => precacheImage(
+          ResizeImage(
+            MemoryImage(imageBytes),
+            width: 2400,
+            height: 2400,
+            policy: ResizeImagePolicy.fit,
+          ),
+          homeContext,
+        ),
+      );
       ImageViewerPage.openBytes(homeContext, imageBytes);
     } else {
       await open(homeContext);
@@ -157,7 +177,7 @@ void main() {
     expect(systemUiCalls, isEmpty, reason: '未隐藏过系统栏，退场不能触发安全区变化');
   });
 
-  testWidgets('从顶部渐变的空白处点按也能收起工具栏', (tester) async {
+  testWidgets('从顶部工具栏的空白处点按也能收起工具栏', (tester) async {
     await openViewer(tester);
     await toggleControls(tester, at: const Offset(200, 75));
     expect(systemUiCalls.map((call) => call.arguments), [

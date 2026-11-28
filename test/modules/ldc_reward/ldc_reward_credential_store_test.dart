@@ -110,6 +110,8 @@ void main() {
 
 class _WriteFailingSecretStore implements SecretStore {
   @override
+  Future<Map<String, String>> readScope(SecretScope scope) async => {};
+  @override
   Future<String?> read(SecretKey key) async => null;
 
   @override

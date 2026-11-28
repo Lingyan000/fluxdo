@@ -49,7 +49,7 @@ class _User extends CurrentUserNotifier {
 
 class _FollowService extends Fake implements DiscourseService {
   @override
-  Future<List<FollowUser>> getFollowing(String username) async => [];
+  Future<List<FollowUser>> getFollowing(String username, {bool isSilent = false}) async => [];
 
   @override
   Future<List<FollowUser>> getFollowers(String username) async => [];
@@ -268,6 +268,19 @@ void main() {
 
       await capture('guide');
       await tester.tap(find.text(l10n.followingFeed_viewLegacyUsers));
+      await tester.pumpAndSettle();
+      String? copied;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      await tester.tap(find.text(l10n.followingFeed_copyLegacyUsers));
+      await tester.pumpAndSettle();
+      expect(copied?.split('\n'), List.generate(40, (index) => 'member_$index'));
+      expect(find.byType(AppSheetScaffold), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
       await capture('legacy');
       await tester.scrollUntilVisible(

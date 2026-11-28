@@ -320,6 +320,9 @@ class JSRuntime implements Finalizable {
   /// Removes the deadline set by [setDeadline].
   void clearDeadline() => qjs_runtime_clear_deadline(ptr);
 
+  /// 原生截止时间已中断执行；设置或清除截止时间时重置。
+  bool get deadlineExceeded => qjs_runtime_deadline_exceeded(ptr);
+
   /// A handle that interrupts this runtime from any isolate.
   JSInterruptHandle get interruptHandle =>
       JSInterruptHandle(ptr.address, qjs_runtime_get_id(ptr));

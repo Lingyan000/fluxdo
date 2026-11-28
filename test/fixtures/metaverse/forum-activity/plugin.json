@@ -1,0 +1,35 @@
+{
+  "schema": 11,
+  "apiVersion": 2,
+  "id": "example.forum.activity",
+  "name": "用户动态示例",
+  "author": "FluxDO",
+  "version": "1.0.0",
+  "ui": "ui.rfwtxt",
+  "script": "main.js",
+  "requiredFeatures": [
+    "navigationEntries",
+    "forumRead"
+  ],
+  "permissions": {
+    "network": [],
+    "identity": true,
+    "forum": [
+      "profiles",
+      "activity",
+      "following"
+    ]
+  },
+  "pages": [
+    {
+      "id": "activity",
+      "title": "用户动态",
+      "widget": "Activity",
+      "scroll": false,
+      "navigation": {
+        "label": "动态",
+        "icon": "person"
+      }
+    }
+  ]
+}

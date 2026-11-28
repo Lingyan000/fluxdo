@@ -1,0 +1,1908 @@
+// 由 tool/plugin_tools/export_components.dart 生成，参数来自生产组件。
+const metaverseComponentContract = {
+  "ActionBar": {
+    "parameters": [
+      "actions"
+    ],
+    "types": {
+      "actions": [
+        "list"
+      ]
+    }
+  },
+  "AdaptivePane": {
+    "parameters": [
+      "body",
+      "compactHeader",
+      "masterWidth",
+      "minDetailWidth",
+      "sidebar"
+    ],
+    "types": {
+      "body": [
+        "widget"
+      ],
+      "compactHeader": [
+        "widget"
+      ],
+      "masterWidth": [
+        "integer",
+        "number"
+      ],
+      "minDetailWidth": [
+        "integer",
+        "number"
+      ],
+      "sidebar": [
+        "widget"
+      ]
+    }
+  },
+  "Align": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "heightFactor",
+      "onEnd",
+      "widthFactor"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
+  },
+  "Amount": {
+    "parameters": [
+      "color",
+      "original",
+      "style",
+      "unit",
+      "value"
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "original": [
+        "list",
+        "string"
+      ],
+      "original.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "style": [
+        "string"
+      ],
+      "unit": [
+        "list",
+        "string"
+      ],
+      "unit.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "value": [
+        "list",
+        "string"
+      ],
+      "value.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "AspectRatio": {
+    "parameters": [
+      "aspectRatio",
+      "child"
+    ],
+    "types": {
+      "aspectRatio": [
+        "number"
+      ],
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "Avatar": {
+    "parameters": [
+      "count",
+      "label",
+      "size",
+      "url"
+    ],
+    "types": {
+      "count": [
+        "integer"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "size": [
+        "integer",
+        "number"
+      ],
+      "url": [
+        "string"
+      ]
+    }
+  },
+  "Button": {
+    "parameters": [
+      "enabled",
+      "fullWidth",
+      "icon",
+      "label",
+      "loading",
+      "onPressed",
+      "variant"
+    ],
+    "types": {
+      "enabled": [
+        "boolean"
+      ],
+      "fullWidth": [
+        "boolean"
+      ],
+      "icon": [
+        "string"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onPressed": [
+        "event"
+      ],
+      "variant": [
+        "string"
+      ]
+    }
+  },
+  "Center": {
+    "parameters": [
+      "child",
+      "heightFactor",
+      "widthFactor"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
+  },
+  "Chip": {
+    "parameters": [
+      "color",
+      "label",
+      "textColor"
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "textColor": [
+        "string"
+      ]
+    }
+  },
+  "Choice": {
+    "parameters": [
+      "label",
+      "layout",
+      "leading",
+      "onSelected",
+      "selected"
+    ],
+    "types": {
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "layout": [
+        "string"
+      ],
+      "leading": [
+        "widget"
+      ],
+      "onSelected": [
+        "event"
+      ],
+      "selected": [
+        "boolean"
+      ]
+    }
+  },
+  "ClipRRect": {
+    "parameters": [
+      "borderRadius",
+      "child",
+      "clipBehavior"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "ColoredBox": {
+    "parameters": [
+      "child",
+      "color"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "Column": {
+    "parameters": [
+      "children",
+      "crossAxisAlignment",
+      "mainAxisAlignment",
+      "mainAxisSize",
+      "textBaseline",
+      "textDirection",
+      "verticalDirection"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
+  },
+  "ContentRow": {
+    "parameters": [
+      "detail",
+      "emphasized",
+      "leading",
+      "meta",
+      "onTap",
+      "summary",
+      "summaryLines",
+      "title"
+    ],
+    "types": {
+      "detail": [
+        "widget"
+      ],
+      "emphasized": [
+        "boolean"
+      ],
+      "leading": [
+        "widget"
+      ],
+      "meta": [
+        "list",
+        "string"
+      ],
+      "meta.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "summary": [
+        "list",
+        "string"
+      ],
+      "summary.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "summaryLines": [
+        "integer"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "CopyButton": {
+    "parameters": [
+      "iconOnly",
+      "label",
+      "text"
+    ],
+    "types": {
+      "iconOnly": [
+        "boolean"
+      ],
+      "label": [
+        "string"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "DefaultTextStyle": {
+    "parameters": [
+      "child",
+      "curve",
+      "duration",
+      "maxLines",
+      "onEnd",
+      "overflow",
+      "softWrap",
+      "style",
+      "textAlign",
+      "textHeightBehavior",
+      "textWidthBasis"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "softWrap": [
+        "boolean"
+      ]
+    }
+  },
+  "DetailPage": {
+    "parameters": [
+      "actions",
+      "emptyTitle",
+      "error",
+      "header",
+      "loading",
+      "onRefresh",
+      "onRetry",
+      "sections",
+      "toolbar"
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "header": [
+        "widget"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "sections": [
+        "list"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
+  },
+  "Directionality": {
+    "parameters": [
+      "child",
+      "textDirection"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "Divider": {
+    "parameters": [],
+    "types": {}
+  },
+  "EmptyState": {
+    "parameters": [
+      "action",
+      "icon",
+      "message",
+      "title"
+    ],
+    "types": {
+      "action": [
+        "widget"
+      ],
+      "icon": [
+        "string"
+      ],
+      "message": [
+        "string"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "Expanded": {
+    "parameters": [
+      "child",
+      "flex"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "flex": [
+        "integer"
+      ]
+    }
+  },
+  "FittedBox": {
+    "parameters": [
+      "alignment",
+      "child",
+      "clipBehavior",
+      "fit"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "Flexible": {
+    "parameters": [
+      "child",
+      "fit",
+      "flex"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "flex": [
+        "integer"
+      ]
+    }
+  },
+  "FormPage": {
+    "parameters": [
+      "actions",
+      "fields",
+      "header",
+      "loading",
+      "onChanged",
+      "onSubmit",
+      "resetKey",
+      "submitLabel"
+    ],
+    "types": {
+      "actions": [
+        "list"
+      ],
+      "fields": [
+        "list"
+      ],
+      "fields.*.error": [
+        "string"
+      ],
+      "fields.*.hint": [
+        "string"
+      ],
+      "fields.*.label": [
+        "string"
+      ],
+      "fields.*.maxLength": [
+        "integer"
+      ],
+      "fields.*.name": [
+        "string"
+      ],
+      "fields.*.options": [
+        "list"
+      ],
+      "fields.*.options.*.label": [
+        "string"
+      ],
+      "fields.*.options.*.value": [
+        "string"
+      ],
+      "fields.*.required": [
+        "boolean"
+      ],
+      "fields.*.type": [
+        "string"
+      ],
+      "fields.*.value": [
+        "boolean",
+        "string"
+      ],
+      "header": [
+        "widget"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmit": [
+        "event"
+      ],
+      "resetKey": [
+        "string"
+      ],
+      "submitLabel": [
+        "string"
+      ]
+    }
+  },
+  "FractionallySizedBox": {
+    "parameters": [
+      "alignment",
+      "child",
+      "heightFactor",
+      "widthFactor"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
+  },
+  "Gap": {
+    "parameters": [
+      "size"
+    ],
+    "types": {
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "GestureDetector": {
+    "parameters": [
+      "behavior",
+      "child",
+      "onDoubleTap",
+      "onLongPress",
+      "onTap",
+      "onTapCancel",
+      "onTapDown",
+      "onTapUp"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onDoubleTap": [
+        "event"
+      ],
+      "onLongPress": [
+        "event"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "onTapCancel": [
+        "event"
+      ],
+      "onTapDown": [
+        "event"
+      ],
+      "onTapUp": [
+        "event"
+      ]
+    }
+  },
+  "GridPage": {
+    "parameters": [
+      "actions",
+      "columns",
+      "emptyTitle",
+      "error",
+      "hasMore",
+      "header",
+      "items",
+      "layout",
+      "loading",
+      "loadingMore",
+      "loadingPlaceholder",
+      "minTileWidth",
+      "moreLabel",
+      "onLoadMore",
+      "onRefresh",
+      "onRetry",
+      "runSpacing",
+      "spacing",
+      "toolbar"
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "columns": [
+        "integer"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
+      ],
+      "minTileWidth": [
+        "integer",
+        "number"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "runSpacing": [
+        "integer",
+        "number"
+      ],
+      "spacing": [
+        "integer",
+        "number"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
+  },
+  "GridView": {
+    "parameters": [
+      "addAutomaticKeepAlives",
+      "addRepaintBoundaries",
+      "addSemanticIndexes",
+      "cacheExtent",
+      "children",
+      "clipBehavior",
+      "dragStartBehavior",
+      "gridDelegate",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "restorationId",
+      "reverse",
+      "scrollDirection",
+      "semanticChildCount",
+      "shrinkWrap"
+    ],
+    "types": {
+      "addAutomaticKeepAlives": [
+        "boolean"
+      ],
+      "addRepaintBoundaries": [
+        "boolean"
+      ],
+      "addSemanticIndexes": [
+        "boolean"
+      ],
+      "cacheExtent": [
+        "number"
+      ],
+      "children": [
+        "list"
+      ],
+      "children.*": [
+        "widget"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ],
+      "semanticChildCount": [
+        "integer"
+      ],
+      "shrinkWrap": [
+        "boolean"
+      ]
+    }
+  },
+  "HorizontalScroll": {
+    "parameters": [
+      "child",
+      "edgeFade",
+      "reverse"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "edgeFade": [
+        "boolean"
+      ],
+      "reverse": [
+        "boolean"
+      ]
+    }
+  },
+  "IconButton": {
+    "parameters": [
+      "child",
+      "enabled",
+      "icon",
+      "loading",
+      "onPressed",
+      "selected",
+      "tooltip"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "enabled": [
+        "boolean"
+      ],
+      "icon": [
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onPressed": [
+        "event"
+      ],
+      "selected": [
+        "boolean"
+      ],
+      "tooltip": [
+        "string"
+      ]
+    }
+  },
+  "Image": {
+    "parameters": [
+      "fit",
+      "height",
+      "preview",
+      "radius",
+      "url",
+      "width"
+    ],
+    "types": {
+      "height": [
+        "integer",
+        "number"
+      ],
+      "preview": [
+        "boolean"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ],
+      "url": [
+        "string"
+      ],
+      "width": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "IntrinsicHeight": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "IntrinsicWidth": {
+    "parameters": [
+      "child",
+      "height",
+      "width"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "height": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
+  },
+  "Label": {
+    "parameters": [
+      "align",
+      "bold",
+      "color",
+      "maxLines",
+      "style",
+      "text"
+    ],
+    "types": {
+      "bold": [
+        "boolean"
+      ],
+      "color": [
+        "string"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "style": [
+        "string"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "ListBody": {
+    "parameters": [
+      "children",
+      "mainAxis",
+      "reverse"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "reverse": [
+        "boolean"
+      ]
+    }
+  },
+  "ListItem": {
+    "parameters": [
+      "leading",
+      "onTap",
+      "subtitle",
+      "title",
+      "trailing"
+    ],
+    "types": {
+      "leading": [
+        "widget"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "subtitle": [
+        "list",
+        "string"
+      ],
+      "subtitle.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "trailing": [
+        "widget"
+      ]
+    }
+  },
+  "ListPage": {
+    "parameters": [
+      "actions",
+      "empty",
+      "emptyTitle",
+      "error",
+      "hasMore",
+      "header",
+      "items",
+      "loading",
+      "loadingMore",
+      "loadingPlaceholder",
+      "moreLabel",
+      "onLoadMore",
+      "onRefresh",
+      "onRetry",
+      "search",
+      "toolbar"
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "empty": [
+        "widget"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "search": [
+        "widget"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
+  },
+  "ListView": {
+    "parameters": [
+      "addAutomaticKeepAlives",
+      "addRepaintBoundaries",
+      "addSemanticIndexes",
+      "cacheExtent",
+      "children",
+      "clipBehavior",
+      "dragStartBehavior",
+      "itemExtent",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "prototypeItem",
+      "restorationId",
+      "reverse",
+      "scrollDirection",
+      "semanticChildCount",
+      "shrinkWrap"
+    ],
+    "types": {
+      "addAutomaticKeepAlives": [
+        "boolean"
+      ],
+      "addRepaintBoundaries": [
+        "boolean"
+      ],
+      "addSemanticIndexes": [
+        "boolean"
+      ],
+      "cacheExtent": [
+        "number"
+      ],
+      "children": [
+        "list"
+      ],
+      "children.*": [
+        "widget"
+      ],
+      "itemExtent": [
+        "number"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "prototypeItem": [
+        "widget"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ],
+      "semanticChildCount": [
+        "integer"
+      ],
+      "shrinkWrap": [
+        "boolean"
+      ]
+    }
+  },
+  "Markdown": {
+    "parameters": [
+      "onLink",
+      "text"
+    ],
+    "types": {
+      "onLink": [
+        "event"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "Opacity": {
+    "parameters": [
+      "alwaysIncludeSemantics",
+      "child",
+      "curve",
+      "duration",
+      "onEnd",
+      "opacity"
+    ],
+    "types": {
+      "alwaysIncludeSemantics": [
+        "boolean"
+      ],
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "opacity": [
+        "number"
+      ]
+    }
+  },
+  "Padding": {
+    "parameters": [
+      "child",
+      "curve",
+      "duration",
+      "onEnd",
+      "padding"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ]
+    }
+  },
+  "PageLayout": {
+    "parameters": [
+      "children",
+      "footer",
+      "hasMore",
+      "loadMoreError",
+      "loading",
+      "loadingMore",
+      "onLoadMore",
+      "onRefresh",
+      "toolbar"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "footer": [
+        "widget"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "loadMoreError": [
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
+  },
+  "Positioned": {
+    "parameters": [
+      "bottom",
+      "child",
+      "curve",
+      "duration",
+      "end",
+      "height",
+      "onEnd",
+      "start",
+      "top",
+      "width"
+    ],
+    "types": {
+      "bottom": [
+        "number"
+      ],
+      "child": [
+        "widget"
+      ],
+      "end": [
+        "number"
+      ],
+      "height": [
+        "number"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "start": [
+        "number"
+      ],
+      "top": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
+  },
+  "ProgressBar": {
+    "parameters": [
+      "value"
+    ],
+    "types": {
+      "value": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "QuantityInput": {
+    "parameters": [
+      "enabled",
+      "max",
+      "min",
+      "onChanged",
+      "value"
+    ],
+    "types": {
+      "enabled": [
+        "boolean"
+      ],
+      "max": [
+        "integer"
+      ],
+      "min": [
+        "integer"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "value": [
+        "integer"
+      ]
+    }
+  },
+  "RelativeTime": {
+    "parameters": [
+      "value"
+    ],
+    "types": {
+      "value": [
+        "string"
+      ]
+    }
+  },
+  "Rotation": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "filterQuality",
+      "onEnd",
+      "turns"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "turns": [
+        "number"
+      ]
+    }
+  },
+  "Row": {
+    "parameters": [
+      "children",
+      "crossAxisAlignment",
+      "mainAxisAlignment",
+      "mainAxisSize",
+      "textBaseline",
+      "textDirection",
+      "verticalDirection"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
+  },
+  "SafeArea": {
+    "parameters": [
+      "bottom",
+      "child",
+      "left",
+      "maintainBottomViewPadding",
+      "minimum",
+      "right",
+      "top"
+    ],
+    "types": {
+      "bottom": [
+        "boolean"
+      ],
+      "child": [
+        "widget"
+      ],
+      "left": [
+        "boolean"
+      ],
+      "maintainBottomViewPadding": [
+        "boolean"
+      ],
+      "right": [
+        "boolean"
+      ],
+      "top": [
+        "boolean"
+      ]
+    }
+  },
+  "Scale": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "filterQuality",
+      "onEnd",
+      "scale"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "scale": [
+        "number"
+      ]
+    }
+  },
+  "SearchInput": {
+    "parameters": [
+      "hint",
+      "onChanged",
+      "onSubmitted",
+      "value"
+    ],
+    "types": {
+      "hint": [
+        "string"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmitted": [
+        "event"
+      ],
+      "value": [
+        "string"
+      ]
+    }
+  },
+  "SelectableLabel": {
+    "parameters": [
+      "text"
+    ],
+    "types": {
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
+  },
+  "SingleChildScrollView": {
+    "parameters": [
+      "child",
+      "clipBehavior",
+      "dragStartBehavior",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "restorationId",
+      "reverse",
+      "scrollDirection"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ]
+    }
+  },
+  "SizedBox": {
+    "parameters": [
+      "child",
+      "height",
+      "width"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "height": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
+  },
+  "SizedBoxExpand": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "SizedBoxShrink": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "Skeleton": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "SkeletonBox": {
+    "parameters": [
+      "height",
+      "radius",
+      "width"
+    ],
+    "types": {
+      "height": [
+        "integer",
+        "number"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ],
+      "width": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "Spacer": {
+    "parameters": [
+      "flex"
+    ],
+    "types": {
+      "flex": [
+        "integer"
+      ]
+    }
+  },
+  "Spinner": {
+    "parameters": [
+      "size"
+    ],
+    "types": {
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "Stack": {
+    "parameters": [
+      "alignment",
+      "children",
+      "clipBehavior",
+      "fit",
+      "textDirection"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
+  },
+  "Statistics": {
+    "parameters": [
+      "items",
+      "loading"
+    ],
+    "types": {
+      "items": [
+        "list"
+      ],
+      "items.*.label": [
+        "list",
+        "string"
+      ],
+      "items.*.label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "items.*.value": [
+        "list",
+        "string"
+      ],
+      "items.*.value.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ]
+    }
+  },
+  "Surface": {
+    "parameters": [
+      "child",
+      "color",
+      "onTap",
+      "padding",
+      "radius"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "color": [
+        "string"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "Symbol": {
+    "parameters": [
+      "color",
+      "name",
+      "size"
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "name": [
+        "string"
+      ],
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "Text": {
+    "parameters": [
+      "locale",
+      "maxLines",
+      "overflow",
+      "semanticsLabel",
+      "softWrap",
+      "strutStyle",
+      "style",
+      "text",
+      "textAlign",
+      "textDirection",
+      "textHeightBehavior",
+      "textScaleFactor",
+      "textWidthBasis"
+    ],
+    "types": {
+      "maxLines": [
+        "integer"
+      ],
+      "semanticsLabel": [
+        "string"
+      ],
+      "softWrap": [
+        "boolean"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "string"
+      ],
+      "textScaleFactor": [
+        "number"
+      ]
+    }
+  },
+  "TextInput": {
+    "parameters": [
+      "enabled",
+      "hint",
+      "label",
+      "maxLength",
+      "maxLines",
+      "minLines",
+      "obscure",
+      "onChanged",
+      "onSubmitted",
+      "readOnly",
+      "showCounter",
+      "value",
+      "variant"
+    ],
+    "types": {
+      "enabled": [
+        "boolean"
+      ],
+      "hint": [
+        "string"
+      ],
+      "label": [
+        "string"
+      ],
+      "maxLength": [
+        "integer"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "minLines": [
+        "integer"
+      ],
+      "obscure": [
+        "boolean"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmitted": [
+        "event"
+      ],
+      "readOnly": [
+        "boolean"
+      ],
+      "showCounter": [
+        "boolean"
+      ],
+      "value": [
+        "string"
+      ],
+      "variant": [
+        "string"
+      ]
+    }
+  },
+  "TileGrid": {
+    "parameters": [
+      "children",
+      "columns",
+      "layout",
+      "minTileWidth",
+      "runSpacing",
+      "spacing"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "columns": [
+        "integer"
+      ],
+      "minTileWidth": [
+        "integer",
+        "number"
+      ],
+      "runSpacing": [
+        "integer",
+        "number"
+      ],
+      "spacing": [
+        "integer",
+        "number"
+      ]
+    }
+  },
+  "TimelinePage": {
+    "parameters": [
+      "emptyTitle",
+      "endRevision",
+      "error",
+      "footer",
+      "hasMore",
+      "header",
+      "identity",
+      "itemKeys",
+      "items",
+      "loading",
+      "loadingMore",
+      "loadingPlaceholder",
+      "moreLabel",
+      "onLoadMore",
+      "onRetry",
+      "shortContentAlignment"
+    ],
+    "types": {
+      "emptyTitle": [
+        "string"
+      ],
+      "endRevision": [
+        "integer"
+      ],
+      "error": [
+        "string"
+      ],
+      "footer": [
+        "widget"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "identity": [
+        "string"
+      ],
+      "itemKeys": [
+        "list"
+      ],
+      "itemKeys.*": [
+        "string"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "shortContentAlignment": [
+        "string"
+      ]
+    }
+  },
+  "Toggle": {
+    "parameters": [
+      "onChanged",
+      "value"
+    ],
+    "types": {
+      "onChanged": [
+        "event"
+      ],
+      "value": [
+        "boolean"
+      ]
+    }
+  },
+  "Wrap": {
+    "parameters": [
+      "alignment",
+      "children",
+      "clipBehavior",
+      "crossAxisAlignment",
+      "direction",
+      "runAlignment",
+      "runSpacing",
+      "spacing",
+      "textDirection",
+      "verticalDirection"
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "runSpacing": [
+        "number"
+      ],
+      "spacing": [
+        "number"
+      ]
+    }
+  }
+}
+;

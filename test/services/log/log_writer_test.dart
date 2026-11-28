@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_writer.dart';
+import 'package:fluxdo/services/network_logger.dart';
+import 'package:fluxdo/services/network/core/core_request_log_context.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 void main() {
   late Directory tempDir;
@@ -56,6 +59,87 @@ void main() {
       99,
     );
     expect(rows.where((e) => e['coreRequestId'] != null), hasLength(2));
+  });
+
+  test('插件上下文贯穿异步调用并覆盖伪造归属', () async {
+    await LogWriter.initForTesting(tempDir);
+    await const PluginExecutionContext(
+      pluginId: 'example.one', pluginVersion: '1.0.0', runtimeId: 'run-one',
+    ).run(() async {
+      await Future<void>.delayed(Duration.zero);
+      LogWriter.instance.write({'pluginId': 'spoofed', 'message': 'request'});
+    });
+    final rows = const LineSplitter().convert(await LogWriter.readPluginContent('example.one'));
+    expect(rows, hasLength(1));
+    expect(jsonDecode(rows.single)['emitter'], 'framework');
+    expect(await LogWriter.readPluginContent('spoofed'), isEmpty);
+  });
+
+  test('核心回调按请求号归属，共享监听器上下文不会串到其他请求', () async {
+    await LogWriter.initForTesting(tempDir);
+    final registry = CoreRequestLogContext.instance;
+    registry.register(99101, {
+      ...const PluginExecutionContext(
+        pluginId: 'example.one',
+        pluginVersion: '2.0.0',
+        runtimeId: 'run-one',
+        surfaceId: 'details',
+      ).fields,
+      'traceId': 'request-trace',
+    });
+    registry.complete(99101);
+    const PluginExecutionContext(
+      pluginId: 'example.wrong',
+      pluginVersion: '1.0.0',
+      runtimeId: 'run-wrong',
+    ).run(() {
+      NetworkLogger.logCore(
+        level: 3,
+        target: 'fluxdo_net::ffi',
+        message: 'done',
+        fields: {'coreRequestId': 99101},
+      );
+      NetworkLogger.logCore(
+        level: 3,
+        target: 'fluxdo_net::pool',
+        message: 'shared',
+      );
+    });
+    final pluginRows = const LineSplitter().convert(
+      await LogWriter.readPluginContent('example.one'),
+    );
+    final row = jsonDecode(pluginRows.single) as Map;
+    expect(row['pluginVersion'], '2.0.0');
+    expect(row['runtimeId'], 'run-one');
+    expect(row['surfaceId'], 'details');
+    expect(row['traceId'], 'request-trace');
+    expect(row['emitter'], 'framework');
+    expect(await LogWriter.readPluginContent('example.wrong'), isEmpty);
+    await LogWriter.instance.clearPlugin('example.one');
+    expect(await LogWriter.readPluginContent('example.one'), isEmpty);
+    final remaining = await readEntries(await LogWriter.getLogFile());
+    expect(remaining.single['message'], '[Core/pool] shared');
+    expect(remaining.single.containsKey('pluginId'), isFalse);
+  });
+
+  test('清空插件覆盖轮转缓冲和重复摘要并保留后续记录', () async {
+    await LogWriter.initForTesting(tempDir);
+    LogWriter.maxFileSizeForTesting = 1024;
+    for (var i = 0; i < 12; i++) {
+      LogWriter.instance.write({'pluginId': 'example.one', 'message': 'old-$i'});
+    }
+    await LogWriter.instance.flushNow();
+    for (var i = 0; i < 3; i++) {
+      LogWriter.instance.write({'pluginId': 'example.one', 'message': 'repeated'});
+    }
+    LogWriter.instance.write({'pluginId': 'example.two', 'message': 'preserved'});
+    final clearing = LogWriter.instance.clearPlugin('example.one');
+    LogWriter.instance.write({'pluginId': 'example.one', 'message': 'new'});
+    await clearing;
+    final content = await LogWriter.readPluginContent('example.one');
+    expect(const LineSplitter().convert(content), hasLength(1));
+    expect(jsonDecode(content.trim())['message'], 'new');
+    expect(await LogWriter.readPluginContent('example.two'), contains('preserved'));
   });
 
   test('write 进缓冲，flushNow 后落盘并注入 appVersion', () async {

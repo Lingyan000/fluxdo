@@ -6,9 +6,10 @@ class LogPolicy {
   static final String sessionId =
       '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${Random.secure().nextInt(1 << 32).toRadixString(36)}';
   static int _sequence = 0;
+  static int get sequence => _sequence;
   static String newTraceId() => '$sessionId-${++_sequence}';
   static final _secret = RegExp(
-    r'^(authorization|proxy-authorization|cookie|set-cookie|password|token|access_token|refresh_token|api_key|apikey|secret|tls_session_cache_key|x-csrf-token)$',
+    r'^(authorization|proxy-authorization|cookie|set-cookie|password|pay_key|verifier|code_verifier|token|access_token|refresh_token|api_key|apikey|secret|tls_session_cache_key|x-csrf-token)$',
     caseSensitive: false,
   );
   static final _url = RegExp(r'https?://[^\s<>"\x27]+');
@@ -58,9 +59,14 @@ class LogPolicy {
     );
     value = value.replaceAllMapped(
       RegExp(
-        r'(authorization|cookie|set-cookie|password|token|api_key|x-csrf-token)\s*[:=]\s*[^\r\n]+',
+        r'(authorization|cookie|set-cookie|password|pay_key|code_verifier|token|api_key|x-csrf-token)\s*[:=]\s*[^\r\n]+',
         caseSensitive: false,
       ),
+      (m) => '${m[1]}=[redacted]',
+    );
+    // 裸 verifier 只按参数赋值脱敏，保留平台证书校验器的诊断正文。
+    value = value.replaceAllMapped(
+      RegExp(r'\b(verifier)\s*=\s*[^\r\n]+', caseSensitive: false),
       (m) => '${m[1]}=[redacted]',
     );
     return value.length > 4096
@@ -120,6 +126,11 @@ class LogPolicy {
           'attemptId',
           'coreRequestId',
           'errorType',
+          'pluginId',
+          'pluginVersion',
+          'runtimeId',
+          'surfaceId',
+          'emitter',
         ])
           if (entry.containsKey(key)) key: entry[key],
       };
